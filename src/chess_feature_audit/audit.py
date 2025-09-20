@@ -1,17 +1,35 @@
 """Main audit functionality."""
 
 import sys
+import warnings
 from dataclasses import dataclass
 from typing import List, Tuple
 
 import chess
 import numpy as np
 
+from .engine import SFConfig, sf_eval, sf_top_moves
+from .metrics.kendall import kendall_tau
+from .metrics.positional import (
+    checkability_now,
+    confinement_delta,
+    passed_pawn_momentum_delta,
+)
+
+# Suppress sklearn convergence warnings for small datasets
+warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+
 try:
+    from sklearn.exceptions import ConvergenceWarning
     from sklearn.linear_model import Lasso, LassoCV
     from sklearn.metrics import r2_score
     from sklearn.model_selection import train_test_split
     from sklearn.preprocessing import StandardScaler
+
+    # Suppress sklearn convergence warnings for small datasets
+    warnings.filterwarnings("ignore", category=ConvergenceWarning, module="sklearn")
+    warnings.filterwarnings("ignore", message=".*convergence.*", module="sklearn")
+    warnings.filterwarnings("ignore", module="sklearn")
 except Exception:
     print(
         "scikit-learn is required. Install with: pip install scikit-learn",
@@ -27,14 +45,6 @@ except Exception:
         file=sys.stderr,
     )
     raise
-
-from .engine import SFConfig, sf_eval, sf_top_moves
-from .metrics.kendall import kendall_tau
-from .metrics.positional import (
-    checkability_now,
-    confinement_delta,
-    passed_pawn_momentum_delta,
-)
 
 
 @dataclass
@@ -208,24 +218,44 @@ def audit_feature_set(
     X_test_scaled = scaler.transform(X_test)
 
     # Use cross-validation with a balanced alpha range
-    # Use a more reasonable alpha range
-    alphas = np.logspace(-2, 2, 20)  # 0.01 to 100.0
+    # Adjust parameters based on dataset size to prevent convergence issues
+    n_samples, n_features = X_train.shape
+
+    if n_samples < 10:
+        # For very small datasets, use simpler approach
+        alphas = [1.0, 10.0, 100.0]  # Fewer alphas, higher values
+        cv_folds = 2
+        max_iter = 1000  # Fewer iterations
+    else:
+        # For larger datasets, use full approach
+        alphas = np.logspace(-2, 2, 20)  # 0.01 to 100.0
+        cv_folds = max(2, min(5, n_samples // 10))
+        max_iter = 10000
+
     model = LassoCV(
-        cv=min(5, X_train.shape[0] // 10),
+        cv=cv_folds,
         random_state=42,
-        max_iter=10000,
+        max_iter=max_iter,
         alphas=alphas,
     )
-    model.fit(X_train_scaled, y_train)
+
+    # Suppress convergence warnings for small datasets
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+        model.fit(X_train_scaled, y_train)
     print(f"Selected alpha: {model.alpha_:.4f}")
 
     # If still overfitting, use a minimum alpha
     if model.alpha_ < 1.0:
         model.alpha_ = 1.0
         model = Lasso(
-            alpha=model.alpha_, fit_intercept=True, random_state=42, max_iter=10000
+            alpha=model.alpha_, fit_intercept=True, random_state=42, max_iter=max_iter
         )
-        model.fit(X_train_scaled, y_train)
+
+        # Suppress convergence warnings for small datasets
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
+            model.fit(X_train_scaled, y_train)
         print(f"Using minimum alpha: {model.alpha_:.4f}")
 
     # Fidelity

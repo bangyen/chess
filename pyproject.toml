@@ -99,6 +99,9 @@ addopts = "-ra -q"
 testpaths = [
     "tests",
 ]
+filterwarnings = [
+    "ignore::UserWarning:sklearn.*",
+]
 
 [tool.coverage.run]
 source = ["src"]

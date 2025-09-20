@@ -41,13 +41,25 @@ class TestCLI:
                             mock_engine = Mock()
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
-                            mock_audit.return_value = Mock()
+                            # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
-                            # Should not raise SystemExit
-                            try:
-                                main()
-                            except SystemExit:
-                                pytest.fail("CLI should not exit with SystemExit")
+                        # Should not raise SystemExit
+                        try:
+                            main()
+                        except SystemExit:
+                            pytest.fail("CLI should not exit with SystemExit")
 
     def test_cli_with_engine_argument(self):
         """Test CLI with engine as command line argument."""
@@ -71,7 +83,19 @@ class TestCLI:
                         mock_engine = Mock()
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        mock_audit.return_value = Mock()
+                        # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
                         # Should not raise SystemExit
                         try:
@@ -101,7 +125,19 @@ class TestCLI:
                         mock_engine = Mock()
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        mock_audit.return_value = Mock()
+                        # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -110,39 +146,63 @@ class TestCLI:
 
     def test_cli_features_module(self):
         """Test CLI with features module."""
-        with patch(
-            "sys.argv",
-            [
-                "cli.py",
-                "--engine",
-                "/path/to/stockfish",
-                "--features_module",
-                "/path/to/features.py",
-                "--positions",
-                "2",
-            ],
-        ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+        import os
+        import tempfile
+
+        # Create a temporary features file
+        features_code = """
+def extract_features(board):
+    return {"test_feature": 1.0, "_engine_probes": {}}
+"""
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(features_code)
+            temp_path = f.name
+
+        try:
+            with patch(
+                "sys.argv",
+                [
+                    "cli.py",
+                    "--engine",
+                    "/path/to/stockfish",
+                    "--features_module",
+                    temp_path,
+                    "--positions",
+                    "2",
+                ],
+            ):
+                with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
-                    ) as mock_sample:
+                        "chess_feature_audit.cli.audit_feature_set"
+                    ) as mock_audit:
                         with patch(
-                            "chess_feature_audit.cli.load_feature_module"
-                        ) as mock_load:
+                            "chess_feature_audit.cli.sample_random_positions"
+                        ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
-                            mock_audit.return_value = Mock()
-                            mock_module = Mock()
-                            mock_module.extract_features = Mock()
-                            mock_load.return_value = mock_module
+                            # Create proper mock result
+                            mock_result = Mock()
+                            mock_result.r2 = 0.75
+                            mock_result.tau_mean = 0.6
+                            mock_result.tau_covered = 10
+                            mock_result.n_tau = 15
+                            mock_result.local_faithfulness = 0.8
+                            mock_result.local_faithfulness_decisive = 0.85
+                            mock_result.sparsity_mean = 3.5
+                            mock_result.coverage_ratio = 0.7
+                            mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                            mock_result.stable_features = ["material_diff"]
+                            mock_audit.return_value = mock_result
 
                             try:
                                 main()
                             except SystemExit:
                                 pytest.fail("CLI should not exit with SystemExit")
+        finally:
+            os.unlink(temp_path)
 
     def test_cli_no_features_specified(self):
         """Test CLI without specifying features."""
@@ -179,12 +239,24 @@ class TestCLI:
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
-                            mock_audit.return_value = Mock()
+                            # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
-                            try:
-                                main()
-                            except SystemExit:
-                                pytest.fail("CLI should not exit with SystemExit")
+                        try:
+                            main()
+                        except SystemExit:
+                            pytest.fail("CLI should not exit with SystemExit")
 
     def test_cli_custom_parameters(self):
         """Test CLI with custom parameters."""
@@ -222,7 +294,19 @@ class TestCLI:
                         mock_engine = Mock()
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock() for _ in range(10)]
-                        mock_audit.return_value = Mock()
+                        # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -255,7 +339,19 @@ class TestCLI:
                         mock_engine = Mock()
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        mock_audit.return_value = Mock()
+                        # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -292,12 +388,24 @@ class TestCLI:
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
-                            mock_audit.return_value = Mock()
+                            # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
-                            try:
-                                main()
-                            except SystemExit:
-                                pytest.fail("CLI should not exit with SystemExit")
+                        try:
+                            main()
+                        except SystemExit:
+                            pytest.fail("CLI should not exit with SystemExit")
 
     def test_cli_engine_quit_called(self):
         """Test that engine.quit() is called."""
@@ -321,7 +429,19 @@ class TestCLI:
                         mock_engine = Mock()
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        mock_audit.return_value = Mock()
+                        # Create proper mock result
+                        mock_result = Mock()
+                        mock_result.r2 = 0.75
+                        mock_result.tau_mean = 0.6
+                        mock_result.tau_covered = 10
+                        mock_result.n_tau = 15
+                        mock_result.local_faithfulness = 0.8
+                        mock_result.local_faithfulness_decisive = 0.85
+                        mock_result.sparsity_mean = 3.5
+                        mock_result.coverage_ratio = 0.7
+                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
+                        mock_result.stable_features = ["material_diff"]
+                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -359,6 +479,9 @@ class TestCLI:
                             main()
                         except SystemExit:
                             pass
+                        except Exception:
+                            # Expected due to mock exception
+                            pass
 
                         # Check that engine.quit() was called even after exception
                         mock_engine.quit.assert_called_once()
@@ -387,7 +510,7 @@ class TestCLI:
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
 
-                            # Create mock audit result
+                            # Create mock audit result with proper attributes
                             mock_result = Mock()
                             mock_result.r2 = 0.75
                             mock_result.tau_mean = 0.6
@@ -442,11 +565,28 @@ class TestCLI:
                     ) as mock_sample:
                         with patch("random.seed") as mock_random_seed:
                             with patch("numpy.random.seed") as mock_numpy_seed:
+                                # Mock the seed functions to be called
+                                mock_random_seed.return_value = None
+                                mock_numpy_seed.return_value = None
                                 # Setup mocks
                                 mock_engine = Mock()
                                 mock_sf_open.return_value = mock_engine
                                 mock_sample.return_value = [Mock(), Mock()]
-                                mock_audit.return_value = Mock()
+                                # Create proper mock result
+                                mock_result = Mock()
+                                mock_result.r2 = 0.75
+                                mock_result.tau_mean = 0.6
+                                mock_result.tau_covered = 10
+                                mock_result.n_tau = 15
+                                mock_result.local_faithfulness = 0.8
+                                mock_result.local_faithfulness_decisive = 0.85
+                                mock_result.sparsity_mean = 3.5
+                                mock_result.coverage_ratio = 0.7
+                                mock_result.top_features_by_coef = [
+                                    ("material_diff", 0.5)
+                                ]
+                                mock_result.stable_features = ["material_diff"]
+                                mock_audit.return_value = mock_result
 
                                 try:
                                     main()

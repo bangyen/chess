@@ -46,7 +46,7 @@ dev = [
 ]
 
 [project.scripts]
-chess-feature-audit = "feature_explainability_audit:main"
+chess-feature-audit = "chess_feature_audit.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/chess-feature-audit"

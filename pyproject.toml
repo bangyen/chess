@@ -6,16 +6,16 @@ build-backend = "setuptools.build_meta"
 py-modules = []
 
 [project]
-name = "package-name"
+name = "chess-feature-audit"
 version = "0.1.0"
-description = "A Python package template"
+description = "Chess feature explainability audit tool"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
-keywords = ["python", "template", "package"]
+keywords = ["chess", "machine-learning", "explainability", "features"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -29,7 +29,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "click>=8.0.0",
+    "numpy>=1.20.0",
+    "scikit-learn>=1.0.0",
+    "tqdm>=4.60.0",
+    "python-chess>=1.999",
 ]
 
 [project.optional-dependencies]
@@ -43,12 +46,12 @@ dev = [
 ]
 
 [project.scripts]
-package-name = "package_name.cli:main"
+chess-feature-audit = "feature_explainability_audit:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/package-name"
-Repository = "https://github.com/yourusername/package-name"
-Issues = "https://github.com/yourusername/package-name/issues"
+Homepage = "https://github.com/yourusername/chess-feature-audit"
+Repository = "https://github.com/yourusername/chess-feature-audit"
+Issues = "https://github.com/yourusername/chess-feature-audit/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -60,11 +63,35 @@ where = ["src"]
 line-length = 88
 target-version = ['py38']
 
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, handled by black
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
 [tool.mypy]
 python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"

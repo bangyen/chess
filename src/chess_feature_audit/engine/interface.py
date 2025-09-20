@@ -74,5 +74,7 @@ def sf_top_moves(
             continue
         move = pv[0]
         score = d["score"].pov(board.turn).score(mate_score=100000)
-        out.append((move, float(score)))
+        # Clip mate scores to prevent instability
+        clipped_score = float(max(-1000, min(1000, score)))
+        out.append((move, clipped_score))
     return out

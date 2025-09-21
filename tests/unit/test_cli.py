@@ -1,8 +1,9 @@
 """Tests for CLI functionality."""
 
 from io import StringIO
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, mock_open, patch
 
+import chess
 import pytest
 
 from chess_ai.cli.audit import main
@@ -31,7 +32,25 @@ class TestCLI:
         with patch("sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]):
             with patch("os.environ.get", return_value="/path/to/stockfish"):
                 with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                    with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                        # Mock the audit function to return a proper result without running the actual audit
+                        class MockResult:
+                            def __init__(self):
+                                self.r2 = 0.75
+                                self.tau_mean = 0.6
+                                self.tau_covered = 10
+                                self.n_tau = 15
+                                self.local_faithfulness = 0.8
+                                self.local_faithfulness_decisive = 0.85
+                                self.sparsity_mean = 3.5
+                                self.coverage_ratio = 0.7
+                                self.top_features_by_coef = [("material_diff", 0.5)]
+                                self.stable_features = ["material_diff"]
+
+                        mock_result = MockResult()
+                        mock_audit.return_value = mock_result
+                        # Mock the audit function to prevent it from running
+                        mock_audit.side_effect = lambda *args, **kwargs: mock_result
                         with patch(
                             "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
@@ -41,26 +60,15 @@ class TestCLI:
                             mock_score = Mock()
                             mock_score.pov.return_value = mock_score
                             mock_score.score.return_value = 0.5
+                            # Mock a proper move for the PV
+                            mock_move = chess.Move.from_uci("e2e4")
                             mock_engine.analyse.return_value = [
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
                             ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
-                            # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         # Should not raise SystemExit
                         try:
@@ -82,7 +90,23 @@ class TestCLI:
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -92,26 +116,15 @@ class TestCLI:
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         # Should not raise SystemExit
                         try:
@@ -133,7 +146,23 @@ class TestCLI:
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -143,26 +172,15 @@ class TestCLI:
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -198,7 +216,25 @@ def extract_features(board):
                 ],
             ):
                 with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                    with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                        # Mock the audit function to return a proper result without running the actual audit
+                        class MockResult:
+                            def __init__(self):
+                                self.r2 = 0.75
+                                self.tau_mean = 0.6
+                                self.tau_covered = 10
+                                self.n_tau = 15
+                                self.local_faithfulness = 0.8
+                                self.local_faithfulness_decisive = 0.85
+                                self.sparsity_mean = 3.5
+                                self.coverage_ratio = 0.7
+                                self.top_features_by_coef = [("material_diff", 0.5)]
+                                self.stable_features = ["material_diff"]
+
+                        mock_result = MockResult()
+                        mock_audit.return_value = mock_result
+                        # Mock the audit function to prevent it from running
+                        mock_audit.side_effect = lambda *args, **kwargs: mock_result
                         with patch(
                             "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
@@ -208,31 +244,20 @@ def extract_features(board):
                             mock_score = Mock()
                             mock_score.pov.return_value = mock_score
                             mock_score.score.return_value = 0.5
+                            # Mock a proper move for the PV
+                            mock_move = chess.Move.from_uci("e2e4")
                             mock_engine.analyse.return_value = [
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
                             ]
-                            mock_sf_open.return_value = mock_engine
-                            mock_sample.return_value = [Mock(), Mock()]
-                            # Create proper mock result
-                            mock_result = Mock()
-                            mock_result.r2 = 0.75
-                            mock_result.tau_mean = 0.6
-                            mock_result.tau_covered = 10
-                            mock_result.n_tau = 15
-                            mock_result.local_faithfulness = 0.8
-                            mock_result.local_faithfulness_decisive = 0.85
-                            mock_result.sparsity_mean = 3.5
-                            mock_result.coverage_ratio = 0.7
-                            mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                            mock_result.stable_features = ["material_diff"]
-                            mock_audit.return_value = mock_result
+                        mock_sf_open.return_value = mock_engine
+                        mock_sample.return_value = [Mock(), Mock()]
 
-                            try:
-                                main()
-                            except SystemExit:
-                                pytest.fail("CLI should not exit with SystemExit")
+                        try:
+                            main()
+                        except SystemExit:
+                            pytest.fail("CLI should not exit with SystemExit")
         finally:
             os.unlink(temp_path)
 
@@ -259,40 +284,48 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
-                        "chess_ai.utils.sampling.sample_positions_from_pgn"
-                    ) as mock_sample_pgn:
+                        "builtins.open", mock_open(read_data='[Event "Test"]\n1. e4 e5')
+                    ):
                         with patch(
-                            "chess_ai.utils.sampling.sample_random_positions"
-                        ) as mock_sample_random:
-                            # Setup mocks
-                            mock_engine = Mock()
+                            "chess_ai.utils.sampling.sample_positions_from_pgn"
+                        ) as mock_sample_pgn:
+                            with patch(
+                                "chess_ai.utils.sampling.sample_random_positions"
+                            ) as mock_sample_random:
+                                # Setup mocks
+                                mock_engine = Mock()
                             # Mock the analyse method to return proper structure
                             mock_score = Mock()
                             mock_score.pov.return_value = mock_score
                             mock_score.score.return_value = 0.5
+                            # Mock a proper move for the PV
+                            mock_move = chess.Move.from_uci("e2e4")
                             mock_engine.analyse.return_value = [
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
                             ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
-                            # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -327,7 +360,23 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -337,26 +386,15 @@ def extract_features(board):
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock() for _ in range(10)]
-                        # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -381,7 +419,23 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -391,26 +445,15 @@ def extract_features(board):
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -435,40 +478,48 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
-                        "chess_ai.utils.sampling.sample_positions_from_pgn"
-                    ) as mock_sample_pgn:
+                        "builtins.open", mock_open(read_data='[Event "Test"]\n1. e4 e5')
+                    ):
                         with patch(
-                            "chess_ai.utils.sampling.sample_random_positions"
-                        ) as mock_sample_random:
-                            # Setup mocks
-                            mock_engine = Mock()
+                            "chess_ai.utils.sampling.sample_positions_from_pgn"
+                        ) as mock_sample_pgn:
+                            with patch(
+                                "chess_ai.utils.sampling.sample_random_positions"
+                            ) as mock_sample_random:
+                                # Setup mocks
+                                mock_engine = Mock()
                             # Mock the analyse method to return proper structure
                             mock_score = Mock()
                             mock_score.pov.return_value = mock_score
                             mock_score.score.return_value = 0.5
+                            # Mock a proper move for the PV
+                            mock_move = chess.Move.from_uci("e2e4")
                             mock_engine.analyse.return_value = [
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
                             ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
-                            # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -489,7 +540,23 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -499,26 +566,15 @@ def extract_features(board):
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
-                        # Create proper mock result
-                        mock_result = Mock()
-                        mock_result.r2 = 0.75
-                        mock_result.tau_mean = 0.6
-                        mock_result.tau_covered = 10
-                        mock_result.n_tau = 15
-                        mock_result.local_faithfulness = 0.8
-                        mock_result.local_faithfulness_decisive = 0.85
-                        mock_result.sparsity_mean = 3.5
-                        mock_result.coverage_ratio = 0.7
-                        mock_result.top_features_by_coef = [("material_diff", 0.5)]
-                        mock_result.stable_features = ["material_diff"]
-                        mock_audit.return_value = mock_result
 
                         try:
                             main()
@@ -542,7 +598,23 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -552,10 +624,12 @@ def extract_features(board):
                         mock_score = Mock()
                         mock_score.pov.return_value = mock_score
                         mock_score.score.return_value = 0.5
+                        # Mock a proper move for the PV
+                        mock_move = chess.Move.from_uci("e2e4")
                         mock_engine.analyse.return_value = [
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
-                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
+                            {"score": mock_score, "pv": [mock_move]},
                         ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
@@ -586,7 +660,23 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
                     with patch(
                         "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
@@ -597,30 +687,15 @@ def extract_features(board):
                             mock_score = Mock()
                             mock_score.pov.return_value = mock_score
                             mock_score.score.return_value = 0.5
+                            # Mock a proper move for the PV
+                            mock_move = chess.Move.from_uci("e2e4")
                             mock_engine.analyse.return_value = [
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
-                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
+                                {"score": mock_score, "pv": [mock_move]},
                             ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
-
-                            # Create mock audit result with proper attributes
-                            mock_result = Mock()
-                            mock_result.r2 = 0.75
-                            mock_result.tau_mean = 0.6
-                            mock_result.tau_covered = 10
-                            mock_result.n_tau = 15
-                            mock_result.local_faithfulness = 0.8
-                            mock_result.local_faithfulness_decisive = 0.85
-                            mock_result.sparsity_mean = 3.5
-                            mock_result.coverage_ratio = 0.7
-                            mock_result.top_features_by_coef = [
-                                ("material_diff", 0.5),
-                                ("mobility_us", 0.3),
-                            ]
-                            mock_result.stable_features = ["material_diff"]
-                            mock_audit.return_value = mock_result
 
                             try:
                                 main()
@@ -654,12 +729,30 @@ def extract_features(board):
             ],
         ):
             with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
-                    with patch(
-                        "chess_ai.utils.sampling.sample_random_positions"
-                    ) as mock_sample:
-                        with patch("random.seed") as mock_random_seed:
-                            with patch("numpy.random.seed") as mock_numpy_seed:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    # Mock the audit function to return a proper result without running the actual audit
+                    class MockResult:
+                        def __init__(self):
+                            self.r2 = 0.75
+                            self.tau_mean = 0.6
+                            self.tau_covered = 10
+                            self.n_tau = 15
+                            self.local_faithfulness = 0.8
+                            self.local_faithfulness_decisive = 0.85
+                            self.sparsity_mean = 3.5
+                            self.coverage_ratio = 0.7
+                            self.top_features_by_coef = [("material_diff", 0.5)]
+                            self.stable_features = ["material_diff"]
+
+                    mock_result = MockResult()
+                    mock_audit.return_value = mock_result
+                    with patch("random.seed") as mock_random_seed:
+                        with patch(
+                            "chess_ai.cli.audit.np.random.seed"
+                        ) as mock_numpy_seed:
+                            with patch(
+                                "chess_ai.utils.sampling.sample_random_positions"
+                            ) as mock_sample:
                                 # Mock the seed functions to be called
                                 mock_random_seed.return_value = None
                                 mock_numpy_seed.return_value = None
@@ -669,28 +762,15 @@ def extract_features(board):
                                 mock_score = Mock()
                                 mock_score.pov.return_value = mock_score
                                 mock_score.score.return_value = 0.5
+                                # Mock a proper move for the PV
+                                mock_move = chess.Move.from_uci("e2e4")
                                 mock_engine.analyse.return_value = [
-                                    {"score": mock_score, "pv": []},
-                                    {"score": mock_score, "pv": []},
-                                    {"score": mock_score, "pv": []},
+                                    {"score": mock_score, "pv": [mock_move]},
+                                    {"score": mock_score, "pv": [mock_move]},
+                                    {"score": mock_score, "pv": [mock_move]},
                                 ]
                                 mock_sf_open.return_value = mock_engine
                                 mock_sample.return_value = [Mock(), Mock()]
-                                # Create proper mock result
-                                mock_result = Mock()
-                                mock_result.r2 = 0.75
-                                mock_result.tau_mean = 0.6
-                                mock_result.tau_covered = 10
-                                mock_result.n_tau = 15
-                                mock_result.local_faithfulness = 0.8
-                                mock_result.local_faithfulness_decisive = 0.85
-                                mock_result.sparsity_mean = 3.5
-                                mock_result.coverage_ratio = 0.7
-                                mock_result.top_features_by_coef = [
-                                    ("material_diff", 0.5)
-                                ]
-                                mock_result.stable_features = ["material_diff"]
-                                mock_audit.return_value = mock_result
 
                                 try:
                                     main()

@@ -158,14 +158,20 @@ from chess_ai import audit_feature_set, baseline_extract_features
 from chess_ai.engine import SFConfig, sf_open
 
 # Run feature explainability audit
-config = SFConfig(depth=15, multipv=3)
+config = SFConfig(engine_path="/path/to/stockfish", depth=15, multipv=3)
 engine = sf_open(config)
-result = audit_feature_set(boards, engine, config, baseline_extract_features)
+result = audit_feature_set(
+    boards=boards, 
+    engine=engine, 
+    cfg=config, 
+    extract_features_fn=baseline_extract_features
+)
 print(f"R² Score: {result.r2_score}")
 ```
 
 ### Positional Metrics
 ```python
+import chess
 from chess_ai.metrics.positional import passed_pawn_momentum_snapshot
 from chess_ai.features.baseline import baseline_extract_features
 
@@ -183,7 +189,7 @@ def extract_features(board):
     return {'my_feature': 1.0}  # Your custom logic
 ```
 ```bash
-chess-ai audit --feature_module my_features.py --positions 1000
+chess-ai audit --features_module my_features.py --positions 1000
 ```
 
 ## API Reference

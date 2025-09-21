@@ -16,7 +16,7 @@ A comprehensive chess AI toolkit featuring feature explainability analysis and a
 
 1. **Clone and setup**:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/bangyen/chess.git
    cd chess
    make init
    ```

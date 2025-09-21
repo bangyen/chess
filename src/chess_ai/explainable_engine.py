@@ -372,32 +372,15 @@ class ExplainableChessEngine:
         except Exception:
             move_str = str(move)
 
-        if move_quality > 50:
-            quality = "excellent"
-        elif move_quality > 20:
-            quality = "good"
-        elif move_quality > -20:
-            quality = "reasonable"
-        elif move_quality > -50:
-            quality = "questionable"
-        else:
-            quality = "poor"
+        if not reasons:
+            return f"Move {move_str}:"
 
-        explanation = f"Move {move_str} is {quality}."
+        # Convert to bullet points with tab indentation
+        bullet_points = []
+        for reason in reasons[:3]:  # Limit to top 3 reasons
+            bullet_points.append(f"  - {reason[2]}")
 
-        if reasons:
-            positive_reasons = [r for r in reasons if r[1] > 0]
-            negative_reasons = [r for r in reasons if r[1] < 0]
-
-            if positive_reasons:
-                explanation += f" Positive aspects: {', '.join([r[2] for r in positive_reasons[:2]])}."
-
-            if negative_reasons:
-                explanation += (
-                    f" Concerns: {', '.join([r[2] for r in negative_reasons[:2]])}."
-                )
-
-        return explanation
+        return f"Move {move_str}:\n" + "\n".join(bullet_points)
 
     def _generate_overall_explanation_with_board(
         self,
@@ -412,32 +395,15 @@ class ExplainableChessEngine:
         except Exception:
             move_str = str(move)
 
-        if move_quality > 50:
-            quality = "excellent"
-        elif move_quality > 20:
-            quality = "good"
-        elif move_quality > -20:
-            quality = "reasonable"
-        elif move_quality > -50:
-            quality = "questionable"
-        else:
-            quality = "poor"
+        if not reasons:
+            return f"Move {move_str}:"
 
-        explanation = f"Move {move_str} is {quality}."
+        # Convert to bullet points with tab indentation
+        bullet_points = []
+        for reason in reasons[:3]:  # Limit to top 3 reasons
+            bullet_points.append(f"- {reason[2]}")
 
-        if reasons:
-            positive_reasons = [r for r in reasons if r[1] > 0]
-            negative_reasons = [r for r in reasons if r[1] < 0]
-
-            if positive_reasons:
-                explanation += f" Positive aspects: {', '.join([r[2] for r in positive_reasons[:2]])}."
-
-            if negative_reasons:
-                explanation += (
-                    f" Concerns: {', '.join([r[2] for r in negative_reasons[:2]])}."
-                )
-
-        return explanation
+        return f"Move {move_str}:\n" + "\n".join(bullet_points)
 
     def get_move_recommendation(self) -> Optional[MoveExplanation]:
         """Get the best move recommendation with explanation."""
@@ -609,10 +575,6 @@ class ExplainableChessEngine:
         print("\n" + "=" * 50)
         print(self.board)
         print("=" * 50)
-        print(f"Turn: {'White' if self.board.turn else 'Black'}")
-        print(f"FEN: {self.board.fen()}")
-        print(f"Moves played: {len(self.move_history)}")
-        print("=" * 50)
 
     def print_legal_moves(self):
         """Print all legal moves."""
@@ -623,19 +585,11 @@ class ExplainableChessEngine:
 
     def play_interactive_game(self):
         """Play an interactive chess game against Stockfish with explanations."""
-        print("🎯 Welcome to the Explainable Chess Engine!")
-        print(f"Playing against Stockfish ({self.opponent_strength} level)")
-        print(
-            "You are White. Make moves in standard algebraic notation (e.g., 'e4', 'Nf3', 'O-O')"
-        )
-        print("Type 'help' for commands, 'quit' to exit")
 
         while not self.board.is_game_over():
-            self.print_board()
-
             if self.board.turn == chess.WHITE:
-                # Human player's turn
-                self.print_legal_moves()
+                # Only print board when it's the human player's turn
+                self.print_board()
                 user_input = input("\nWhite to move: ").strip()
 
                 if user_input.lower() == "quit":
@@ -652,21 +606,21 @@ class ExplainableChessEngine:
 
                 # Try to make the move
                 if self.make_move(user_input):
-                    print(f"✅ Move {user_input} played")
-
                     # Analyze the human's move and provide explanation
                     last_move = self.move_history[-1]
                     temp_board = self.board.copy()
                     temp_board.pop()  # Undo the last move to analyze it
                     explanation = self.explain_move_with_board(last_move, temp_board)
 
-                    print("\n📊 Your Move Analysis:")
-                    print(f"   {explanation.overall_explanation}")
+                    print(f"\nYour {explanation.overall_explanation}")
 
-                    # Show what the best move would have been
+                    # Show what the best move would have been ONLY if it differs from what was played
                     if not self.board.is_game_over():
                         best_recommendation = self.get_best_move_for_player()
-                        if best_recommendation:
+                        if (
+                            best_recommendation
+                            and best_recommendation.move != last_move
+                        ):
                             temp_board = self.board.copy()
                             temp_board.pop()  # Undo the last move
                             try:
@@ -674,14 +628,12 @@ class ExplainableChessEngine:
                             except Exception:
                                 move_str = str(best_recommendation.move)
 
-                            print(f"\n💡 Best move would be: {move_str}")
-                            print(f"   {best_recommendation.overall_explanation}")
+                            print(f"\nBest {best_recommendation.overall_explanation}")
                 else:
                     print("❌ Invalid move. Try again.")
                     continue
             else:
                 # Stockfish's turn
-                print(f"\n🤖 Stockfish ({self.opponent_strength}) is thinking...")
                 stockfish_move = self.get_stockfish_move()
 
                 if stockfish_move:
@@ -695,17 +647,7 @@ class ExplainableChessEngine:
                     self.board.push(stockfish_move)
                     self.move_history.append(stockfish_move)
 
-                    print(f"🤖 Stockfish plays: {move_str}")
-
-                    # Analyze Stockfish's move
-                    temp_board = self.board.copy()
-                    temp_board.pop()  # Undo the last move to analyze it
-                    explanation = self.explain_move_with_board(
-                        stockfish_move, temp_board
-                    )
-
-                    print("\n📊 Stockfish's Move Analysis:")
-                    print(f"   {explanation.overall_explanation}")
+                    print(f"\n🤖 Stockfish plays: {move_str}")
                 else:
                     print("❌ Stockfish failed to make a move. Game over.")
                     break

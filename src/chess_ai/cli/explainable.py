@@ -43,15 +43,6 @@ Examples:
 
     args = parser.parse_args()
 
-    print("🎯 Explainable Chess Engine")
-    print("=" * 50)
-    print(
-        "This engine will analyze your moves and explain what you should have done instead."
-    )
-    print("Make moves in standard algebraic notation (e4, Nf3, O-O, etc.)")
-    print("Type 'help' for commands, 'quit' to exit")
-    print("=" * 50)
-
     try:
         with ExplainableChessEngine(args.engine, args.depth, args.strength) as engine:
             engine.play_interactive_game()

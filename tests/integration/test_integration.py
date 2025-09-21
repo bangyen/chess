@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import chess
 import pytest
 
-from chess_feature_audit import (
+from chess_ai import (
     AuditResult,
     SFConfig,
     audit_feature_set,
@@ -76,7 +76,7 @@ class TestIntegration:
 
     def test_metrics_integration(self):
         """Test metrics with real chess positions."""
-        from chess_feature_audit.metrics import (
+        from chess_ai.metrics import (
             kendall_tau,
             passed_pawn_momentum_snapshot,
         )
@@ -106,9 +106,9 @@ class TestIntegration:
 
     def test_sampling_integration(self):
         """Test position sampling integration."""
-        from chess_feature_audit.utils import sample_random_positions
+        from chess_ai.utils import sample_random_positions
 
-        with patch("chess_feature_audit.utils.sampling.tqdm") as mock_tqdm:
+        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(3)
 
             positions = sample_random_positions(3, max_random_plies=15)
@@ -138,8 +138,8 @@ class TestIntegration:
         assert len(result.stable_features) == 2
         assert len(result.top_features_by_coef) == 2
 
-    @patch("chess_feature_audit.audit.sf_eval")
-    @patch("chess_feature_audit.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_integration(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit integration with mocked engine."""
         # Setup mocks
@@ -239,7 +239,7 @@ def extract_features(board):
             assert "mobility_us" in features
 
         # 4. Test metrics
-        from chess_feature_audit.metrics import kendall_tau
+        from chess_ai.metrics import kendall_tau
 
         rank_a = [1, 2, 3]
         rank_b = [1, 2, 3]
@@ -271,7 +271,7 @@ def extract_features(board):
 
         # Test invalid rankings for Kendall tau
         with pytest.raises(AssertionError):
-            from chess_feature_audit.metrics import kendall_tau
+            from chess_ai.metrics import kendall_tau
 
             kendall_tau([1, 2, 3], [1, 2])  # Different lengths
 
@@ -299,7 +299,7 @@ def extract_features(board):
         assert isinstance(features, dict)
 
         # Test metrics performance
-        from chess_feature_audit.metrics import kendall_tau
+        from chess_ai.metrics import kendall_tau
 
         start_time = time.time()
         tau = kendall_tau([1, 2, 3, 4, 5], [1, 2, 3, 4, 5])

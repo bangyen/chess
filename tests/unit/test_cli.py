@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from chess_feature_audit.cli import main
+from chess_ai.cli.audit import main
 
 
 class TestCLI:
@@ -30,12 +30,10 @@ class TestCLI:
         """Test CLI with engine from environment variable."""
         with patch("sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]):
             with patch("os.environ.get", return_value="/path/to/stockfish"):
-                with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                    with patch(
-                        "chess_feature_audit.cli.audit_feature_set"
-                    ) as mock_audit:
+                with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                    with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                         with patch(
-                            "chess_feature_audit.cli.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
@@ -74,10 +72,10 @@ class TestCLI:
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -116,10 +114,10 @@ class TestCLI:
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -172,12 +170,10 @@ def extract_features(board):
                     "2",
                 ],
             ):
-                with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                    with patch(
-                        "chess_feature_audit.cli.audit_feature_set"
-                    ) as mock_audit:
+                with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                    with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                         with patch(
-                            "chess_feature_audit.cli.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
@@ -226,13 +222,13 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_positions_from_pgn"
+                        "chess_ai.utils.sampling.sample_positions_from_pgn"
                     ) as mock_sample_pgn:
                         with patch(
-                            "chess_feature_audit.cli.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample_random:
                             # Setup mocks
                             mock_engine = Mock()
@@ -285,10 +281,10 @@ def extract_features(board):
                 "123",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -330,10 +326,10 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -375,13 +371,13 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_positions_from_pgn"
+                        "chess_ai.utils.sampling.sample_positions_from_pgn"
                     ) as mock_sample_pgn:
                         with patch(
-                            "chess_feature_audit.cli.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample_random:
                             # Setup mocks
                             mock_engine = Mock()
@@ -420,10 +416,10 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -464,10 +460,10 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -499,10 +495,10 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                             # Setup mocks
@@ -558,10 +554,10 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("chess_feature_audit.cli.sf_open") as mock_sf_open:
-                with patch("chess_feature_audit.cli.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.audit.audit_feature_set") as mock_audit:
                     with patch(
-                        "chess_feature_audit.cli.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         with patch("random.seed") as mock_random_seed:
                             with patch("numpy.random.seed") as mock_numpy_seed:

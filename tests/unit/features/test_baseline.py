@@ -2,7 +2,7 @@
 
 import chess
 
-from chess_feature_audit.features.baseline import baseline_extract_features
+from chess_ai.features.baseline import baseline_extract_features
 
 
 class TestBaselineFeatures:

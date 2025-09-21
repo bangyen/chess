@@ -7,7 +7,7 @@ from unittest.mock import patch
 import chess
 import pytest
 
-from chess_feature_audit.utils.sampling import (
+from chess_ai.utils.sampling import (
     sample_positions_from_pgn,
     sample_random_positions,
 )
@@ -18,7 +18,7 @@ class TestSampling:
 
     def test_sample_random_positions_basic(self):
         """Test basic random position sampling."""
-        with patch("chess_feature_audit.utils.sampling.tqdm") as mock_tqdm:
+        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(3)  # Mock tqdm to return simple range
 
             positions = sample_random_positions(3, max_random_plies=15)
@@ -35,7 +35,7 @@ class TestSampling:
 
     def test_sample_random_positions_single(self):
         """Test sampling a single position."""
-        with patch("chess_feature_audit.utils.sampling.tqdm") as mock_tqdm:
+        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(1)
 
             positions = sample_random_positions(1, max_random_plies=10)
@@ -158,7 +158,7 @@ class TestSampling:
 
     def test_sample_random_positions_max_plies(self):
         """Test different max_random_plies values."""
-        with patch("chess_feature_audit.utils.sampling.tqdm") as mock_tqdm:
+        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(2)
 
             # Test with different max plies
@@ -172,7 +172,7 @@ class TestSampling:
 
     def test_sample_random_positions_game_over_handling(self):
         """Test that game over positions are handled correctly."""
-        with patch("chess_feature_audit.utils.sampling.tqdm") as mock_tqdm:
+        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(5)
 
             positions = sample_random_positions(5, max_random_plies=100)

@@ -6,16 +6,16 @@ build-backend = "setuptools.build_meta"
 py-modules = []
 
 [project]
-name = "chess-feature-audit"
+name = "chess-ai"
 version = "0.1.0"
-description = "Chess feature explainability audit tool"
+description = "Chess AI tools for feature analysis and explainable gameplay"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Your Name", email = "your.email@example.com"},
 ]
-keywords = ["chess", "machine-learning", "explainability", "features"]
+keywords = ["chess", "ai", "machine-learning", "explainability", "features", "engine"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

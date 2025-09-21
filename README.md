@@ -23,15 +23,22 @@ A comprehensive chess AI toolkit featuring feature explainability analysis and a
 
 2. **Run Feature Audit**:
    ```bash
-   python -m src.chess_ai.cli.audit
+   # Using the unified CLI
+   chess-ai audit --baseline_features --positions 100
+   
+   # Or using the direct command
+   chess-ai-audit --baseline_features --positions 100
    ```
 
 3. **Play Explainable Chess**:
    ```bash
-   # Play against Stockfish with explanations (default: beginner level)
-   python -m src.chess_ai.cli.explainable
+   # Using the unified CLI (recommended)
+   chess-ai play --strength intermediate
    
-   # Play against stronger Stockfish
+   # Or using the direct command
+   chess-ai-play --strength intermediate
+   
+   # Legacy module syntax still works
    python -m src.chess_ai.cli.explainable --strength intermediate
    ```
 
@@ -43,6 +50,32 @@ A comprehensive chess AI toolkit featuring feature explainability analysis and a
    make test   # Run tests
    make all    # Run all checks
    ```
+
+## CLI Commands
+
+The chess AI package provides several command-line interfaces:
+
+### Unified CLI (Recommended)
+```bash
+chess-ai <command> [options]
+```
+
+**Available commands:**
+- `chess-ai audit` - Run feature explainability audit
+- `chess-ai play` - Play interactive chess with explanations
+- `chess-ai help` - Show help (default)
+
+### Direct Commands
+```bash
+chess-ai-audit [options]    # Feature audit tool
+chess-ai-play [options]     # Explainable chess engine
+```
+
+### Legacy Module Syntax
+```bash
+python -m src.chess_ai.cli.audit [options]
+python -m src.chess_ai.cli.explainable [options]
+```
 
 ## Project Structure
 
@@ -74,10 +107,13 @@ The explainable chess engine provides interactive chess games with AI-powered mo
 ### Usage Examples
 
 ```bash
-# Start a game against beginner Stockfish
-python -m src.chess_ai.cli.explainable
+# Start a game against beginner Stockfish (recommended)
+chess-ai play
 
 # Play against intermediate Stockfish
+chess-ai play --strength intermediate
+
+# Legacy syntax still works
 python -m src.chess_ai.cli.explainable --strength intermediate
 
 # Game session example:

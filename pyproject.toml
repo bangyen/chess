@@ -46,7 +46,9 @@ dev = [
 ]
 
 [project.scripts]
-chess-feature-audit = "chess_ai.cli.audit:main"
+chess-ai-audit = "chess_ai.cli.audit:main"
+chess-ai-play = "chess_ai.cli.explainable:main"
+chess-ai = "chess_ai.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/chess-feature-audit"

@@ -7,10 +7,10 @@ import sys
 
 import numpy as np
 
-from .audit import audit_feature_set
-from .engine import SFConfig, sf_open
-from .features import baseline_extract_features, load_feature_module
-from .utils import sample_positions_from_pgn, sample_random_positions
+from ..audit import audit_feature_set
+from ..engine import SFConfig, sf_open
+from ..features import baseline_extract_features, load_feature_module
+from ..utils import sample_positions_from_pgn, sample_random_positions
 
 
 def main():

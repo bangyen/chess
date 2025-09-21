@@ -5,7 +5,7 @@ import tempfile
 
 import pytest
 
-from chess_feature_audit.features.utils import load_feature_module
+from chess_ai.features.utils import load_feature_module
 
 
 class TestFeatureUtils:

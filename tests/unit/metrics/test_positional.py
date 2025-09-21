@@ -2,7 +2,7 @@
 
 import chess
 
-from chess_feature_audit.metrics.positional import (
+from chess_ai.metrics.positional import (
     PIECE_VAL,
     _blockaded,
     _is_passed_pawn,

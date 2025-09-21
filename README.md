@@ -128,19 +128,12 @@ python -m src.chess_ai.cli.explainable --strength intermediate
 
 # Game session example:
 White to move: e4
-✅ Move e4 played
 
-📊 Your Move Analysis:
-   Move e4 is reasonable. Positive aspects: Controls central squares, Develops pawn from starting position.
+Your Move e4:
+- Controls central squares
+- Develops pawn from starting position
 
-💡 Best move would be: e4
-   Move e4 is excellent. Positive aspects: Controls central squares, Develops pawn from starting position.
-
-🤖 Stockfish (beginner) is thinking...
 🤖 Stockfish plays: e5
-
-📊 Stockfish's Move Analysis:
-   Move e5 is good. Positive aspects: Controls central squares, Develops pawn from starting position.
 ```
 
 ### Commands

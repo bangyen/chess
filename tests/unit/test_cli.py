@@ -37,6 +37,15 @@ class TestCLI:
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
+                            # Mock the analyse method to return proper structure
+                            mock_score = Mock()
+                            mock_score.pov.return_value = mock_score
+                            mock_score.score.return_value = 0.5
+                            mock_engine.analyse.return_value = [
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                            ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
                             # Create proper mock result
@@ -79,6 +88,15 @@ class TestCLI:
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
                         # Create proper mock result
@@ -121,6 +139,15 @@ class TestCLI:
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
                         # Create proper mock result
@@ -177,6 +204,15 @@ def extract_features(board):
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
+                            # Mock the analyse method to return proper structure
+                            mock_score = Mock()
+                            mock_score.pov.return_value = mock_score
+                            mock_score.score.return_value = 0.5
+                            mock_engine.analyse.return_value = [
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                            ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
                             # Create proper mock result
@@ -232,6 +268,15 @@ def extract_features(board):
                         ) as mock_sample_random:
                             # Setup mocks
                             mock_engine = Mock()
+                            # Mock the analyse method to return proper structure
+                            mock_score = Mock()
+                            mock_score.pov.return_value = mock_score
+                            mock_score.score.return_value = 0.5
+                            mock_engine.analyse.return_value = [
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                            ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
@@ -288,6 +333,15 @@ def extract_features(board):
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock() for _ in range(10)]
                         # Create proper mock result
@@ -333,6 +387,15 @@ def extract_features(board):
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
                         # Create proper mock result
@@ -381,6 +444,15 @@ def extract_features(board):
                         ) as mock_sample_random:
                             # Setup mocks
                             mock_engine = Mock()
+                            # Mock the analyse method to return proper structure
+                            mock_score = Mock()
+                            mock_score.pov.return_value = mock_score
+                            mock_score.score.return_value = 0.5
+                            mock_engine.analyse.return_value = [
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                            ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample_pgn.return_value = [Mock(), Mock()]
                             mock_sample_random.return_value = []
@@ -423,6 +495,15 @@ def extract_features(board):
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
                         # Create proper mock result
@@ -467,6 +548,15 @@ def extract_features(board):
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
+                        # Mock the analyse method to return proper structure
+                        mock_score = Mock()
+                        mock_score.pov.return_value = mock_score
+                        mock_score.score.return_value = 0.5
+                        mock_engine.analyse.return_value = [
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                            {"score": mock_score, "pv": []},
+                        ]
                         mock_sf_open.return_value = mock_engine
                         mock_sample.return_value = [Mock(), Mock()]
                         mock_audit.side_effect = Exception("Audit failed")
@@ -503,6 +593,15 @@ def extract_features(board):
                         with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                             # Setup mocks
                             mock_engine = Mock()
+                            # Mock the analyse method to return proper structure
+                            mock_score = Mock()
+                            mock_score.pov.return_value = mock_score
+                            mock_score.score.return_value = 0.5
+                            mock_engine.analyse.return_value = [
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                                {"score": mock_score, "pv": []},
+                            ]
                             mock_sf_open.return_value = mock_engine
                             mock_sample.return_value = [Mock(), Mock()]
 
@@ -566,6 +665,15 @@ def extract_features(board):
                                 mock_numpy_seed.return_value = None
                                 # Setup mocks
                                 mock_engine = Mock()
+                                # Mock the analyse method to return proper structure
+                                mock_score = Mock()
+                                mock_score.pov.return_value = mock_score
+                                mock_score.score.return_value = 0.5
+                                mock_engine.analyse.return_value = [
+                                    {"score": mock_score, "pv": []},
+                                    {"score": mock_score, "pv": []},
+                                    {"score": mock_score, "pv": []},
+                                ]
                                 mock_sf_open.return_value = mock_engine
                                 mock_sample.return_value = [Mock(), Mock()]
                                 # Create proper mock result

@@ -32,7 +32,9 @@ A comprehensive chess AI toolkit featuring feature explainability analysis, adva
    # Activate virtual environment (required)
    source venv/bin/activate  # On macOS/Linux
    # or
-   venv\Scripts\activate     # On Windows
+   venv\Scripts\activate.bat # On Windows (Command Prompt)
+   # or
+   venv\Scripts\Activate.ps1 # On Windows (PowerShell)
    
    # Install dependencies and setup development tools
    make init
@@ -42,6 +44,8 @@ A comprehensive chess AI toolkit featuring feature explainability analysis, adva
    ```bash
    chess-ai audit --baseline_features --positions 100
    ```
+   
+   ![Terminal Demo](https://github.com/bangyen/chess/raw/main/docs/audit-demo.gif)
 
 3. **Play Explainable Chess**:
    ```bash

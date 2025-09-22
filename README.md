@@ -99,18 +99,17 @@ chess-ai-play [options]     # Direct play command
 │   │   └── positional.py       # Positional analysis metrics
 │   └── utils/                  # General utilities
 │       └── sampling.py         # Position sampling utilities
-├── tests/                     # Comprehensive test suite
-│   ├── unit/                  # Unit tests
-│   │   ├── engine/            # Engine tests
-│   │   ├── features/          # Feature tests
-│   │   ├── metrics/           # Metrics tests
-│   │   └── utils/             # Utility tests
-│   └── integration/           # Integration tests
-├── scripts/                   # Utility scripts
-├── venv/                      # Virtual environment
-├── Makefile                   # Development commands
-├── pyproject.toml            # Package configuration
-└── README.md                 # This file
+├── tests/                      # Comprehensive test suite
+│   ├── unit/                   # Unit tests
+│   │   ├── engine/             # Engine tests
+│   │   ├── features/           # Feature tests
+│   │   ├── metrics/            # Metrics tests
+│   │   └── utils/              # Utility tests
+│   └── integration/            # Integration tests
+├── scripts/                    # Utility scripts
+├── Makefile                    # Development commands
+├── pyproject.toml              # Package configuration
+└── README.md                   # This file
 ```
 
 ## Explainable Chess Engine

@@ -32,7 +32,9 @@ class TestCLI:
         with patch("sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]):
             with patch("os.environ.get", return_value="/path/to/stockfish"):
                 with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    with patch(
+                        "src.chess_ai.cli.audit.audit_feature_set"
+                    ) as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
                             def __init__(self):
@@ -216,7 +218,9 @@ def extract_features(board):
                 ],
             ):
                 with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+                    with patch(
+                        "src.chess_ai.cli.audit.audit_feature_set"
+                    ) as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
                             def __init__(self):

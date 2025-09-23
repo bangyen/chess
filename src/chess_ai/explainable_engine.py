@@ -60,7 +60,10 @@ class ExplainableChessEngine:
         opponent_strength: str = "beginner",
     ):
         """Initialize the explainable chess engine."""
-        self.stockfish_path = stockfish_path or find_stockfish()
+        if stockfish_path is None:
+            self.stockfish_path = find_stockfish()
+        else:
+            self.stockfish_path = stockfish_path
         self.depth = depth
         self.opponent_strength = opponent_strength
         self.engine = None
@@ -82,12 +85,15 @@ class ExplainableChessEngine:
 
     def __enter__(self):
         """Context manager entry."""
-        if not self.stockfish_path:
-            print("⚠️  Stockfish not found. Install Stockfish for full functionality.")
-            print("   On Ubuntu/Debian: sudo apt install stockfish")
-            print("   On macOS: brew install stockfish")
-            print("   On Windows: Download from https://stockfishchess.org/")
-            return self
+        if not self.stockfish_path or not self.stockfish_path.strip():
+            raise RuntimeError(
+                "Stockfish not found! Please install Stockfish:\n"
+                "  • Ubuntu/Debian: sudo apt install stockfish\n"
+                "  • macOS: brew install stockfish\n"
+                "  • Windows: Download from https://stockfishchess.org/\n"
+                "  • Google Colab: !apt install stockfish\n"
+                "  • Or add Stockfish to your PATH"
+            )
             
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
@@ -103,9 +109,10 @@ class ExplainableChessEngine:
 
             return self
         except Exception as e:
-            print(f"⚠️  Failed to start Stockfish: {e}")
-            print("   Continuing without engine support...")
-            return self
+            raise RuntimeError(
+                f"Failed to start Stockfish at {self.stockfish_path}: {e}\n"
+                "Please ensure Stockfish is properly installed and accessible."
+            )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""

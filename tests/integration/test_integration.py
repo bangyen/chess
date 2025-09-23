@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import chess
 import pytest
 
-from chess_ai import (
+from src.chess_ai import (
     AuditResult,
     SFConfig,
     audit_feature_set,
@@ -106,9 +106,9 @@ class TestIntegration:
 
     def test_sampling_integration(self):
         """Test position sampling integration."""
-        from chess_ai.utils import sample_random_positions
+        from src.chess_ai.utils import sample_random_positions
 
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
+        with patch("src.chess_ai.utils.sampling.tqdm") as mock_tqdm:
             mock_tqdm.return_value = range(3)
 
             positions = sample_random_positions(3, max_random_plies=15)
@@ -138,8 +138,8 @@ class TestIntegration:
         assert len(result.stable_features) == 2
         assert len(result.top_features_by_coef) == 2
 
-    @patch("chess_ai.audit.sf_eval")
-    @patch("chess_ai.audit.sf_top_moves")
+    @patch("src.chess_ai.audit.sf_eval")
+    @patch("src.chess_ai.audit.sf_top_moves")
     def test_audit_integration(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit integration with mocked engine."""
         # Setup mocks

@@ -24,6 +24,8 @@ A comprehensive chess AI toolkit featuring feature explainability analysis, adva
 
 ## Quick Start
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb)
+
 1. **Clone and setup**:
    ```bash
    git clone https://github.com/bangyen/chess.git
@@ -155,8 +157,8 @@ Your Move e4:
 
 ### Feature Analysis
 ```python
-from chess_ai import audit_feature_set, baseline_extract_features
-from chess_ai.engine import SFConfig, sf_open
+from src.chess_ai import audit_feature_set, baseline_extract_features
+from src.chess_ai.engine import SFConfig, sf_open
 
 # Run feature explainability audit
 config = SFConfig(engine_path="/path/to/stockfish", depth=15, multipv=3)
@@ -173,8 +175,8 @@ print(f"R² Score: {result.r2_score}")
 ### Positional Metrics
 ```python
 import chess
-from chess_ai.metrics.positional import passed_pawn_momentum_snapshot
-from chess_ai.features.baseline import baseline_extract_features
+from src.chess_ai.metrics.positional import passed_pawn_momentum_snapshot
+from src.chess_ai.features.baseline import baseline_extract_features
 
 # Analyze position
 momentum = passed_pawn_momentum_snapshot(board, chess.WHITE)

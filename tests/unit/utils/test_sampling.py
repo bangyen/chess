@@ -7,7 +7,7 @@ from unittest.mock import patch
 import chess
 import pytest
 
-from chess_ai.utils.sampling import (
+from src.chess_ai.utils.sampling import (
     sample_positions_from_pgn,
     sample_random_positions,
 )

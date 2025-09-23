@@ -34,6 +34,7 @@ def find_stockfish() -> Optional[str]:
 
     # Try to find in PATH
     stockfish_path = shutil.which("stockfish")
+
     if stockfish_path:
         return stockfish_path
 

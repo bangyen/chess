@@ -4,8 +4,8 @@ from unittest.mock import Mock, patch
 
 import chess
 
-from chess_ai.engine.config import SFConfig
-from chess_ai.engine.interface import sf_eval, sf_open, sf_top_moves
+from src.chess_ai.engine.config import SFConfig
+from src.chess_ai.engine.interface import sf_eval, sf_open, sf_top_moves
 
 
 class TestEngineInterface:

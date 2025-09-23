@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from chess_ai.metrics.kendall import kendall_tau
+from src.chess_ai.metrics.kendall import kendall_tau
 
 
 class TestKendallTau:

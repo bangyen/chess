@@ -7,11 +7,37 @@ An interactive chess engine that analyzes your moves and explains what you shoul
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+import os
+import shutil
 import chess
 import chess.engine
 import chess.pgn
 
 from .features import baseline_extract_features
+
+
+def find_stockfish() -> Optional[str]:
+    """Find Stockfish executable on the system."""
+    # Common paths for Stockfish
+    common_paths = [
+        "/opt/homebrew/bin/stockfish",  # macOS Homebrew
+        "/usr/local/bin/stockfish",     # macOS/Linux local install
+        "/usr/bin/stockfish",           # Linux package manager
+        "/usr/games/stockfish",         # Ubuntu/Debian
+        "stockfish",                    # In PATH
+    ]
+    
+    # Check each path
+    for path in common_paths:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    
+    # Try to find in PATH
+    stockfish_path = shutil.which("stockfish")
+    if stockfish_path:
+        return stockfish_path
+    
+    return None
 
 
 @dataclass
@@ -29,12 +55,12 @@ class ExplainableChessEngine:
 
     def __init__(
         self,
-        stockfish_path: str = "/opt/homebrew/bin/stockfish",
+        stockfish_path: Optional[str] = None,
         depth: int = 16,
         opponent_strength: str = "beginner",
     ):
         """Initialize the explainable chess engine."""
-        self.stockfish_path = stockfish_path
+        self.stockfish_path = stockfish_path or find_stockfish()
         self.depth = depth
         self.opponent_strength = opponent_strength
         self.engine = None
@@ -56,18 +82,30 @@ class ExplainableChessEngine:
 
     def __enter__(self):
         """Context manager entry."""
-        self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+        if not self.stockfish_path:
+            print("⚠️  Stockfish not found. Install Stockfish for full functionality.")
+            print("   On Ubuntu/Debian: sudo apt install stockfish")
+            print("   On macOS: brew install stockfish")
+            print("   On Windows: Download from https://stockfishchess.org/")
+            return self
+            
+        try:
+            self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
 
-        # Configure Stockfish strength
-        if self.opponent_strength in self.strength_settings:
-            settings = self.strength_settings[self.opponent_strength]
-            for option, value in settings.items():
-                try:
-                    self.engine.configure({option: value})
-                except chess.engine.EngineError:
-                    pass  # Some options might not be available in all Stockfish versions
+            # Configure Stockfish strength
+            if self.opponent_strength in self.strength_settings:
+                settings = self.strength_settings[self.opponent_strength]
+                for option, value in settings.items():
+                    try:
+                        self.engine.configure({option: value})
+                    except chess.engine.EngineError:
+                        pass  # Some options might not be available in all Stockfish versions
 
-        return self
+            return self
+        except Exception as e:
+            print(f"⚠️  Failed to start Stockfish: {e}")
+            print("   Continuing without engine support...")
+            return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""

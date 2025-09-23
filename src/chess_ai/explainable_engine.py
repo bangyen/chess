@@ -4,11 +4,11 @@ Explainable Chess Engine
 An interactive chess engine that analyzes your moves and explains what you should have done instead.
 """
 
+import os
+import shutil
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-import os
-import shutil
 import chess
 import chess.engine
 import chess.pgn
@@ -21,22 +21,22 @@ def find_stockfish() -> Optional[str]:
     # Common paths for Stockfish
     common_paths = [
         "/opt/homebrew/bin/stockfish",  # macOS Homebrew
-        "/usr/local/bin/stockfish",     # macOS/Linux local install
-        "/usr/bin/stockfish",           # Linux package manager
-        "/usr/games/stockfish",         # Ubuntu/Debian
-        "stockfish",                    # In PATH
+        "/usr/local/bin/stockfish",  # macOS/Linux local install
+        "/usr/bin/stockfish",  # Linux package manager
+        "/usr/games/stockfish",  # Ubuntu/Debian
+        "stockfish",  # In PATH
     ]
-    
+
     # Check each path
     for path in common_paths:
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
-    
+
     # Try to find in PATH
     stockfish_path = shutil.which("stockfish")
     if stockfish_path:
         return stockfish_path
-    
+
     return None
 
 
@@ -94,7 +94,7 @@ class ExplainableChessEngine:
                 "  • Google Colab: !apt install stockfish\n"
                 "  • Or add Stockfish to your PATH"
             )
-            
+
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
 
@@ -112,7 +112,7 @@ class ExplainableChessEngine:
             raise RuntimeError(
                 f"Failed to start Stockfish at {self.stockfish_path}: {e}\n"
                 "Please ensure Stockfish is properly installed and accessible."
-            )
+            ) from e
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""

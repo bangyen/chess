@@ -63,9 +63,5 @@ Examples:
         sys.exit(1)
 
 
-# Add attributes for testing (type: ignore for dynamic attributes)
-main.audit_main = audit_main  # type: ignore[attr-defined]
-main.explainable_main = explainable_main  # type: ignore[attr-defined]
-
 if __name__ == "__main__":
     main()

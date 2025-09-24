@@ -51,7 +51,7 @@ chess/
 
 ## Validation
 
-- ✅ Full test coverage (`pytest`)
+- ✅ Overall test coverage of 85% (`pytest`)
 - ✅ Reproducible seeds for experiments
 - ✅ Benchmark scripts included
 

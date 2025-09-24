@@ -4,8 +4,6 @@ Explainable Chess Engine
 An interactive chess engine that analyzes your moves and explains what you should have done instead.
 """
 
-import os
-import shutil
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -14,31 +12,6 @@ import chess.engine
 import chess.pgn
 
 from .features import baseline_extract_features
-
-
-def find_stockfish() -> Optional[str]:
-    """Find Stockfish executable on the system."""
-    # Common paths for Stockfish
-    common_paths = [
-        "/opt/homebrew/bin/stockfish",  # macOS Homebrew
-        "/usr/local/bin/stockfish",  # macOS/Linux local install
-        "/usr/bin/stockfish",  # Linux package manager
-        "/usr/games/stockfish",  # Ubuntu/Debian
-        "stockfish",  # In PATH
-    ]
-
-    # Check each path
-    for path in common_paths:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
-
-    # Try to find in PATH
-    stockfish_path = shutil.which("stockfish")
-
-    if stockfish_path:
-        return stockfish_path
-
-    return None
 
 
 @dataclass
@@ -56,15 +29,12 @@ class ExplainableChessEngine:
 
     def __init__(
         self,
-        stockfish_path: Optional[str] = None,
+        stockfish_path: str,
         depth: int = 16,
         opponent_strength: str = "beginner",
     ):
         """Initialize the explainable chess engine."""
-        if stockfish_path is None:
-            self.stockfish_path = find_stockfish()
-        else:
-            self.stockfish_path = stockfish_path
+        self.stockfish_path = stockfish_path
         self.depth = depth
         self.opponent_strength = opponent_strength
         self.engine = None
@@ -739,28 +709,7 @@ class ExplainableChessEngine:
             print("❌ Could not get move recommendation")
 
 
-def main():
-    """Main function to run the explainable chess engine."""
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Explainable Chess Engine")
-    parser.add_argument(
-        "--engine",
-        default="/opt/homebrew/bin/stockfish",
-        help="Path to Stockfish engine",
-    )
-    parser.add_argument("--depth", type=int, default=16, help="Search depth")
-
-    args = parser.parse_args()
-
-    try:
-        with ExplainableChessEngine(args.engine, args.depth) as engine:
-            engine.play_interactive_game()
-    except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
-    except Exception as e:
-        print(f"❌ Error: {e}")
-
-
 if __name__ == "__main__":
+    from src.chess_ai.cli.explainable import main
+
     main()

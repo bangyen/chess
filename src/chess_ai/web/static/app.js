@@ -155,8 +155,9 @@ class ChessApp {
     if (topFeatures.length > 0) {
       html += '<p class="text-muted">Key factors:</p>';
       topFeatures.forEach(([name, value]) => {
+        const formattedName = this.formatFeatureName(name);
         const formattedValue = value.toFixed(2);
-        html += `<p class="feature-name">${name}: <span class="mono">${formattedValue}</span></p>`;
+        html += `<p class="feature-name">${formattedName}: <span class="mono">${formattedValue}</span></p>`;
       });
     }
     
@@ -168,6 +169,21 @@ class ChessApp {
     container.innerHTML = '<p class="text-muted">Make a move or request an engine move to see analysis.</p>';
   }
 
+  formatFeatureName(name) {
+    // Replace _us and _them with player indicators
+    let formatted = name
+      .replace(/_us$/, ' (White)')
+      .replace(/_them$/, ' (Black)');
+    
+    // Convert snake_case to Title Case
+    formatted = formatted
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    return formatted;
+  }
+
   displayFeatures(features) {
     const container = document.getElementById('features-table');
     const sortedFeatures = Object.entries(features)
@@ -175,10 +191,11 @@ class ChessApp {
     
     let html = '';
     sortedFeatures.forEach(([name, value]) => {
+      const formattedName = this.formatFeatureName(name);
       const formattedValue = value.toFixed(3);
       html += `
         <div class="feature-row">
-          <span class="feature-name">${name}</span>
+          <span class="feature-name">${formattedName}</span>
           <span class="feature-value">${formattedValue}</span>
         </div>
       `;

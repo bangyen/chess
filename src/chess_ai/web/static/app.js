@@ -135,9 +135,9 @@ class ChessApp {
       // Update board label
       const boardLabel = document.getElementById('board-label');
       if (data.turn === 'white') {
-        boardLabel.textContent = 'White to move (bottom, outlined pieces ♔)';
+        boardLabel.textContent = 'White to move';
       } else {
-        boardLabel.textContent = 'Black to move (top, filled pieces ♚)';
+        boardLabel.textContent = 'Black to move';
       }
     } catch (error) {
       console.error('Failed to update game state:', error);

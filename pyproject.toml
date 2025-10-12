@@ -33,6 +33,7 @@ dependencies = [
     "scikit-learn>=1.0.0",
     "tqdm>=4.60.0",
     "python-chess>=1.999",
+    "flask>=3.0.0",
 ]
 
 [project.optional-dependencies]
@@ -49,6 +50,7 @@ dev = [
 chess-ai-audit = "chess_ai.cli.audit:main"
 chess-ai-play = "chess_ai.cli.explainable:main"
 chess-ai = "chess_ai.cli.main:main"
+chess-ai-web = "chess_ai.web.app:run_server"
 
 [project.urls]
 Homepage = "https://github.com/yourusername/chess-feature-audit"

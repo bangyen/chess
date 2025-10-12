@@ -144,8 +144,17 @@ body {
 .board-container {
   padding: var(--space-xl);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
   background: rgba(15, 19, 24, 0.5);
+}
+
+.board-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
 }
 
 .chess-board {

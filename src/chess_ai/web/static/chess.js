@@ -3,8 +3,8 @@
  */
 
 const PIECES = {
-  'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
-  'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
+  'P': '♟', 'N': '♞', 'B': '♝', 'R': '♜', 'Q': '♛', 'K': '♚',
+  'p': '♙', 'n': '♘', 'b': '♗', 'r': '♖', 'q': '♕', 'k': '♔'
 };
 
 class ChessBoard {
@@ -70,7 +70,7 @@ class ChessBoard {
   render() {
     this.element.innerHTML = '';
     
-    for (let rank = 7; rank >= 0; rank--) {
+    for (let rank = 0; rank < 8; rank++) {
       for (let file = 0; file < 8; file++) {
         const square = document.createElement('div');
         square.className = 'square';

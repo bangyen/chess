@@ -321,35 +321,6 @@ body {
   color: var(--accent);
 }
 
-.metrics-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
-}
-
-.metrics-table thead {
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-.metrics-table th {
-  padding: var(--space-md);
-  text-align: left;
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-}
-
-.metrics-table td {
-  padding: var(--space-md);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-.metrics-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
 .footer {
   border-top: var(--border-width) solid var(--border);
   padding: var(--space-xl) 0;

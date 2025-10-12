@@ -161,7 +161,6 @@ body {
 }
 
 .square {
-  aspect-ratio: 1;
   position: relative;
   display: flex;
   align-items: center;

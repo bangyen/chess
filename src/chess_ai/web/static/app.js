@@ -131,6 +131,14 @@ class ChessApp {
       document.getElementById('turn-indicator').textContent = 
         data.turn.charAt(0).toUpperCase() + data.turn.slice(1);
       document.getElementById('move-count').textContent = this.moveCount;
+      
+      // Update board label
+      const boardLabel = document.getElementById('board-label');
+      if (data.turn === 'white') {
+        boardLabel.textContent = 'White to move (bottom, outlined pieces ♔)';
+      } else {
+        boardLabel.textContent = 'Black to move (top, filled pieces ♚)';
+      }
     } catch (error) {
       console.error('Failed to update game state:', error);
     }

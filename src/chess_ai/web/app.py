@@ -65,13 +65,14 @@ class GameState:
             try:
                 result = self.engine.play(self.board, chess.engine.Limit(depth=depth))
                 move = result.move
-                explanation = self._generate_explanation(move, feature_values)
+                if move is not None:
+                    explanation = self._generate_explanation(move, feature_values)
 
-                return {
-                    "move": move.uci(),
-                    "explanation": explanation,
-                    "features": {k: float(v) for k, v in feature_values.items()},
-                }
+                    return {
+                        "move": move.uci(),
+                        "explanation": explanation,
+                        "features": {k: float(v) for k, v in feature_values.items()},
+                    }
             except Exception:
                 pass
 

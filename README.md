@@ -12,17 +12,38 @@
 
 ## Quickstart
 
-Clone the repo and run the demo:
+### Installation
 
 ```bash
 git clone https://github.com/bangyen/chess.git
 cd chess
 pip install -e .
 pytest   # optional: run tests
-chess-ai audit --baseline_features --positions 100
 ```
 
-Or open in Colab: [Colab Notebook](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb).
+### Usage Options
+
+**CLI Tools:**
+```bash
+# Run feature explainability audit
+chess-ai audit --baseline_features --positions 100
+
+# Play interactive chess with explanations
+chess-ai play --strength intermediate
+```
+
+**Web Interface:**
+```bash
+# Launch web app
+./scripts/run_web.sh
+
+# Or manually
+python -m chess_ai.web.app
+# Then open http://localhost:5000
+```
+
+**Jupyter Notebook:**  
+Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb) for interactive exploration.
 
 ## Results
 
@@ -36,18 +57,27 @@ Or open in Colab: [Colab Notebook](https://colab.research.google.com/github/bang
 
 - **Feature Explainability Audit** — ML-based evaluation of how well chess features explain Stockfish's reasoning with 87.5% decisive faithfulness.
 - **Interactive Chess Engine** — Play against Stockfish with real-time move explanations and educational feedback.
+- **Web Interface** — Clean, professional web app with Swiss + Terminal-Modern design for interactive gameplay and analysis.
 - **Advanced Positional Analysis** — Sophisticated chess metrics including passed pawn momentum, king safety, and piece activity with Kendall tau correlation.
 
 ## Repo Structure
 
 ```plaintext
 chess/
-├── chess_demo.ipynb  # Colab notebook
-├── scripts/          # Example run scripts
-├── tests/            # Unit/integration tests
-├── docs/             # Images / gifs for README
-└── src/              # Core implementation
+├── src/chess_ai/
+│   ├── cli/          # Command-line interface tools
+│   ├── engine/       # Chess engine configuration
+│   ├── features/     # Feature extraction
+│   ├── metrics/      # Evaluation metrics
+│   ├── utils/        # Helper utilities
+│   └── web/          # Web interface (Flask app)
+├── tests/            # Unit and integration tests
+├── docs/             # Documentation and design system
+├── scripts/          # Example and launch scripts
+└── chess_demo.ipynb  # Interactive Colab notebook
 ```
+
+See [docs/WEB_APP.md](docs/WEB_APP.md) for web interface documentation and [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) for design specifications.
 
 ## Validation
 

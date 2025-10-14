@@ -1,6 +1,6 @@
 # Chess AI Web Application
 
-A clean, professional web interface for the Chess AI explainability engine, built with Swiss + Terminal-Modern aesthetic principles.
+A modern, dashboard-style web interface for the Chess AI explainability engine with clean, professional design inspired by contemporary analytics dashboards.
 
 ## Architecture
 
@@ -11,20 +11,22 @@ A clean, professional web interface for the Chess AI explainability engine, buil
 - **Engine**: Optional Stockfish support for AI analysis
 
 ### Frontend
-- **Design**: Swiss + Terminal-Modern aesthetic
-- **CSS**: 6.5 KB (< 100 KB requirement)
-- **JavaScript**: Vanilla JS, no frameworks
-- **Typography**: Inter (UI), JetBrains Mono (data)
+- **Design**: Modern dashboard with sidebar navigation
+- **CSS**: Custom properties-based design system
+- **JavaScript**: Vanilla JS with Chart.js for visualizations
+- **Typography**: Space Grotesk (UI), JetBrains Mono (data)
 
 ## Design System
 
 ### Color Tokens
 ```css
---bg: #0F1318          /* Background */
---fg: #E5E7EB          /* Foreground */
---muted: #9AA3AF       /* Muted text */
---border: #1F2937      /* Borders */
---accent: #22D3EE      /* Accent (cyan) */
+--color-bg: #F5F7FA           /* Light background */
+--color-surface: #FFFFFF      /* Surface/card background */
+--color-text-primary: #1A202C /* Primary text */
+--color-text-secondary: #4A5568 /* Secondary text */
+--color-accent: #2C5F2D       /* Chess green accent */
+--color-border: #E1E8ED       /* Subtle borders */
+--color-success: #48BB78      /* Success states */
 ```
 
 ### Spacing Scale
@@ -38,31 +40,25 @@ A clean, professional web interface for the Chess AI explainability engine, buil
 ```
 
 ### Design Principles
-- **Grid-based layout**: Consistent spacing and alignment
-- **Minimal motion**: ≤ 160ms transitions
-- **High contrast**: ≥ 4.5:1 color contrast
+- **Dashboard layout**: Sidebar navigation with main content area
+- **Card-based UI**: Modular, self-contained components
+- **Minimal motion**: ≤ 150ms transitions
+- **Clear hierarchy**: Metric cards, charts, and data tables
 - **Semantic HTML**: Accessible, meaningful structure
-- **Modular components**: Reusable, maintainable code
+- **Responsive design**: Mobile-friendly with adaptive sidebar
 
 ## Features
 
-### Play Tab
-- Interactive chess board with piece movement
-- Real-time game state display
-- AI move suggestions with explanations
-- Move validation and legal move highlighting
+### Play View
+- **Interactive Board**: Click-based piece movement with legal move highlighting
+- **Engine Control**: Prominent "Request Engine Move" button
+- **Move Explanation**: Real-time AI reasoning for engine moves
+- **Key Features**: Top 3 position features displayed after each move
 
-### Analysis Tab
-- Position feature extraction
-- 20+ chess-specific metrics
-- Material, mobility, king safety analysis
-- Sorted by feature importance
-
-### Metrics Tab
-- Engine performance dashboard
-- Feature explainability: 87.5%
-- Explanation sparsity: 2.0
-- Position coverage: 100%
+### Features View
+- **Position Analysis**: Extract and display all 20+ chess features
+- **Sortable Features**: Ordered by absolute value/importance
+- **Feature Details**: Material, mobility, king safety, center control, and more
 
 ## API Endpoints
 
@@ -77,19 +73,26 @@ A clean, professional web interface for the Chess AI explainability engine, buil
 ### Analysis
 - `POST /api/analysis/features` - Extract position features
 
+### Health
+- `GET /api/health` - Health check with engine status
+
 ## File Structure
+
+Mirrors the template dashboard structure:
 
 ```
 src/chess_ai/web/
 ├── __init__.py
-├── app.py                 # Flask application (216 lines)
+├── app.py                      # Flask application (~250 lines)
 ├── templates/
-│   └── index.html         # Main page (120 lines)
+│   └── dashboard.html          # Dashboard layout (~200 lines)
 ├── static/
-│   ├── style.css          # Design system (6.5 KB)
-│   ├── chess.js           # Board rendering (154 lines)
-│   └── app.js             # Application logic (156 lines)
-└── README.md              # Web documentation
+│   ├── css/
+│   │   └── style.css          # Modern design system (~600 lines)
+│   └── js/
+│       ├── chess.js           # Board rendering (154 lines)
+│       └── app.js             # Dashboard logic with Chart.js (~450 lines)
+└── README.md                   # Web documentation
 ```
 
 ## Installation
@@ -110,9 +113,14 @@ src/chess_ai/web/
 
 ## Usage
 
-### Quick Start
+### Quick Start (Makefile)
 ```bash
-./run_web.sh
+make web
+```
+
+### Using Launch Script
+```bash
+./scripts/run_web.sh
 ```
 
 ### Manual Start
@@ -131,17 +139,25 @@ Open `http://localhost:5000` in your browser
 - Unicode chess pieces (♔♕♖♗♘♙)
 - Click-based move input
 - Legal move highlighting
+- Classic chess board colors (light/dark squares)
 
 ### State Management
-- Server-side game state
+- Server-side game state in Flask
 - RESTful API communication
 - Stateless HTTP requests
 - Board synchronization via FEN
+- Move history tracking for charts
+
+### Visualizations
+- Chart.js for data visualization
+- Material balance over time
+- Interactive move history
+- Responsive chart sizing
 
 ### Performance
-- Zero dependencies (frontend)
-- Minimal JavaScript
-- CSS-only animations
+- Minimal dependencies (Chart.js only)
+- Efficient vanilla JavaScript
+- CSS-only transitions
 - Lazy feature extraction
 
 ### Accessibility
@@ -154,16 +170,19 @@ Open `http://localhost:5000` in your browser
 ## Design Philosophy
 
 ### Visual Hierarchy
-1. **Primary actions**: Accent color buttons
-2. **Secondary actions**: Bordered ghost buttons
-3. **Status indicators**: Mono badges
-4. **Data display**: Tabular layouts
+1. **Navigation**: Sidebar with icon-based menu
+2. **Metrics**: Card-based dashboard with key stats
+3. **Primary actions**: Accent color buttons (chess green)
+4. **Secondary actions**: Bordered buttons with hover states
+5. **Status indicators**: Live status badge with pulse animation
+6. **Data display**: Cards, charts, and feature grids
 
 ### Typography
-- **UI text**: Inter (system fallback)
+- **UI text**: Space Grotesk (modern, professional)
 - **Numeric data**: JetBrains Mono
-- **Base size**: 15px (0.9375rem)
-- **Line height**: 1.6
+- **Base size**: 15px
+- **Line height**: 1.5
+- **Font weights**: 400 (regular), 500 (medium), 600 (semibold), 700 (bold)
 
 ### Spacing
 - **Vertical rhythm**: 8px base unit
@@ -196,22 +215,34 @@ Open `http://localhost:5000` in your browser
 - **Comments**: Minimal, intentional
 - **Size**: ~10 KB total
 
+## Implemented Enhancements
+
+Recent additions to the dashboard:
+- ✅ Move history visualization with Chart.js
+- ✅ Material balance tracking over time
+- ✅ Sidebar navigation with multiple views
+- ✅ Metric cards for game statistics
+- ✅ Modern dashboard layout
+- ✅ Health check endpoint
+
 ## Future Enhancements
 
 Potential additions (not implemented):
-- Move history timeline
-- Position evaluation graph
 - Opening book integration
 - Game export (PGN)
 - Multi-game management
 - WebSocket real-time updates
+- Engine evaluation scores
+- Move-by-move position analysis
 
 ## Credits
 
 - **Chess Engine**: Stockfish
 - **Chess Library**: python-chess
 - **Web Framework**: Flask
-- **Fonts**: Inter, JetBrains Mono (Google Fonts)
+- **Visualizations**: Chart.js 4.4.0
+- **Fonts**: Space Grotesk, JetBrains Mono (Google Fonts)
+- **Design Inspiration**: Modern dashboard templates
 
 ## License
 

@@ -91,16 +91,29 @@ class GameState:
     def _generate_explanation(
         self, move: chess.Move, features: Dict[str, float]
     ) -> str:
-        """Generate human-readable explanation for a move."""
+        """Generate human-readable explanation for a move.
+
+        Provides context-aware reasoning by analyzing the move's tactical
+        and strategic implications based on position features.
+        """
         reasons = []
 
         if self.board.is_capture(move):
             captured = self.board.piece_at(move.to_square)
             if captured:
-                reasons.append(f"Captures {captured.symbol().upper()}")
+                piece_names = {
+                    chess.PAWN: "pawn",
+                    chess.KNIGHT: "knight",
+                    chess.BISHOP: "bishop",
+                    chess.ROOK: "rook",
+                    chess.QUEEN: "queen",
+                }
+                reasons.append(
+                    f"Captures {piece_names.get(captured.piece_type, 'piece')}"
+                )
 
         if self.board.gives_check(move):
-            reasons.append("Gives check")
+            reasons.append("Delivers check")
 
         if self.board.is_castling(move):
             reasons.append("Castles for king safety")
@@ -111,10 +124,23 @@ class GameState:
 
         piece = self.board.piece_at(move.from_square)
         if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-            reasons.append("Develops piece")
+            if self.board.fullmove_number <= 10:
+                reasons.append("Develops piece")
+
+        # Check for promotions
+        if move.promotion:
+            reasons.append("Promotes pawn")
+
+        # Analyze material advantage from features
+        if "material_us" in features and "material_them" in features:
+            material_diff = features["material_us"] - features["material_them"]
+            if material_diff > 3:
+                reasons.append("Maintains material advantage")
+            elif material_diff < -3:
+                reasons.append("Seeks compensation")
 
         if not reasons:
-            reasons.append("Positional improvement")
+            reasons.append("Improves position")
 
         return " · ".join(reasons)
 
@@ -123,9 +149,9 @@ game_state = GameState()
 
 
 @app.route("/")
-def index() -> Any:
-    """Serve the main application page."""
-    return render_template("index.html")
+def dashboard() -> Any:
+    """Render the main dashboard interface."""
+    return render_template("dashboard.html")
 
 
 @app.route("/api/game/new", methods=["POST"])
@@ -192,7 +218,11 @@ def engine_move() -> Any:
 
 @app.route("/api/analysis/features", methods=["POST"])
 def analyze_features() -> Any:
-    """Analyze features for current position."""
+    """Analyze features for current position.
+
+    Extracts comprehensive position features including material balance,
+    piece mobility, king safety, and positional control metrics.
+    """
     feature_values = baseline_extract_features(game_state.board)
 
     if "_engine_probes" in feature_values:
@@ -202,6 +232,18 @@ def analyze_features() -> Any:
         {
             "features": {k: float(v) for k, v in feature_values.items()},
             "fen": game_state.board.fen(),
+        }
+    )
+
+
+@app.route("/api/health", methods=["GET"])
+def health_check() -> Any:
+    """Health check endpoint for monitoring."""
+    return jsonify(
+        {
+            "status": "healthy",
+            "engine_available": game_state.engine is not None,
+            "version": "1.0.0",
         }
     )
 

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess AI · Explainable Engine</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <circle cx="16" cy="8" r="4" fill="#2C5F2D"/>
+                    <path d="M12 12 L12 18 L10 22 L10 26 L22 26 L22 22 L20 18 L20 12 Z" fill="#2C5F2D"/>
+                </svg>
+                <span>Chess AI</span>
+            </div>
+            
+            <nav class="nav">
+                <button class="nav-item active" data-view="play">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <rect x="2" y="2" width="16" height="16" stroke="currentColor" stroke-width="2"/>
+                        <line x1="6" y1="2" x2="6" y2="18" stroke="currentColor" stroke-width="1"/>
+                        <line x1="10" y1="2" x2="10" y2="18" stroke="currentColor" stroke-width="1"/>
+                        <line x1="14" y1="2" x2="14" y2="18" stroke="currentColor" stroke-width="1"/>
+                        <line x1="2" y1="6" x2="18" y2="6" stroke="currentColor" stroke-width="1"/>
+                        <line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1"/>
+                        <line x1="2" y1="14" x2="18" y2="14" stroke="currentColor" stroke-width="1"/>
+                    </svg>
+                    <span>Play</span>
+                </button>
+                
+                <button class="nav-item" data-view="features">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M2 18L6 10L10 14L18 2" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="6" cy="10" r="2" fill="currentColor"/>
+                        <circle cx="10" cy="14" r="2" fill="currentColor"/>
+                        <circle cx="18" cy="2" r="2" fill="currentColor"/>
+                    </svg>
+                    <span>Features</span>
+                </button>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot" id="engine-status-dot"></span>
+                    <span class="status-text" id="engine-status-text">Ready</span>
+                </div>
+            </div>
+        </aside>
+        
+        <main class="main-content">
+            <header class="header">
+                <h1 class="page-title">Play Chess</h1>
+                <div class="header-actions">
+                    <button class="btn-secondary" id="btn-new-game">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M14 2V6H10" stroke="currentColor" stroke-width="2"/>
+                            <path d="M2 14V10H6" stroke="currentColor" stroke-width="2"/>
+                            <path d="M14 6C13.5 4 12 2.5 10 2C6 1 2 3 2 8C2 13 6 15 10 14C12 13.5 13.5 12 14 10" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        New Game
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Play View -->
+            <div class="view-container" id="play-view">
+                <div class="play-grid">
+                    <div class="chart-card board-card">
+                        <div class="board-container">
+                            <div id="chess-board" class="chess-board"></div>
+                            <div id="board-label" class="board-label">White to move</div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-section">
+                        <div class="chart-card engine-control-card">
+                            <button class="btn-primary btn-engine-move" id="btn-engine-move">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                    <path d="M8 2L6 4H7V7H6L5 8V10H6V12H7V14H9V12H10V10H11V8L10 7H9V4H10L8 2Z" fill="currentColor"/>
+                                </svg>
+                                Request Engine Move
+                            </button>
+                        </div>
+                        
+                        <div class="chart-card">
+                            <h3 class="chart-title">Move Explanation</h3>
+                            <div id="explanation-content" class="explanation">
+                                <p class="text-muted">Request an engine move to see analysis.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-card">
+                            <h3 class="chart-title">Key Features</h3>
+                            <div id="key-features" class="key-features">
+                                <p class="text-muted">Analysis will appear here after moves.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Features View -->
+            <div class="view-container hidden" id="features-view">
+                <div class="chart-card">
+                    <div class="chart-controls">
+                        <h3 class="chart-title">Position Features</h3>
+                        <button class="btn-primary" id="btn-analyze">Analyze Current Position</button>
+                    </div>
+                    <div id="features-table" class="features-grid">
+                        <p class="text-muted">Click "Analyze Current Position" to evaluate the board state.</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/chess.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+

@@ -14,11 +14,11 @@ The interface features a contemporary dashboard aesthetic:
 
 ## Running
 
-### Quick Start (Makefile)
+### Quick Start (Justfile)
 From the project root:
 
 ```bash
-make web
+just web
 ```
 
 ### Manual Start

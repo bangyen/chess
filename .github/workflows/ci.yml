@@ -23,29 +23,32 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - name: Install Just
+        uses: extractions/setup-just@v1
+
       - name: Clear Python cache
         run: |
           find . -type d -name "__pycache__" -exec rm -rf {} + || true
           find . -name "*.pyc" -delete || true
 
-      - name: Install tooling (Makefile path)
-        if: ${{ hashFiles('Makefile') != '' }}
+      - name: Install tooling (Justfile path)
+        if: ${{ hashFiles('justfile') != '' }}
         run: |
-          make init
+          just init
 
-      - name: Install tooling (fallback if no Makefile)
-        if: ${{ hashFiles('Makefile') == '' }}
+      - name: Install tooling (fallback if no Justfile)
+        if: ${{ hashFiles('justfile') == '' }}
         run: |
           python -m pip install -U pip
           pip install black ruff mypy pytest
 
-      - name: Run quality checks (Makefile path)
-        if: ${{ hashFiles('Makefile') != '' }}
+      - name: Run quality checks (Justfile path)
+        if: ${{ hashFiles('justfile') != '' }}
         run: |
-          make all
+          just all
 
-      - name: Run quality checks (fallback if no Makefile)
-        if: ${{ hashFiles('Makefile') == '' }}
+      - name: Run quality checks (fallback if no Justfile)
+        if: ${{ hashFiles('justfile') == '' }}
         run: |
           black --check .
           ruff check .

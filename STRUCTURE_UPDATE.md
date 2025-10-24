@@ -45,36 +45,58 @@ web/
 - Updated CSS path: `style.css` → `css/style.css`
 - Updated JS paths: `app.js` → `js/app.js`, `chess.js` → `js/chess.js`
 
-### 3. Makefile Enhancements
+### 3. Justfile Configuration
 
-Added new targets:
+The project uses a Justfile for task automation:
 
-```makefile
-web:  ## run web dashboard
-	python -m chess_ai.web.app
+```justfile
+# Task runner for the chess AI project
 
-help: ## show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-10s\033[0m %s\n", $$1, $$2}'
+# install tooling
+init:
+    # Install dependencies and setup pre-commit
+
+# format code
+fmt:
+    {{PYTHON}} -m black .
+
+# lint code
+lint:
+    {{PYTHON}} -m ruff check .
+
+# type-check
+type:
+    {{PYTHON}} -m mypy .
+
+# run tests
+test:
+    {{PYTHON}} -m pytest
+
+# run web dashboard
+web:
+    {{PYTHON}} -m chess_ai.web.app
+
+# run all checks
+all: fmt lint type test
 ```
 
-### 4. Available Make Commands
+### 4. Available Just Commands
 
 ```bash
-make help      # Show this help
-make init      # Install tooling
-make fmt       # Format code
-make lint      # Lint code
-make type      # Type-check
-make test      # Run tests
-make web       # Run web dashboard ← NEW
-make all       # Run fmt, lint, type, test
+just init      # Install tooling
+just fmt       # Format code
+just lint      # Lint code
+just type      # Type-check
+just test      # Run tests
+just web       # Run web dashboard
+just all       # Run fmt, lint, type, test
 ```
 
 ## Running the Dashboard
 
-### Option 1: Makefile (Recommended)
+### Option 1: Justfile (Recommended)
 ```bash
-make web
+just web
 ```
 
 ### Option 2: Launch Script
@@ -96,8 +118,8 @@ Then open `http://localhost:5000` in your browser.
 2. **Organization**: Clearer separation of CSS and JS files
 3. **Scalability**: Easy to add more CSS/JS files in respective directories
 4. **Standards**: Follows common Flask project conventions
-5. **Makefile**: One-command launch with `make web`
-6. **Documentation**: Self-documenting with `make help`
+5. **Justfile**: One-command launch with `just web`
+6. **Documentation**: Task automation with Just
 
 ## Template Alignment
 
@@ -117,14 +139,14 @@ All files load correctly:
 - ✅ Flask app imports successfully
 - ✅ Templates render properly
 - ✅ Static files load from new paths
-- ✅ Makefile targets work
+- ✅ Justfile targets work
 - ✅ All routes configured
 
 ## Updated Documentation
 
 - ✅ `web/README.md` - Updated with new structure
 - ✅ `docs/WEB_APP.md` - Updated file structure diagram
-- ✅ Both now document Makefile usage
+- ✅ Both now document Justfile usage
 
 ---
 

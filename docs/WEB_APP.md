@@ -113,9 +113,9 @@ src/chess_ai/web/
 
 ## Usage
 
-### Quick Start (Makefile)
+### Quick Start (Justfile)
 ```bash
-make web
+just web
 ```
 
 ### Using Launch Script

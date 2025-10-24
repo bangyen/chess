@@ -3,10 +3,11 @@
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import chess
 import numpy as np
+import numpy.typing as npt
 
 from .engine import SFConfig, sf_eval, sf_top_moves
 from .metrics.kendall import kendall_tau
@@ -98,7 +99,7 @@ def audit_feature_set(
     print("Collecting move deltas for training...")
     feature_names = None
     X = []
-    y = []
+    y: List[float] = []
 
     for b in tqdm(boards, desc="Move delta collection"):
         # Get base evaluation
@@ -198,11 +199,11 @@ def audit_feature_set(
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )
-    y = np.array(y, dtype=float)
+    y_arr: npt.NDArray[np.floating] = np.array(y, dtype=float)
 
     # Train/test split on move deltas
     X_train, X_test, y_train, y_test = train_test_split(
-        X_mat, y, test_size=test_size, random_state=42
+        X_mat, y_arr, test_size=test_size, random_state=42
     )
 
     # For testing, we need to split boards separately
@@ -223,7 +224,11 @@ def audit_feature_set(
 
     if n_samples < 10:
         # For very small datasets, use simpler approach
-        alphas = [1.0, 10.0, 100.0]  # Fewer alphas, higher values
+        alphas: Union[List[float], npt.NDArray[np.floating]] = [
+            1.0,
+            10.0,
+            100.0,
+        ]  # Fewer alphas, higher values
         cv_folds = 2
         max_iter = 1000  # Fewer iterations
     else:

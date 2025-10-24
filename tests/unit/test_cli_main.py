@@ -5,7 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
-from src.chess_ai.cli.main import main
+from src.chess_ai.cli import main
+
+# Get the actual module object (not the function exported from __init__.py)
+main_module = sys.modules["src.chess_ai.cli.main"]
 
 
 class TestMain:
@@ -48,7 +51,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert "Chess AI Tools" in captured.out
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command(self, mock_audit_main):
         """Test main with audit command."""
         with patch("sys.argv", ["chess-ai", "audit", "--positions", "100"]):
@@ -56,7 +59,7 @@ class TestMain:
 
         mock_audit_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command(self, mock_explainable_main):
         """Test main with play command."""
         with patch("sys.argv", ["chess-ai", "play", "--strength", "intermediate"]):
@@ -64,7 +67,7 @@ class TestMain:
 
         mock_explainable_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command_with_args(self, mock_audit_main):
         """Test main with audit command and arguments."""
         with patch(
@@ -75,7 +78,7 @@ class TestMain:
 
         mock_audit_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command_with_args(self, mock_explainable_main):
         """Test main with play command and arguments."""
         with patch(
@@ -95,7 +98,7 @@ class TestMain:
         assert "Unknown command: unknown" in captured.out
         assert "Available commands: audit, play, help" in captured.out
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command_sys_argv_restoration(self, mock_audit_main):
         """Test that sys.argv is properly restored after audit command."""
         original_argv = sys.argv.copy()
@@ -107,7 +110,7 @@ class TestMain:
         assert sys.argv == original_argv
         mock_audit_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command_sys_argv_restoration(self, mock_explainable_main):
         """Test that sys.argv is properly restored after play command."""
         original_argv = sys.argv.copy()
@@ -119,7 +122,7 @@ class TestMain:
         assert sys.argv == original_argv
         mock_explainable_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command_exception_handling(self, mock_audit_main):
         """Test that exceptions in audit command are properly handled."""
         mock_audit_main.side_effect = Exception("Audit error")
@@ -128,7 +131,7 @@ class TestMain:
             with pytest.raises(Exception, match="Audit error"):
                 main()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command_exception_handling(self, mock_explainable_main):
         """Test that exceptions in play command are properly handled."""
         mock_explainable_main.side_effect = Exception("Play error")
@@ -139,14 +142,14 @@ class TestMain:
 
     def test_main_with_args_parameter(self):
         """Test main with explicit args parameter."""
-        with patch("src.chess_ai.cli.main.audit_main") as mock_audit_main:
+        with patch.object(main_module, "audit_main") as mock_audit_main:
             main(["audit", "--positions", "100"])
 
         mock_audit_main.assert_called_once()
 
     def test_main_with_args_parameter_play(self):
         """Test main with explicit args parameter for play command."""
-        with patch("src.chess_ai.cli.main.explainable_main") as mock_explainable_main:
+        with patch.object(main_module, "explainable_main") as mock_explainable_main:
             main(["play", "--strength", "intermediate"])
 
         mock_explainable_main.assert_called_once()
@@ -181,7 +184,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert "Chess AI Tools" in captured.out
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command_multiple_args(self, mock_audit_main):
         """Test main with audit command and multiple arguments."""
         with patch(
@@ -200,7 +203,7 @@ class TestMain:
 
         mock_audit_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command_multiple_args(self, mock_explainable_main):
         """Test main with play command and multiple arguments."""
         with patch(
@@ -238,7 +241,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert "Unknown command: PLAY" in captured.out
 
-    @patch("src.chess_ai.cli.main.audit_main")
+    @patch.object(main_module, "audit_main")
     def test_main_audit_command_no_additional_args(self, mock_audit_main):
         """Test main with audit command and no additional arguments."""
         with patch("sys.argv", ["chess-ai", "audit"]):
@@ -246,7 +249,7 @@ class TestMain:
 
         mock_audit_main.assert_called_once()
 
-    @patch("src.chess_ai.cli.main.explainable_main")
+    @patch.object(main_module, "explainable_main")
     def test_main_play_command_no_additional_args(self, mock_explainable_main):
         """Test main with play command and no additional arguments."""
         with patch("sys.argv", ["chess-ai", "play"]):

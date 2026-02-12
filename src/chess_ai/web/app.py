@@ -10,6 +10,8 @@ import shutil
 from typing import Any, Dict, List, Optional
 
 import chess
+import chess.engine
+
 from flask import Flask, jsonify, render_template, request
 
 from chess_ai.features.baseline import baseline_extract_features

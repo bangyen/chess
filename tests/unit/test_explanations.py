@@ -58,3 +58,80 @@ class TestExplanationContent:
 
         check_reason = any("check" in r[2].lower() for r in reasons)
         assert check_reason, f"Expected check explanation, got: {reasons}"
+
+    def test_safe_mobility_explanation(self):
+        engine = ExplainableChessEngine(stockfish_path="mock")
+        # Position: White Queen blocked by own pawns.
+        # 8/8/8/3PPP2/3PQP2/3PPP2/8/8 w - - 0 1 (Queen boxed in on e4)
+        # Move: Pawn d5 removes blockage? No, hard to make big delta.
+        # Easier: White Queen on a1. Many enemy pawns attacking b2, c2 etc?
+        # Let's create a move that massively increases safe squares.
+        # Queen trapped in corner (a1) by friendly bishop b2?
+        # Move Bishop away -> Queen has diagonal.
+        engine.board = chess.Board("8/8/8/8/8/8/1B6/Q7 w - - 0 1")
+        # Queen moves on rank: 7. Moves on file: 7. Diag: 0. Total 14.
+        # Move Bishop b2 to c3.
+        # Queen now has diagonal a1-h8 (7 moves).
+        # Safe mobility increases by 7.
+        move = chess.Move.from_uci("b2c3")
+
+        reasons = engine._generate_move_reasons(move, 0.0, 0.0)
+
+        reason = any("safe piece activity" in r[2].lower() for r in reasons)
+        assert reason, f"Expected safe mobility explanation, got: {reasons}"
+
+    def test_rook_open_file_explanation(self):
+        engine = ExplainableChessEngine(stockfish_path="mock")
+        # White Rook on b1. File b is closed by P on b2.
+        # Move Rook to a1 (File a is open).
+        # Delta: +1 open file rook.
+        engine.board = chess.Board("8/8/8/8/8/8/1P6/R7 w - - 0 1")  # R on a1 is open.
+        # Wait, setup: Rook on b1 (closed).
+        engine.board = chess.Board("8/8/8/8/8/8/1P6/1R6 w - - 0 1")
+        # Move Rb1-a1.
+        move = chess.Move.from_uci("b1a1")
+
+        reasons = engine._generate_move_reasons(move, 0.0, 0.0)
+
+        reason = any("open or semi-open file" in r[2].lower() for r in reasons)
+        assert reason, f"Expected rook open file explanation, got: {reasons}"
+
+    def test_backward_pawn_creation_explanation(self):
+        engine = ExplainableChessEngine(stockfish_path="mock")
+        # White to move. We want to force BLACK to have a backward pawn.
+        # Setup: Black pawn on d6. Black pawn on c7, e7. (Supported).
+        # If White captures c7 or e7?
+        # Or if White controls d5?
+
+        # Let's try: Black pawn on d6. No support. Stop d5.
+        # But we need a MOVE that changes this.
+        # Start: Black pawn d6. Black pawn c5 (supports d6? No, ahead).
+        # Black pawn e7 (supports d6).
+        # White captures e7 (say with Rook).
+        # Then d6 becomes backward?
+
+        # Setup: Black King h8. Black Pawns d6, e7. White Rook e1.
+        engine.board = chess.Board("7k/4p3/3p4/8/8/8/8/4R2K w - - 0 1")
+        # Move Rook takes e7.
+        # Before: d6 supported by e7. Backward count = 0.
+        # After: d6 alone. (Stop d5 not controlled by enemy? Wait backward needs stop control).
+        # Let's put White Pawn on c4 (controls d5).
+        engine.board = chess.Board("7k/4p3/3p4/8/2P5/8/8/4R2K w - - 0 1")
+        move = chess.Move.from_uci("e1e7")
+
+        reasons = engine._generate_move_reasons(move, 0.0, 0.0)
+
+        # "Creates a backward pawn weakness for opponent"
+        # We need check backward_pawns_them count.
+        # Before: e7 exists. d6 supported? e7 is rank 6. d6 is rank 5.
+        # e7 supports d6 (d6 is rank 5; adjacent file e, rank 6? No rank BEHIND).
+        # Black pawn d6 (rank 6 from Black persp).
+        # e7 (rank 7 from Black persp).
+        # e7 is behind d6. So e7 supports d6.
+        # Capture e7 -> d6 unsupported.
+        # d6 stop square (d5). Controlled by White Pawn c4?
+        # White c4 attacks d5. Yes.
+        # So d6 becomes backward.
+
+        reason = any("backward pawn weakness" in r[2].lower() for r in reasons)
+        assert reason, f"Expected backward pawn explanation, got: {reasons}"

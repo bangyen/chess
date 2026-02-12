@@ -585,4 +585,595 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         "sf_eval_shallow": sf_eval_shallow,
     }
 
+    # Phase 3: Piece-Square Tables (Simplified PeSTO/Stockfish-like values)
+    # 0 = a1, 63 = h8.
+    # We'll valid for White side. For Black, we flip the square (63 - sq).
+
+    # Pawns (incentivize center control and advancement)
+    PST_PAWN = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        50,
+        10,
+        10,
+        20,
+        30,
+        30,
+        20,
+        10,
+        10,
+        5,
+        5,
+        10,
+        25,
+        25,
+        10,
+        5,
+        5,
+        0,
+        0,
+        0,
+        20,
+        20,
+        0,
+        0,
+        0,
+        5,
+        -5,
+        -10,
+        0,
+        0,
+        -10,
+        -5,
+        5,
+        5,
+        10,
+        10,
+        -20,
+        -20,
+        10,
+        10,
+        5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+
+    # Knights (incentivize center)
+    PST_KNIGHT = [
+        -50,
+        -40,
+        -30,
+        -30,
+        -30,
+        -30,
+        -40,
+        -50,
+        -40,
+        -20,
+        0,
+        0,
+        0,
+        0,
+        -20,
+        -40,
+        -30,
+        0,
+        10,
+        15,
+        15,
+        10,
+        0,
+        -30,
+        -30,
+        5,
+        15,
+        20,
+        20,
+        15,
+        5,
+        -30,
+        -30,
+        0,
+        15,
+        20,
+        20,
+        15,
+        0,
+        -30,
+        -30,
+        5,
+        10,
+        15,
+        15,
+        10,
+        5,
+        -30,
+        -40,
+        -20,
+        0,
+        5,
+        5,
+        0,
+        -20,
+        -40,
+        -50,
+        -40,
+        -30,
+        -30,
+        -30,
+        -30,
+        -40,
+        -50,
+    ]
+
+    # Bishops (incentivize diagonal control key squares)
+    PST_BISHOP = [
+        -20,
+        -10,
+        -10,
+        -10,
+        -10,
+        -10,
+        -10,
+        -20,
+        -10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -10,
+        -10,
+        0,
+        5,
+        10,
+        10,
+        5,
+        0,
+        -10,
+        -10,
+        5,
+        5,
+        10,
+        10,
+        5,
+        5,
+        -10,
+        -10,
+        0,
+        10,
+        10,
+        10,
+        10,
+        0,
+        -10,
+        -10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        -10,
+        -10,
+        5,
+        0,
+        0,
+        0,
+        0,
+        5,
+        -10,
+        -20,
+        -10,
+        -10,
+        -10,
+        -10,
+        -10,
+        -10,
+        -20,
+    ]
+
+    # Rooks (incentivize 7th rank and center files slightly)
+    PST_ROOK = [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        5,
+        10,
+        10,
+        10,
+        10,
+        10,
+        10,
+        5,
+        -5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -5,
+        -5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -5,
+        -5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -5,
+        -5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -5,
+        -5,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -5,
+        0,
+        0,
+        0,
+        5,
+        5,
+        0,
+        0,
+        0,
+    ]
+
+    # Queen (incentivize center but not too early)
+    PST_QUEEN = [
+        -20,
+        -10,
+        -10,
+        -5,
+        -5,
+        -10,
+        -10,
+        -20,
+        -10,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        -10,
+        -10,
+        0,
+        5,
+        5,
+        5,
+        5,
+        0,
+        -10,
+        -5,
+        0,
+        5,
+        5,
+        5,
+        5,
+        0,
+        -5,
+        0,
+        0,
+        5,
+        5,
+        5,
+        5,
+        0,
+        -5,
+        -10,
+        5,
+        5,
+        5,
+        5,
+        5,
+        0,
+        -10,
+        -10,
+        0,
+        5,
+        0,
+        0,
+        0,
+        0,
+        -10,
+        -20,
+        -10,
+        -10,
+        -5,
+        -5,
+        -10,
+        -10,
+        -20,
+    ]
+
+    # King (Middlegame: safety)
+    PST_KING_MG = [
+        -30,
+        -40,
+        -40,
+        -50,
+        -50,
+        -40,
+        -40,
+        -30,
+        -30,
+        -40,
+        -40,
+        -50,
+        -50,
+        -40,
+        -40,
+        -30,
+        -30,
+        -40,
+        -40,
+        -50,
+        -50,
+        -40,
+        -40,
+        -30,
+        -30,
+        -40,
+        -40,
+        -50,
+        -50,
+        -40,
+        -40,
+        -30,
+        -20,
+        -30,
+        -30,
+        -40,
+        -40,
+        -30,
+        -30,
+        -20,
+        -10,
+        -20,
+        -20,
+        -20,
+        -20,
+        -20,
+        -20,
+        -10,
+        20,
+        20,
+        0,
+        0,
+        0,
+        0,
+        20,
+        20,
+        20,
+        30,
+        10,
+        0,
+        0,
+        10,
+        30,
+        20,
+    ]
+
+    # King (Endgame: activity)
+    PST_KING_EG = [
+        -50,
+        -40,
+        -30,
+        -20,
+        -20,
+        -30,
+        -40,
+        -50,
+        -30,
+        -20,
+        -10,
+        0,
+        0,
+        -10,
+        -20,
+        -30,
+        -30,
+        -10,
+        20,
+        30,
+        30,
+        20,
+        -10,
+        -30,
+        -30,
+        -10,
+        30,
+        40,
+        40,
+        30,
+        -10,
+        -30,
+        -30,
+        -10,
+        30,
+        40,
+        40,
+        30,
+        -10,
+        -30,
+        -30,
+        -10,
+        20,
+        30,
+        30,
+        20,
+        -10,
+        -30,
+        -30,
+        -30,
+        0,
+        0,
+        0,
+        0,
+        -30,
+        -30,
+        -50,
+        -30,
+        -30,
+        -30,
+        -30,
+        -30,
+        -30,
+        -50,
+    ]
+
+    def pst_value(side):
+        score = 0.0
+        # Phase (0=opening, 1=endgame)
+        # We already have 'phase' feature but need it normalized 0..1?
+        # feats['phase'] is sum of piece counts (~40 max?).
+        # Let's say phase < 15 is endgame.
+
+        # Current phase feature: sum of Q(9), R(5), B(3), N(3).
+        # Max ~ 9+10+6+6 = 31 * 2 = 62?
+        # feats["phase"] (L164) is count of pieces, not values?
+        # Ah wait, L164: len(pieces)... just counts.
+        # Max pieces = 16 (excluding K, P).
+        # Let's use simple check: if no queens or few pieces => endgame.
+        is_endgame = feats["phase"] < 10  # heuristic
+
+        for pt, table in [
+            (chess.PAWN, PST_PAWN),
+            (chess.KNIGHT, PST_KNIGHT),
+            (chess.BISHOP, PST_BISHOP),
+            (chess.ROOK, PST_ROOK),
+            (chess.QUEEN, PST_QUEEN),
+        ]:
+            if table is None:
+                continue
+            for sq in board.pieces(pt, side):
+                # Access table (which is rank-flattened: 0-7 is rank 1)
+                # chess.SQUARES: a1=0, b1=1...
+                # Verify orientation: a1 is index 0.
+                # Table above: Top-left is a8? No, usually a1 is bottom-left.
+                # Standard Python-chess: square 0 is a1.
+                # If valid for White: a1 should be row 7 (index 56)?
+                # Or row 0 (index 0).
+                # Usually printed tables are Rank 8 top.
+                # Let's assume standard array order: index 0 is first element.
+                # If I wrote:
+                # 0, 0...
+                # means the first row of array.
+                # If I map index 0 -> a1.
+                # Then first row of array corresponds to Rank 1.
+                # My tables above:
+                # PAWN: Row 1 (index 0-7) is 0s. (Rank 1). Correct.
+                # Row 2 (index 8-15) is 50s. (Rank 2). This incentivizes start?
+                # Usually Pawns on Rank 2 are 0?
+                # Ah, advanced pawns should be higher.
+                # If 50s are at index 8-15 (Rank 2), that means staying at home is good?
+                # NO. Row 2 in array = Rank 2 on board (if mapped directly).
+                # Wait, usually Rank 7 (promotion) is high.
+                # In my table: Row 7 (index 48-55) is... 5, 10, 10...
+                # Row 8 (index 56-63) is 0.
+                # This seems flipped?
+                # Let's assume the table is VISUAL (rank 8 a top).
+                # Then index 0-7 is Rank 8.
+                # If so, Pawn table row 0 (Rank 8) is 0s (promoted? usually handled by material).
+                # Row 7 (Rank 2) would be the second to last row.
+                # Let's standardize: Visual table (Rank 8 at top).
+                # To map square `sq` (0-63, a1-h8) to visual table index:
+                # Rank 8 is indices 0-7. Rank 1 is 56-63.
+                # sq_rank 7 -> table row 0.
+                # row = 7 - chess.square_rank(sq).
+                # col = chess.square_file(sq).
+                # index = row * 8 + col.
+
+                # For Black: flip rank. sq_rank 7 (Black home) -> table row 7 (visual bottom)?
+                # No, table is "Relative to side".
+                # So for White: Rank 1 is bottom. For Black: Rank 8 is bottom.
+                # If table is Visual (Top=Far, Bottom=Home):
+                # White Home (Rank 1) -> Bottom (Row 7).
+                # Black Home (Rank 8) -> Bottom (Row 7).
+                # So:
+                # visual_row = 7 - relative_rank.
+                # relative_rank = rank if White else 7 - rank.
+                # visual_row = 7 - (rank) [White]
+                # visual_row = 7 - (7 - rank) = rank [Black]
+
+                vis_r = (
+                    7 - chess.square_rank(sq)
+                    if side == chess.WHITE
+                    else chess.square_rank(sq)
+                )
+                vis_c = chess.square_file(sq)
+
+                score += table[vis_r * 8 + vis_c]
+
+        # King
+        table = PST_KING_EG if is_endgame else PST_KING_MG
+        for sq in board.pieces(chess.KING, side):
+            vis_r = (
+                7 - chess.square_rank(sq)
+                if side == chess.WHITE
+                else chess.square_rank(sq)
+            )
+            vis_c = chess.square_file(sq)
+            score += table[vis_r * 8 + vis_c]
+
+        return float(score) / 100.0  # Standardize scale
+
+    def pinned_pieces(side):
+        # Count absolutely pinned pieces
+        count = 0
+        for sq in chess.SQUARES:
+            p = board.piece_at(sq)
+            if p and p.color == side:
+                if board.is_pinned(side, sq):
+                    count += 1
+        return float(count)
+
+    feats["pst_us"] = pst_value(board.turn)
+    feats["pst_them"] = pst_value(not board.turn)
+    feats["pinned_us"] = pinned_pieces(board.turn)
+    feats["pinned_them"] = pinned_pieces(not board.turn)
+
     return feats

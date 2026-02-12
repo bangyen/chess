@@ -4,6 +4,7 @@ Explainable Chess Engine
 An interactive chess engine that analyzes your moves and explains what you should have done instead.
 """
 
+import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -32,14 +33,19 @@ class ExplainableChessEngine:
         stockfish_path: str,
         depth: int = 16,
         opponent_strength: str = "beginner",
+        enable_model_explanations: bool = True,
+        model_training_positions: int = 50,
     ):
         """Initialize the explainable chess engine."""
         self.stockfish_path = stockfish_path
         self.depth = depth
         self.opponent_strength = opponent_strength
+        self.enable_model_explanations = enable_model_explanations
+        self.model_training_positions = model_training_positions
         self.engine = None
         self.board = chess.Board()
         self.move_history: List[chess.Move] = []
+        self.surrogate_explainer = None
 
         # Stockfish strength settings
         self.strength_settings = {
@@ -78,6 +84,11 @@ class ExplainableChessEngine:
                     except chess.engine.EngineError:
                         pass  # Some options might not be available in all Stockfish versions
 
+            # Train surrogate model if enabled
+            if self.enable_model_explanations:
+                print("Training surrogate model for explanations...")
+                self._initialize_model()
+
             return self
         except Exception as e:
             raise RuntimeError(
@@ -89,6 +100,50 @@ class ExplainableChessEngine:
         """Context manager exit."""
         if self.engine:
             self.engine.quit()
+
+    def _initialize_model(self):
+        """Train and cache surrogate model for explanations."""
+        try:
+            from .engine import SFConfig
+            from .model_trainer import train_surrogate_model
+            from .surrogate_explainer import SurrogateExplainer
+
+            # Generate random positions for training
+            training_boards = []
+            for _ in range(self.model_training_positions):
+                board = chess.Board()
+                # Play 5-15 random moves to get diverse positions
+                for _ in range(random.randint(5, 15)):
+                    moves = list(board.legal_moves)
+                    if not moves:
+                        break
+                    board.push(random.choice(moves))
+                training_boards.append(board)
+
+            cfg = SFConfig(
+                engine_path=self.stockfish_path,
+                depth=self.depth,
+                multipv=3,
+                threads=1,
+            )
+
+            model, scaler, feature_names = train_surrogate_model(
+                boards=training_boards,
+                engine=self.engine,
+                cfg=cfg,
+                extract_features_fn=baseline_extract_features,
+            )
+
+            self.surrogate_explainer = SurrogateExplainer(
+                model=model,
+                scaler=scaler,
+                feature_names=feature_names,
+            )
+            print("✅ Surrogate model training complete!")
+        except Exception as e:
+            print(f"⚠️  Warning: Model training failed: {e}")
+            print("Falling back to rule-based explanations.")
+            self.surrogate_explainer = None
 
     def reset_game(self):
         """Reset to starting position."""
@@ -128,18 +183,23 @@ class ExplainableChessEngine:
 
     def analyze_position(self) -> Dict:
         """Analyze the current position using our explainable features."""
+        from .engine import SFConfig, sf_eval, sf_top_moves
+
         try:
             # Extract features for current position
             features = baseline_extract_features(self.board)
 
-            # Get top 3 candidate moves (simplified)
-            top_moves = []
-            legal_moves = list(self.board.legal_moves)
-            for _i, move in enumerate(legal_moves[:3]):
-                top_moves.append((move, 0))  # Simplified scoring
+            # Get real Stockfish evaluation
+            cfg = SFConfig(
+                engine_path=self.stockfish_path,
+                depth=self.depth,
+                multipv=3,
+            )
+            stockfish_score = sf_eval(self.engine, self.board, cfg)
+            top_moves = sf_top_moves(self.engine, self.board, cfg)
 
             return {
-                "stockfish_score": 0,  # Simplified for now
+                "stockfish_score": stockfish_score,
                 "features": features,
                 "top_moves": top_moves,
             }
@@ -149,17 +209,33 @@ class ExplainableChessEngine:
 
     def explain_move(self, move: chess.Move) -> MoveExplanation:
         """Explain why a move is good or bad."""
+        from .engine import SFConfig, sf_eval
+
         if not self.engine:
             return MoveExplanation(move, 0, [], "Engine not available")
 
         try:
-            # Generate explanation based on move characteristics (without engine calls for now)
-            reasons = self._generate_move_reasons(move, 0, 0)
-            overall_explanation = self._generate_overall_explanation(move, 0, reasons)
+            cfg = SFConfig(engine_path=self.stockfish_path, depth=self.depth, multipv=1)
+
+            # Get score before move
+            score_before = sf_eval(self.engine, self.board, cfg)
+
+            # Make move on temp board
+            temp_board = self.board.copy()
+            temp_board.push(move)
+
+            # Get score after move (from opponent's perspective, so negate)
+            score_after = -sf_eval(self.engine, temp_board, cfg)
+
+            # Move quality from current player's perspective
+            move_score = score_after - score_before
+
+            reasons = self._generate_move_reasons(move, score_after, score_before)
+            overall_explanation = self._generate_overall_explanation(move, move_score, reasons)
 
             return MoveExplanation(
                 move=move,
-                score=0,
+                score=move_score,
                 reasons=reasons,
                 overall_explanation=overall_explanation,
             )
@@ -171,19 +247,34 @@ class ExplainableChessEngine:
         self, move: chess.Move, board: chess.Board
     ) -> MoveExplanation:
         """Explain why a move is good or bad using a specific board state."""
+        from .engine import SFConfig, sf_eval
+
         if not self.engine:
             return MoveExplanation(move, 0, [], "Engine not available")
 
         try:
-            # Generate explanation based on move characteristics using the provided board
-            reasons = self._generate_move_reasons_with_board(move, board, 0, 0)
+            cfg = SFConfig(engine_path=self.stockfish_path, depth=self.depth, multipv=1)
+
+            # Get score before move
+            score_before = sf_eval(self.engine, board, cfg)
+
+            # Make move on temp board
+            temp_board = board.copy()
+            temp_board.push(move)
+
+            # Get score after move
+            score_after = -sf_eval(self.engine, temp_board, cfg)
+            move_score = score_after - score_before
+
+            # Generate explanation using the provided board
+            reasons = self._generate_move_reasons_with_board(move, board, score_after, score_before)
             overall_explanation = self._generate_overall_explanation_with_board(
-                move, board, 0, reasons
+                move, board, move_score, reasons
             )
 
             return MoveExplanation(
                 move=move,
-                score=0,
+                score=move_score,
                 reasons=reasons,
                 overall_explanation=overall_explanation,
             )
@@ -193,49 +284,65 @@ class ExplainableChessEngine:
 
     def _generate_move_reasons(
         self, move: chess.Move, score: float, best_score: float
-    ) -> List[Tuple[str, int, str]]:
-        """Generate specific reasons why a move is good or bad using feature deltas."""
+    ) -> List[Tuple[str, float, str]]:
+        """Generate specific reasons why a move is good or bad using surrogate model."""
         reasons = []
 
-        # 1. Base features (before move)
+        # 1. Extract features before move
         try:
             feats_before = baseline_extract_features(self.board)
         except Exception:
             feats_before = {}
 
-        # 2. Make move
+        # 2. Make move on temp board
         temp_board = self.board.copy()
 
-        # Capture logic (keep hardcoded as it's salient)
+        # Keep high-salience hardcoded reasons (captures, checks)
         if temp_board.is_capture(move):
             captured_piece = temp_board.piece_at(move.to_square)
             if captured_piece:
-                piece_value = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}.get(
-                    captured_piece.symbol().upper(), 0
-                )
+                values = {"P": 100, "N": 320, "B": 330, "R": 500, "Q": 900}
+                cp = float(values.get(captured_piece.symbol().upper(), 0))
                 reasons.append(
-                    (
-                        "capture",
-                        piece_value,
-                        f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
-                    )
+                    ("capture", cp, f"Captures {captured_piece.symbol()} (+{cp:.0f} cp)")
                 )
 
         temp_board.push(move)
 
         # Check logic (keep hardcoded)
         if temp_board.is_check():
-            reasons.append(("check", 2, "Gives check to opponent's king"))
+            reasons.append(("check", 30.0, "Gives check (+30 cp)"))
 
-        # 3. After features (after move)
-        # Note: Perspective flips! "us" becomes "them"
+        # 3. Extract features after move
         try:
             feats_after = baseline_extract_features(temp_board)
         except Exception:
             feats_after = {}
 
-        # 4. Calculate Deltas
-        # We compare before['feature_us'] with after['feature_them'] (because side flipped)
+        # 4. Use surrogate model if available
+        if self.surrogate_explainer is not None:
+            try:
+                model_reasons = self.surrogate_explainer.calculate_contributions(
+                    features_before=feats_before,
+                    features_after=feats_after,
+                    top_k=5,
+                )
+                reasons.extend(model_reasons)
+            except Exception as e:
+                print(f"Warning: Model-based explanation failed: {e}")
+                # Fall back to hardcoded
+                reasons.extend(self._generate_hardcoded_reasons(feats_before, feats_after))
+        else:
+            # Use hardcoded fallback
+            reasons.extend(self._generate_hardcoded_reasons(feats_before, feats_after))
+
+        return reasons
+
+    def _generate_hardcoded_reasons(
+        self, feats_before: Dict, feats_after: Dict
+    ) -> List[Tuple[str, float, str]]:
+        """Generate threshold-based reasons (fallback when model unavailable)."""
+        reasons = []
 
         def get_delta(feature_name):
             val_before = feats_before.get(f"{feature_name}_us", 0.0)
@@ -243,106 +350,83 @@ class ExplainableChessEngine:
             return val_after - val_before
 
         def get_opp_delta(feature_name):
-            # Did we reduce their feature?
             val_before = feats_before.get(f"{feature_name}_them", 0.0)
             val_after = feats_after.get(f"{feature_name}_us", 0.0)
             return val_after - val_before
 
-        # Significant changes thresholds
-
         # Batteries
         delta = get_delta("batteries")
         if delta > 0.5:
-            reasons.append(("batteries_us", 1, "Forms a battery arrangement"))
+            reasons.append(("batteries_us", 20.0, "Forms a battery arrangement (+20 cp)"))
 
         # Outposts
         delta = get_delta("outposts")
         if delta > 0.5:
-            reasons.append(("outposts_us", 2, "Establishes a knight outpost"))
+            reasons.append(("outposts_us", 30.0, "Establishes a knight outpost (+30 cp)"))
 
-        # King Ring Pressure (weighted)
-        # Note: 'king_ring_pressure_them' (pressure ON them) vs after 'king_ring_pressure_us' (pressure ON them from our perspective? No.)
-        # baseline.py: king_ring_pressure_us is pressure EXERTED BY US onto THEM.
-        # So before: pressure_us (by White on Black)
-        # After (Black to move): pressure_them (by White on Black)
+        # King Ring Pressure
         delta = get_delta("king_ring_pressure")
         if delta > 0.5:
-            reasons.append(("king_pressure", 2, "Increases pressure on enemy king"))
+            reasons.append(("king_pressure", 25.0, "Increases pressure on enemy king (+25 cp)"))
 
         # Bishop Pair
         delta = get_delta("bishop_pair")
         if delta > 0.5:
-            reasons.append(("bishop_pair", 1, "Secures the bishop pair"))
+            reasons.append(("bishop_pair", 20.0, "Secures the bishop pair (+20 cp)"))
 
         # Passed Pawns
         delta = get_delta("passed")
         if delta > 0.5:
-            reasons.append(("passed_pawns", 2, "Creates a passed pawn"))
+            reasons.append(("passed_pawns", 30.0, "Creates a passed pawn (+30 cp)"))
 
-        # Isolated Pawns (we want to force them to have isolated pawns)
+        # Isolated Pawns
         delta_opp = get_opp_delta("isolated_pawns")
         if delta_opp > 0.5:
             reasons.append(
-                ("structure_damage", 1, "Creates an isolated pawn for opponent")
+                ("structure_damage", 15.0, "Creates an isolated pawn for opponent (+15 cp)")
             )
 
         # Center Control
         delta = get_delta("center_control")
         if delta > 0.5:
-            reasons.append(("center_control", 1, "Improves central control"))
-
-        # Phase 2 Explanations
+            reasons.append(("center_control", 15.0, "Improves central control (+15 cp)"))
 
         # Safe Mobility
         delta = get_delta("safe_mobility")
-        if delta > 1.5:  # Threshold of 1.5 squares
-            reasons.append(("safe_mobility", 1, "Increases safe piece activity"))
+        if delta > 1.5:
+            reasons.append(("safe_mobility", 15.0, "Increases safe piece activity (+15 cp)"))
 
         # Rook on Open File
         delta = get_delta("rook_open_file")
-        if delta > 0.4:  # 0.5 or 1.0 (semi-open is 0.5)
+        if delta > 0.4:
             reasons.append(
-                ("rook_activity", 2, "Places rook on an open or semi-open file")
+                ("rook_activity", 25.0, "Places rook on an open or semi-open file (+25 cp)")
             )
 
-        # Backward Pawns (Negative for us is good, Positive for them is good)
-        # We want to force them to have backward pawns (increase backward_pawns_them)
-        # Or reduce our backward pawns (reduce backward_pawns_us)
-
-        # Did we create a backward pawn for THEM?
+        # Backward Pawns
         delta_opp = get_opp_delta("backward_pawns")
         if delta_opp > 0.5:
             reasons.append(
-                ("structure_damage", 1, "Creates a backward pawn weakness for opponent")
+                ("structure_damage", 15.0, "Creates a backward pawn weakness for opponent (+15 cp)")
             )
 
-        # Did we fix OUR backward pawn?
-        # Compare backward_pawns_us before vs backward_pawns_them after (perspective flip again?)
-        # Wait, get_delta compares (Item_US_Before) vs (Item_THEM_After).
-        # So delta < -0.5 means we reduced the count.
         delta = get_delta("backward_pawns")
         if delta < -0.5:
-            reasons.append(("structure_repair", 1, "Fixes a backward pawn weakness"))
-
-        # Phase 3 Explanations
+            reasons.append(("structure_repair", 15.0, "Fixes a backward pawn weakness (+15 cp)"))
 
         # PST Improvement
         delta = get_delta("pst")
-        if (
-            delta > 0.4
-        ):  # Lowered threshold to 0.4 based on test case (50cp = 0.5, but let's be safe)
-            reasons.append(("piece_quality", 1, "Improves piece placement quality"))
+        if delta > 0.4:
+            reasons.append(("piece_quality", 15.0, "Improves piece placement quality (+15 cp)"))
 
         # Pins
-        # We want to increase pinned_them
         delta_opp = get_opp_delta("pinned")
         if delta_opp > 0.5:
-            reasons.append(("pin_creation", 2, "Pins an opponent's piece"))
+            reasons.append(("pin_creation", 25.0, "Pins an opponent's piece (+25 cp)"))
 
-        # We want to decrease pinned_us
         delta = get_delta("pinned")
         if delta < -0.5:
-            reasons.append(("pin_escape", 2, "Escapes a pin"))
+            reasons.append(("pin_escape", 25.0, "Escapes a pin (+25 cp)"))
 
         return reasons
 
@@ -441,30 +525,42 @@ class ExplainableChessEngine:
         self,
         move: chess.Move,
         move_quality: float,
-        reasons: List[Tuple[str, int, str]],
+        reasons: List[Tuple[str, float, str]],
     ) -> str:
-        """Generate an overall explanation for the move."""
+        """Generate an overall explanation for the move with centipawn quality."""
         try:
             move_str = self.board.san(move)
         except Exception:
             move_str = str(move)
 
+        # Quality labels based on centipawn evaluation
+        if move_quality > 50:
+            quality = "Excellent move!"
+        elif move_quality > 20:
+            quality = "Good move."
+        elif move_quality > -20:
+            quality = "Reasonable move."
+        elif move_quality > -50:
+            quality = "Questionable move."
+        else:
+            quality = "Poor move!"
+
         if not reasons:
-            return f"Move {move_str}:"
+            return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)"
 
-        # Convert to bullet points with tab indentation
-        bullet_points = []
-        for reason in reasons[:3]:  # Limit to top 3 reasons
-            bullet_points.append(f"  - {reason[2]}")
+        # Format top 5 reasons as bullet points
+        bullet_points = [f"  - {reason[2]}" for reason in reasons[:5]]
 
-        return f"Move {move_str}:\n" + "\n".join(bullet_points)
+        return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)\n" + "\n".join(
+            bullet_points
+        )
 
     def _generate_overall_explanation_with_board(
         self,
         move: chess.Move,
         board: chess.Board,
         move_quality: float,
-        reasons: List[Tuple[str, int, str]],
+        reasons: List[Tuple[str, float, str]],
     ) -> str:
         """Generate an overall explanation for the move using a specific board state."""
         try:
@@ -472,15 +568,29 @@ class ExplainableChessEngine:
         except Exception:
             move_str = str(move)
 
+        # Quality labels based on centipawn evaluation
+        if move_quality > 50:
+            quality = "Excellent move!"
+        elif move_quality > 20:
+            quality = "Good move."
+        elif move_quality > -20:
+            quality = "Reasonable move."
+        elif move_quality > -50:
+            quality = "Questionable move."
+        else:
+            quality = "Poor move!"
+
         if not reasons:
-            return f"Move {move_str}:"
+            return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)"
 
         # Convert to bullet points with tab indentation
         bullet_points = []
-        for reason in reasons[:3]:  # Limit to top 3 reasons
-            bullet_points.append(f"- {reason[2]}")
+        for reason in reasons[:5]:  # Limit to top 5 reasons
+            bullet_points.append(f"  - {reason[2]}")
 
-        return f"Move {move_str}:\n" + "\n".join(bullet_points)
+        return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)\n" + "\n".join(
+            bullet_points
+        )
 
     def get_move_recommendation(self) -> Optional[MoveExplanation]:
         """Get the best move recommendation with explanation."""

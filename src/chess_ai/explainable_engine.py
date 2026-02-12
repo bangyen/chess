@@ -231,7 +231,9 @@ class ExplainableChessEngine:
             move_score = score_after - score_before
 
             reasons = self._generate_move_reasons(move, score_after, score_before)
-            overall_explanation = self._generate_overall_explanation(move, move_score, reasons)
+            overall_explanation = self._generate_overall_explanation(
+                move, move_score, reasons
+            )
 
             return MoveExplanation(
                 move=move,
@@ -267,7 +269,9 @@ class ExplainableChessEngine:
             move_score = score_after - score_before
 
             # Generate explanation using the provided board
-            reasons = self._generate_move_reasons_with_board(move, board, score_after, score_before)
+            reasons = self._generate_move_reasons_with_board(
+                move, board, score_after, score_before
+            )
             overall_explanation = self._generate_overall_explanation_with_board(
                 move, board, move_score, reasons
             )
@@ -304,7 +308,11 @@ class ExplainableChessEngine:
                 values = {"P": 100, "N": 320, "B": 330, "R": 500, "Q": 900}
                 cp = float(values.get(captured_piece.symbol().upper(), 0))
                 reasons.append(
-                    ("capture", cp, f"Captures {captured_piece.symbol()} (+{cp:.0f} cp)")
+                    (
+                        "capture",
+                        cp,
+                        f"Captures {captured_piece.symbol()} (+{cp:.0f} cp)",
+                    )
                 )
 
         temp_board.push(move)
@@ -331,7 +339,9 @@ class ExplainableChessEngine:
             except Exception as e:
                 print(f"Warning: Model-based explanation failed: {e}")
                 # Fall back to hardcoded
-                reasons.extend(self._generate_hardcoded_reasons(feats_before, feats_after))
+                reasons.extend(
+                    self._generate_hardcoded_reasons(feats_before, feats_after)
+                )
         else:
             # Use hardcoded fallback
             reasons.extend(self._generate_hardcoded_reasons(feats_before, feats_after))
@@ -357,17 +367,23 @@ class ExplainableChessEngine:
         # Batteries
         delta = get_delta("batteries")
         if delta > 0.5:
-            reasons.append(("batteries_us", 20.0, "Forms a battery arrangement (+20 cp)"))
+            reasons.append(
+                ("batteries_us", 20.0, "Forms a battery arrangement (+20 cp)")
+            )
 
         # Outposts
         delta = get_delta("outposts")
         if delta > 0.5:
-            reasons.append(("outposts_us", 30.0, "Establishes a knight outpost (+30 cp)"))
+            reasons.append(
+                ("outposts_us", 30.0, "Establishes a knight outpost (+30 cp)")
+            )
 
         # King Ring Pressure
         delta = get_delta("king_ring_pressure")
         if delta > 0.5:
-            reasons.append(("king_pressure", 25.0, "Increases pressure on enemy king (+25 cp)"))
+            reasons.append(
+                ("king_pressure", 25.0, "Increases pressure on enemy king (+25 cp)")
+            )
 
         # Bishop Pair
         delta = get_delta("bishop_pair")
@@ -383,41 +399,61 @@ class ExplainableChessEngine:
         delta_opp = get_opp_delta("isolated_pawns")
         if delta_opp > 0.5:
             reasons.append(
-                ("structure_damage", 15.0, "Creates an isolated pawn for opponent (+15 cp)")
+                (
+                    "structure_damage",
+                    15.0,
+                    "Creates an isolated pawn for opponent (+15 cp)",
+                )
             )
 
         # Center Control
         delta = get_delta("center_control")
         if delta > 0.5:
-            reasons.append(("center_control", 15.0, "Improves central control (+15 cp)"))
+            reasons.append(
+                ("center_control", 15.0, "Improves central control (+15 cp)")
+            )
 
         # Safe Mobility
         delta = get_delta("safe_mobility")
         if delta > 1.5:
-            reasons.append(("safe_mobility", 15.0, "Increases safe piece activity (+15 cp)"))
+            reasons.append(
+                ("safe_mobility", 15.0, "Increases safe piece activity (+15 cp)")
+            )
 
         # Rook on Open File
         delta = get_delta("rook_open_file")
         if delta > 0.4:
             reasons.append(
-                ("rook_activity", 25.0, "Places rook on an open or semi-open file (+25 cp)")
+                (
+                    "rook_activity",
+                    25.0,
+                    "Places rook on an open or semi-open file (+25 cp)",
+                )
             )
 
         # Backward Pawns
         delta_opp = get_opp_delta("backward_pawns")
         if delta_opp > 0.5:
             reasons.append(
-                ("structure_damage", 15.0, "Creates a backward pawn weakness for opponent (+15 cp)")
+                (
+                    "structure_damage",
+                    15.0,
+                    "Creates a backward pawn weakness for opponent (+15 cp)",
+                )
             )
 
         delta = get_delta("backward_pawns")
         if delta < -0.5:
-            reasons.append(("structure_repair", 15.0, "Fixes a backward pawn weakness (+15 cp)"))
+            reasons.append(
+                ("structure_repair", 15.0, "Fixes a backward pawn weakness (+15 cp)")
+            )
 
         # PST Improvement
         delta = get_delta("pst")
         if delta > 0.4:
-            reasons.append(("piece_quality", 15.0, "Improves piece placement quality (+15 cp)"))
+            reasons.append(
+                ("piece_quality", 15.0, "Improves piece placement quality (+15 cp)")
+            )
 
         # Pins
         delta_opp = get_opp_delta("pinned")

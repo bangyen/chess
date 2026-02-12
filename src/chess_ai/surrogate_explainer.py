@@ -102,7 +102,9 @@ class SurrogateExplainer:
 
             # Filter out negligible contributions
             significant = []
-            for i, (fname, contrib) in enumerate(zip(self.feature_names, contributions)):
+            for _i, (fname, contrib) in enumerate(
+                zip(self.feature_names, contributions)
+            ):
                 cp_value = float(contrib)
                 if abs(cp_value) >= min_cp:
                     significant.append((fname, cp_value))
@@ -112,9 +114,7 @@ class SurrogateExplainer:
 
             # Generate explanations for top k
             for fname, cp_value in significant[:top_k]:
-                template = self.FEATURE_TEMPLATES.get(
-                    fname, f"{fname} ({{:+.0f}} cp)"
-                )
+                template = self.FEATURE_TEMPLATES.get(fname, f"{fname} ({{:+.0f}} cp)")
                 try:
                     explanation = template.format(cp_value)
                 except (KeyError, TypeError):

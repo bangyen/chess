@@ -348,7 +348,7 @@ def audit_feature_set(
         cv_folds = 2
         max_iter = 1000
     else:
-        alphas = np.logspace(-2, 2, 20)
+        alphas = np.logspace(-2, 2, 20).tolist()
         cv_folds = max(2, min(5, n_samples // 10))
         max_iter = 10000
 

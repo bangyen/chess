@@ -174,7 +174,9 @@ class TestExplainableChessEngine:
         mock_engine.analyse.return_value = {"pv": [chess.Move.from_uci("e2e4")]}
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish", depth=10)
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", depth=10, enable_model_explanations=False
+        )
 
         with engine:
             best_move = engine.get_best_move()
@@ -205,18 +207,28 @@ class TestExplainableChessEngine:
 
         assert best_move is None
 
+    @patch("src.chess_ai.engine.sf_top_moves")
+    @patch("src.chess_ai.engine.sf_eval")
     @patch("src.chess_ai.explainable_engine.baseline_extract_features")
-    def test_analyze_position_success(self, mock_extract_features):
+    def test_analyze_position_success(
+        self, mock_extract_features, mock_sf_eval, mock_sf_top_moves
+    ):
         """Test position analysis success."""
         mock_extract_features.return_value = {"material_diff": 0.0, "mobility_us": 20.0}
+        mock_sf_eval.return_value = 25.0
+        mock_sf_top_moves.return_value = [(Mock(from_square=12, to_square=28), 25.0)]
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
+        engine.engine = Mock()
 
         result = engine.analyze_position()
 
         assert "features" in result
         assert "top_moves" in result
         assert "stockfish_score" in result
+        assert result["stockfish_score"] == 25.0
         mock_extract_features.assert_called_once()
 
     @patch("src.chess_ai.explainable_engine.baseline_extract_features")
@@ -352,7 +364,7 @@ class TestExplainableChessEngine:
 
         explanation = engine._generate_overall_explanation(move, 0.0, [])
 
-        assert explanation == "Move e4:"
+        assert explanation == "Move e4: Reasonable move. (+0 cp)"
 
     def test_generate_overall_explanation_with_board(self):
         """Test generating overall explanation with board."""

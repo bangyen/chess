@@ -327,15 +327,15 @@ def audit_feature_set(
             if len(features_normalized.shape) == 1:
                 phase_name = self.get_phase(features_normalized)
                 model = self.models.get(phase_name, self.global_model)
-                return model.coef_ * features_normalized
-            else:
-                # Multiple vectors
-                contributions = np.zeros_like(features_normalized)
-                for i, feat_vec in enumerate(features_normalized):
-                    phase_name = self.get_phase(feat_vec)
-                    model = self.models.get(phase_name, self.global_model)
-                    contributions[i] = model.coef_ * feat_vec
-                return contributions
+                result: np.ndarray = model.coef_ * features_normalized  # type: ignore
+                return result
+            # Multiple vectors
+            contributions: np.ndarray = np.zeros_like(features_normalized)
+            for i, feat_vec in enumerate(features_normalized):
+                phase_name = self.get_phase(feat_vec)
+                model = self.models.get(phase_name, self.global_model)
+                contributions[i] = model.coef_ * feat_vec  # type: ignore
+            return contributions
 
         @property
         def alpha_(self):

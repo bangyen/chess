@@ -7,7 +7,6 @@ import chess
 import numpy as np
 
 from .engine import SFConfig, sf_eval, sf_top_moves
-from .metrics.kendall import kendall_tau
 from .metrics.positional import (
     checkability_now,
     confinement_delta,
@@ -26,7 +25,9 @@ try:
     warnings.filterwarnings("ignore", message=".*convergence.*", module="sklearn")
     warnings.filterwarnings("ignore", module="sklearn")
 except Exception as e:
-    raise ImportError("scikit-learn is required. Install with: pip install scikit-learn") from e
+    raise ImportError(
+        "scikit-learn is required. Install with: pip install scikit-learn"
+    ) from e
 
 
 class PhaseEnsemble:
@@ -90,9 +91,7 @@ class PhaseEnsemble:
         """Predict evaluation deltas."""
         if len(X.shape) == 1:
             p_name = self.get_phase(X)
-            return self.models.get(p_name, self.global_model).predict(
-                X.reshape(1, -1)
-            )
+            return self.models.get(p_name, self.global_model).predict(X.reshape(1, -1))
 
         preds = np.zeros(X.shape[0])
         for i, x in enumerate(X):
@@ -114,15 +113,15 @@ class PhaseEnsemble:
         if len(features_normalized.shape) == 1:
             phase_name = self.get_phase(features_normalized)
             model = self.models.get(phase_name, self.global_model)
-            return model.coef_ * features_normalized
-        else:
-            # Multiple vectors
-            contributions = np.zeros_like(features_normalized)
-            for i, feat_vec in enumerate(features_normalized):
-                phase_name = self.get_phase(feat_vec)
-                model = self.models.get(phase_name, self.global_model)
-                contributions[i] = model.coef_ * feat_vec
-            return contributions
+            result: np.ndarray = model.coef_ * features_normalized  # type: ignore
+            return result
+        # Multiple vectors
+        contributions: np.ndarray = np.zeros_like(features_normalized)
+        for i, feat_vec in enumerate(features_normalized):
+            phase_name = self.get_phase(feat_vec)
+            model = self.models.get(phase_name, self.global_model)
+            contributions[i] = model.coef_ * feat_vec  # type: ignore
+        return contributions
 
     @property
     def coef_(self):

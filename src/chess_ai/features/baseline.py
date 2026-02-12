@@ -194,8 +194,55 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                     count += 1
         return float(count)
 
+    def bishop_pair(side):
+        # Check if side has both bishops
+        bishops = board.pieces(chess.BISHOP, side)
+        return 1.0 if len(bishops) >= 2 else 0.0
+
+    def rook_on_7th(side):
+        # Count rooks on the 7th rank (for white) or 2nd rank (for black)
+        target_rank = 6 if side == chess.WHITE else 1
+        count = 0
+        for sq in board.pieces(chess.ROOK, side):
+            if chess.square_rank(sq) == target_rank:
+                count += 1
+        return float(count)
+
+    def king_pawn_shield(side):
+        # Count friendly pawns in front of the king (3 files around)
+        ks = board.king(side)
+        if ks is None:
+            return 0.0
+        file = chess.square_file(ks)
+        rank = chess.square_rank(ks)
+
+        # Define shield area: 3 files, 1-2 ranks ahead
+        shield_ranks = (
+            [rank + 1, rank + 2] if side == chess.WHITE else [rank - 1, rank - 2]
+        )
+        shield_files = [file - 1, file, file + 1]
+
+        count = 0
+        for f in shield_files:
+            if f < 0 or f > 7:
+                continue
+            for r in shield_ranks:
+                if r < 0 or r > 7:
+                    continue
+                sq = chess.square(f, r)
+                piece = board.piece_at(sq)
+                if piece and piece.piece_type == chess.PAWN and piece.color == side:
+                    count += 1
+        return float(count)
+
     feats["hanging_us"] = hanging_pieces(board.turn)
     feats["hanging_them"] = hanging_pieces(not board.turn)
+    feats["bishop_pair_us"] = bishop_pair(board.turn)
+    feats["bishop_pair_them"] = bishop_pair(not board.turn)
+    feats["rook_on_7th_us"] = rook_on_7th(board.turn)
+    feats["rook_on_7th_them"] = rook_on_7th(not board.turn)
+    feats["king_pawn_shield_us"] = king_pawn_shield(board.turn)
+    feats["king_pawn_shield_them"] = king_pawn_shield(not board.turn)
 
     # Add engine-based dynamic probes for better move ranking
     def sf_eval_shallow(engine, board, depth=6):

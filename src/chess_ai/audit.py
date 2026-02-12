@@ -3,7 +3,7 @@
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import chess
 import numpy as np
@@ -196,6 +196,31 @@ def audit_feature_set(
 
     # realign feature vectors to common feature set
     feature_names = feature_names or []
+
+    # Add interaction terms before matrix conversion
+    interaction_pairs = [
+        ("material_diff", "phase"),
+        ("passed_us", "phase"),
+        ("mobility_us", "phase"),
+    ]
+
+    def apply_interactions(feats):
+        for p1, p2 in interaction_pairs:
+            if p1 in feats and p2 in feats:
+                feats[f"{p1}_x_{p2}"] = float(feats[p1]) * float(feats[p2])
+
+    # First, apply interactions to all training samples
+    for x in X:
+        apply_interactions(x)
+
+    # Update feature_names to include interactions
+    for p1, p2 in interaction_pairs:
+        # Check if both parents are in the common feature set
+        if p1 in feature_names and p2 in feature_names:
+            combined_name = f"{p1}_x_{p2}"
+            if combined_name not in feature_names:
+                feature_names.append(combined_name)
+
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )
@@ -210,7 +235,6 @@ def audit_feature_set(
     # Since we have move deltas, we'll use a subset of boards for testing
     n_test_boards = max(1, int(len(boards) * test_size))
     B_test = boards[:n_test_boards]
-    # B_train = boards[n_test_boards:]  # Unused for now
 
     # 2) Fit linear L1 surrogate (signs are easier to read; you can swap models if you wish)
     # Normalize features to prevent extreme coefficients
@@ -218,50 +242,97 @@ def audit_feature_set(
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Use cross-validation with a balanced alpha range
-    # Adjust parameters based on dataset size to prevent convergence issues
-    n_samples, n_features = X_train.shape
+    # Phase-specific model training
+    class PhaseEnsemble:
+        def __init__(self, feature_names, alphas, cv_folds, max_iter):
+            self.feature_names = feature_names
+            self.phase_idx = (
+                feature_names.index("phase") if "phase" in feature_names else -1
+            )
+            self.alphas = alphas
+            self.cv_folds = cv_folds
+            self.max_iter = max_iter
+            self.models = {}  # "opening", "middlegame", "endgame"
+            self.global_model = None
 
+        def get_phase(self, x):
+            if self.phase_idx == -1:
+                return "middlegame"
+            p = x[self.phase_idx]
+            if p > 24:
+                return "opening"
+            if p > 12:
+                return "middlegame"
+            return "endgame"
+
+        def fit(self, X, y):
+            # Train global model backup
+            self.global_model = LassoCV(
+                cv=self.cv_folds,
+                random_state=42,
+                max_iter=self.max_iter,
+                alphas=self.alphas,
+            )
+            self.global_model.fit(X, y)
+
+            # Train phase-specific models
+            phases = [self.get_phase(x) for x in X]
+            for p_name in ["opening", "middlegame", "endgame"]:
+                idx = [i for i, p in enumerate(phases) if p == p_name]
+                if len(idx) > self.cv_folds * 2:
+                    m = LassoCV(
+                        cv=self.cv_folds,
+                        random_state=42,
+                        max_iter=self.max_iter,
+                        alphas=self.alphas,
+                    )
+                    m.fit(X[idx], y[idx])
+                    self.models[p_name] = m
+                else:
+                    self.models[p_name] = self.global_model
+
+        def predict(self, X):
+            if len(X.shape) == 1:
+                p_name = self.get_phase(X)
+                return self.models.get(p_name, self.global_model).predict(
+                    X.reshape(1, -1)
+                )
+
+            preds = np.zeros(X.shape[0])
+            for i, x in enumerate(X):
+                p_name = self.get_phase(x)
+                preds[i] = self.models.get(p_name, self.global_model).predict(
+                    x.reshape(1, -1)
+                )[0]
+            return preds
+
+        @property
+        def coef_(self):
+            # For simplicity in audit metrics, use middlegame coefficients as primary representative
+            return self.models.get("middlegame", self.global_model).coef_
+
+        @property
+        def alpha_(self):
+            return self.global_model.alpha_
+
+    # Use cross-validation with a balanced alpha range
+    n_samples, n_features = X_train.shape
     if n_samples < 10:
-        # For very small datasets, use simpler approach
-        alphas: Union[List[float], npt.NDArray[np.floating]] = [
-            1.0,
-            10.0,
-            100.0,
-        ]  # Fewer alphas, higher values
+        alphas = [1.0, 10.0, 100.0]
         cv_folds = 2
-        max_iter = 1000  # Fewer iterations
+        max_iter = 1000
     else:
-        # For larger datasets, use full approach
-        alphas = np.logspace(-2, 2, 20)  # 0.01 to 100.0
+        alphas = np.logspace(-2, 2, 20)
         cv_folds = max(2, min(5, n_samples // 10))
         max_iter = 10000
 
-    model = LassoCV(
-        cv=cv_folds,
-        random_state=42,
-        max_iter=max_iter,
-        alphas=alphas,
-    )
+    model = PhaseEnsemble(feature_names, alphas, cv_folds, max_iter)
 
-    # Suppress convergence warnings for small datasets
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
         model.fit(X_train_scaled, y_train)
-    print(f"Selected alpha: {model.alpha_:.4f}")
 
-    # If still overfitting, use a minimum alpha
-    if model.alpha_ < 1.0:
-        model.alpha_ = 1.0
-        model = Lasso(
-            alpha=model.alpha_, fit_intercept=True, random_state=42, max_iter=max_iter
-        )
-
-        # Suppress convergence warnings for small datasets
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
-            model.fit(X_train_scaled, y_train)
-        print(f"Using minimum alpha: {model.alpha_:.4f}")
+    print(f"Selected global alpha: {model.alpha_:.4f}")
 
     # Fidelity
     y_pred = model.predict(X_test_scaled)
@@ -284,14 +355,9 @@ def audit_feature_set(
         cand = sf_top_moves(engine, b, cfg_local)
         if len(cand) < 2:
             continue
-        # Build surrogate scores by evaluating features AFTER each candidate move
-        # base_feats = extract_features_fn(b)  # Unused for now
-        # base_vec = np.array(
-        #     [float(base_feats.get(k, 0.0)) for k in feature_names], dtype=float
-        # )  # Unused for now
+
         sf_scores = []
         sur_scores = []
-        # ranks = list(range(len(cand)))  # Unused for now
 
         # Get base evaluation
         base_eval = sf_eval(engine, b, cfg)
@@ -347,6 +413,9 @@ def audit_feature_set(
                 # Add confinement delta features
                 conf_delta = confinement_delta(base_board, b)
                 feats_after_reply.update(conf_delta)
+
+                # Add interactions
+                apply_interactions(feats_after_reply)
 
                 vec_after_reply = np.array(
                     [float(feats_after_reply.get(k, 0.0)) for k in feature_names],
@@ -448,6 +517,9 @@ def audit_feature_set(
             conf_delta = confinement_delta(base_board, b)
             f_best.update(conf_delta)
 
+            # Add interactions
+            apply_interactions(f_best)
+
             vec_best = np.array(
                 [float(f_best.get(k, 0.0)) for k in feature_names], dtype=float
             )
@@ -493,6 +565,9 @@ def audit_feature_set(
 
             conf_delta = confinement_delta(base_board, b)
             f_second.update(conf_delta)
+
+            # Add interactions
+            apply_interactions(f_second)
 
             vec_second = np.array(
                 [float(f_second.get(k, 0.0)) for k in feature_names], dtype=float
@@ -611,8 +686,8 @@ def audit_feature_set(
             b.push(best_mv)
             if reply_move is not None:
                 b.push(reply_move)
-                f_best = extract_features_fn(b)
-                f_best.pop("_engine_probes", {})
+                f_best.update(pp_delta)
+                apply_interactions(f_best)
                 vec_best = np.array(
                     [float(f_best.get(k, 0.0)) for k in feature_names], dtype=float
                 )
@@ -624,8 +699,8 @@ def audit_feature_set(
             b.push(second_mv)
             if reply_move is not None:
                 b.push(reply_move)
-                f_second = extract_features_fn(b)
-                f_second.pop("_engine_probes", {})
+                f_second.update(pp_delta)
+                apply_interactions(f_second)
                 vec_second = np.array(
                     [float(f_second.get(k, 0.0)) for k in feature_names], dtype=float
                 )

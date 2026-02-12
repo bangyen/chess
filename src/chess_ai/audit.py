@@ -202,6 +202,10 @@ def audit_feature_set(
         ("material_diff", "phase"),
         ("passed_us", "phase"),
         ("mobility_us", "phase"),
+        ("batteries_us", "open_files_us"),
+        ("batteries_us", "semi_open_us"),
+        ("outposts_us", "phase"),
+        ("bishop_pair_us", "open_files_us"),
     ]
 
     def apply_interactions(feats):

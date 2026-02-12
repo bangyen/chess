@@ -135,3 +135,32 @@ class TestExplanationContent:
 
         reason = any("backward pawn weakness" in r[2].lower() for r in reasons)
         assert reason, f"Expected backward pawn explanation, got: {reasons}"
+
+    def test_pst_explanation(self):
+        engine = ExplainableChessEngine(stockfish_path="mock")
+        # Improve placement: Knight h1 -> g3.
+        # h1 is bad (-50). g3 is better (+10ish?).
+        engine.board = chess.Board("8/8/8/8/8/8/8/6N1 w - - 0 1")  # N on h1
+        move = chess.Move.from_uci("g1h3")  # Move to h3 (edge but better than h1?)
+        # Or g1f3. f3 is good.
+        move = chess.Move.from_uci("g1f3")
+
+        reasons = engine._generate_move_reasons(move, 0.0, 0.0)
+
+        reason = any("piece placement" in r[2].lower() for r in reasons)
+        assert reason, f"Expected piece placement explanation, got: {reasons}"
+
+    def test_pin_explanation(self):
+        engine = ExplainableChessEngine(stockfish_path="mock")
+        # Pin creation: White Rook pins Black Pawn.
+        # Black King e8, Black Pawn e7, White Rook e1.
+        # Move Rook e1-e2? No, Rook on e1 already pins if open file.
+        # Let's say Rook on d1. Move d1-e1 to pin e7.
+        engine.board = chess.Board("4k3/4p3/8/8/8/8/8/3R4 w - - 0 1")  # R on d1.
+        # Move Re1.
+        move = chess.Move.from_uci("d1e1")
+
+        reasons = engine._generate_move_reasons(move, 0.0, 0.0)
+
+        reason = any("pins an opponent" in r[2].lower() for r in reasons)
+        assert reason, f"Expected pin creation explanation, got: {reasons}"

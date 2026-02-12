@@ -101,3 +101,30 @@ class TestNewFeatures:
         feats = baseline_extract_features(board)
         # Should be 0 (supported).
         assert feats["backward_pawns_us"] == 0.0
+
+    def test_pst(self):
+        # White Knight on e4 (center) vs h1 (corner).
+        # Board 1: Knight e4.
+        board = chess.Board("8/8/8/8/4N3/8/8/8 w - - 0 1")
+        feats1 = baseline_extract_features(board)
+
+        # Board 2: Knight h1.
+        board = chess.Board("8/8/8/8/8/8/8/7N w - - 0 1")
+        feats2 = baseline_extract_features(board)
+
+        # Center should be better.
+        assert feats1["pst_us"] > feats2["pst_us"]
+
+    def test_pinned(self):
+        # White Rook on e1, King on e1. Black Rook on e8.
+        # White Pawn on e2 pinned? (Assuming absolute pin).
+        # Board: 4r3/8/8/8/8/8/4P3/4K3 w - - 0 1
+        # Pawn e2 is pinned by Re8 to Ke1.
+        board = chess.Board("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1")
+        feats = baseline_extract_features(board)
+        assert feats["pinned_us"] == 1.0
+
+        # Unpin: Move king to d1.
+        board = chess.Board("4r3/8/8/8/8/8/4P3/3K4 w - - 0 1")
+        feats = baseline_extract_features(board)
+        assert feats["pinned_us"] == 0.0

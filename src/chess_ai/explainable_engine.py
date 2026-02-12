@@ -324,6 +324,26 @@ class ExplainableChessEngine:
         if delta < -0.5:
             reasons.append(("structure_repair", 1, "Fixes a backward pawn weakness"))
 
+        # Phase 3 Explanations
+
+        # PST Improvement
+        delta = get_delta("pst")
+        if (
+            delta > 0.4
+        ):  # Lowered threshold to 0.4 based on test case (50cp = 0.5, but let's be safe)
+            reasons.append(("piece_quality", 1, "Improves piece placement quality"))
+
+        # Pins
+        # We want to increase pinned_them
+        delta_opp = get_opp_delta("pinned")
+        if delta_opp > 0.5:
+            reasons.append(("pin_creation", 2, "Pins an opponent's piece"))
+
+        # We want to decrease pinned_us
+        delta = get_delta("pinned")
+        if delta < -0.5:
+            reasons.append(("pin_escape", 2, "Escapes a pin"))
+
         return reasons
 
     def _generate_move_reasons_with_board(

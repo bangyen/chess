@@ -463,22 +463,11 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         return float(count)
 
     def pawn_structure(side):
-        doubled = 0
         isolated = 0
 
         pawns = board.pieces(chess.PAWN, side)
         for sq in pawns:
             file = chess.square_file(sq)
-
-            # Doubled
-            pawns_on_file = 0
-            for r in range(8):
-                check_sq = chess.square(file, r)
-                p = board.piece_at(check_sq)
-                if p and p.piece_type == chess.PAWN and p.color == side:
-                    pawns_on_file += 1
-            if pawns_on_file > 1:
-                doubled += 1  # Counts each pawn involved, maybe divide by 2? Sticking to count.
 
             # Isolated
             has_neighbor = False
@@ -495,27 +484,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             if not has_neighbor:
                 isolated += 1
 
-        return float(doubled), float(isolated)
-
-    def space_advantage(side):
-        # Count squares behind enemy pawn structure controlled by us
-        # Refined: Focus on central files (c, d, e, f) and rank 5+ (for white)
-        count = 0
-        enemy_camp_ranks = range(4, 8) if side == chess.WHITE else range(0, 4)
-        central_files = [2, 3, 4, 5]  # c, d, e, f
-
-        for sq in chess.SQUARES:
-            if (
-                chess.square_rank(sq) in enemy_camp_ranks
-                and chess.square_file(sq) in central_files
-            ):
-                # Controlled by our pawn?
-                attackers = board.attackers(side, sq)
-                for attacker in attackers:
-                    if board.piece_type_at(attacker) == chess.PAWN:
-                        count += 1
-                        break
-        return float(count)
+        return float(isolated)
 
     feats["outposts_us"] = outposts(board.turn)
     feats["outposts_them"] = outposts(not board.turn)
@@ -523,15 +492,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["batteries_us"] = batteries(board.turn)
     feats["batteries_them"] = batteries(not board.turn)
 
-    doubled_us, iso_us = pawn_structure(board.turn)
-    doubled_them, iso_them = pawn_structure(not board.turn)
-    feats["doubled_pawns_us"] = doubled_us
-    feats["doubled_pawns_them"] = doubled_them
-    feats["isolated_pawns_us"] = iso_us
-    feats["isolated_pawns_them"] = iso_them
-
-    feats["space_us"] = space_advantage(board.turn)
-    feats["space_them"] = space_advantage(not board.turn)
+    feats["isolated_pawns_us"] = pawn_structure(board.turn)
+    feats["isolated_pawns_them"] = pawn_structure(not board.turn)
 
     # Store functions for later use in move ranking
     feats["_engine_probes"] = {

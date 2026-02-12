@@ -16,6 +16,14 @@ except Exception:
     raise
 
 
+try:
+    from chess_ai.rust_utils import calculate_forcing_swing, find_best_reply
+
+    RUST_AVAILABLE = True
+except ImportError:
+    RUST_AVAILABLE = False
+
+
 def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     """Small, fast, interpretable baseline feature set.
 
@@ -285,12 +293,25 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             return 0.0
 
     def hanging_after_reply_real(engine, board, depth=6):
-        """Real hanging-after-reply with engine analysis"""
+        """Real hanging-after-reply with engine analysis (or Rust optimization)"""
         try:
-            info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=1)
-            if isinstance(info, list):
-                info = info[0]
-            reply = info.get("pv", [None])[0]
+            reply = None
+            if RUST_AVAILABLE:
+                try:
+                    uci = find_best_reply(board.fen(), depth)
+                    if uci:
+                        reply = chess.Move.from_uci(uci)
+                except Exception:
+                    # Fallback on error
+                    pass
+
+            if reply is None:
+                # Stockfish fallback
+                info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=1)
+                if isinstance(info, list):
+                    info = info[0]
+                reply = info.get("pv", [None])[0]
+
             if reply is None:
                 return 0, 0, 0
 
@@ -328,7 +349,15 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             return 0, 0, 0
 
     def best_forcing_swing_real(engine, board, d_base=6, k_max=12):
-        """Real forcing swing with eval differences"""
+        """Real forcing swing with eval differences (or Rust optimization)"""
+        if RUST_AVAILABLE:
+            try:
+                # Rust implementation handles the full swing calculation
+                # Note: Rust returns float centipawns
+                return float(calculate_forcing_swing(board.fen(), d_base))
+            except Exception:
+                pass
+
         try:
             base = sf_eval_shallow(engine, board, d_base)
             forcing = [

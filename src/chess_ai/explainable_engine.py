@@ -291,6 +291,39 @@ class ExplainableChessEngine:
         if delta > 0.5:
             reasons.append(("center_control", 1, "Improves central control"))
 
+        # Phase 2 Explanations
+
+        # Safe Mobility
+        delta = get_delta("safe_mobility")
+        if delta > 1.5:  # Threshold of 1.5 squares
+            reasons.append(("safe_mobility", 1, "Increases safe piece activity"))
+
+        # Rook on Open File
+        delta = get_delta("rook_open_file")
+        if delta > 0.4:  # 0.5 or 1.0 (semi-open is 0.5)
+            reasons.append(
+                ("rook_activity", 2, "Places rook on an open or semi-open file")
+            )
+
+        # Backward Pawns (Negative for us is good, Positive for them is good)
+        # We want to force them to have backward pawns (increase backward_pawns_them)
+        # Or reduce our backward pawns (reduce backward_pawns_us)
+
+        # Did we create a backward pawn for THEM?
+        delta_opp = get_opp_delta("backward_pawns")
+        if delta_opp > 0.5:
+            reasons.append(
+                ("structure_damage", 1, "Creates a backward pawn weakness for opponent")
+            )
+
+        # Did we fix OUR backward pawn?
+        # Compare backward_pawns_us before vs backward_pawns_them after (perspective flip again?)
+        # Wait, get_delta compares (Item_US_Before) vs (Item_THEM_After).
+        # So delta < -0.5 means we reduced the count.
+        delta = get_delta("backward_pawns")
+        if delta < -0.5:
+            reasons.append(("structure_repair", 1, "Fixes a backward pawn weakness"))
+
         return reasons
 
     def _generate_move_reasons_with_board(

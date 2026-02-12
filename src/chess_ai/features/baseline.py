@@ -482,7 +482,103 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["isolated_pawns_us"] = pawn_structure(board.turn)
     feats["isolated_pawns_them"] = pawn_structure(not board.turn)
 
-    # Store functions for later use in move ranking
+    # Phase 2 Features
+    def safe_mobility(side):
+        # Count legal moves that don't land on squares attacked by enemy pawns
+        if board.turn != side:
+            board.turn = side
+            moves = list(board.legal_moves)
+            board.turn = not side
+        else:
+            moves = list(board.legal_moves)
+
+        # Get enemy pawn attacks
+        enemy_pawn_attacks = chess.SquareSet()
+        opp = not side
+        for sq in board.pieces(chess.PAWN, opp):
+            enemy_pawn_attacks |= board.attacks(sq)
+
+        safe_count = 0
+        for move in moves:
+            if move.to_square not in enemy_pawn_attacks:
+                safe_count += 1
+
+        return min(float(safe_count), 40.0)
+
+    def rook_on_open_file(side):
+        count = 0
+        for sq in board.pieces(chess.ROOK, side):
+            file = chess.square_file(sq)
+            # Check if file is open (no pawns)
+            is_open = True
+            is_semi_open = True
+
+            for r in range(8):
+                s = chess.square(file, r)
+                p = board.piece_at(s)
+                if p and p.piece_type == chess.PAWN:
+                    is_open = False
+                    if p.color == side:
+                        is_semi_open = False
+
+            if is_open:
+                count += 1.0
+            elif is_semi_open:
+                count += 0.5
+        return float(count)
+
+    def backward_pawns(side):
+        count = 0
+        pawns = board.pieces(chess.PAWN, side)
+        opp = not side
+
+        # Get all enemy pawn attacks (control)
+        enemy_pawn_attacks = chess.SquareSet()
+        for sq in board.pieces(chess.PAWN, opp):
+            enemy_pawn_attacks |= board.attacks(sq)
+
+        for sq in pawns:
+            file = chess.square_file(sq)
+            rank = chess.square_rank(sq)
+
+            # 1. Check if supported by friendly pawns
+            is_supported = False
+            # Support comes from pawns on adjacent files, 1 rank behind or same rank (guards advance?)
+            # Strictly: pawns on adjacent files that are behind or same rank.
+            # Simplified: adjacent files, rank <= current rank.
+            for f in [file - 1, file + 1]:
+                if 0 <= f <= 7:
+                    # Let's use simple support check: existing friendly pawns on adjacent files BEHIND or EQUAL
+                    for r in range(8):
+                        if (side == chess.WHITE and r <= rank) or (
+                            side == chess.BLACK and r >= rank
+                        ):
+                            s_sq = chess.square(f, r)
+                            p = board.piece_at(s_sq)
+                            if p and p.piece_type == chess.PAWN and p.color == side:
+                                is_supported = True
+                                break
+                if is_supported:
+                    break
+
+            if is_supported:
+                continue
+
+            # 2. Check if advance is stopped by enemy pawns (control of stop square)
+            stop_rank = rank + 1 if side == chess.WHITE else rank - 1
+            if 0 <= stop_rank <= 7:
+                stop_sq = chess.square(file, stop_rank)
+                if stop_sq in enemy_pawn_attacks:
+                    count += 1
+
+        return float(count)
+
+    feats["safe_mobility_us"] = safe_mobility(board.turn)
+    feats["safe_mobility_them"] = safe_mobility(not board.turn)
+    feats["rook_open_file_us"] = rook_on_open_file(board.turn)
+    feats["rook_open_file_them"] = rook_on_open_file(not board.turn)
+    feats["backward_pawns_us"] = backward_pawns(board.turn)
+    feats["backward_pawns_them"] = backward_pawns(not board.turn)
     feats["_engine_probes"] = {
         "hanging_after_reply": hanging_after_reply_real,
         "best_forcing_swing": best_forcing_swing_real,

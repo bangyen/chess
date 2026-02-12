@@ -359,10 +359,179 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         )
         return s / max(6, phase)
 
-    # Add engine-based features (these will be computed during move ranking)
-    # For now, add simplified versions for the base features
-    feats["king_ring_pressure_us"] = king_ring_pressure_real(board, board.turn)
-    feats["king_ring_pressure_them"] = king_ring_pressure_real(board, not board.turn)
+    # Add advanced positional features
+    def outposts(side):
+        # Knight on rank 4-6 (relative), supported by pawn, no enemy pawn can attack
+        count = 0
+        knights = board.pieces(chess.KNIGHT, side)
+        for sq in knights:
+            rank = chess.square_rank(sq)
+
+            # Check rank (4th, 5th, 6th relative to side)
+            rel_rank = rank if side == chess.WHITE else 7 - rank
+            if rel_rank < 3 or rel_rank > 5:
+                continue
+
+            # Check pawn support
+            is_supported = False
+            pawn_attacks = board.attackers(side, sq)
+            for attacker in pawn_attacks:
+                if board.piece_type_at(attacker) == chess.PAWN:
+                    is_supported = True
+                    break
+            if not is_supported:
+                continue
+
+            # Check if enemy pawns can attack
+            # This is complex, simplified: check if enemy pawns on adjacent files are ahead
+            # or if the square is guarded by an enemy pawn
+            if board.is_attacked_by(not side, sq):
+                # If attacked by pawn, not a true outpost
+                attacked_by_pawn = False
+                enemy_attacks = board.attackers(not side, sq)
+                for attacker in enemy_attacks:
+                    if board.piece_type_at(attacker) == chess.PAWN:
+                        attacked_by_pawn = True
+                        break
+                if attacked_by_pawn:
+                    continue
+
+            count += 1
+        return float(count)
+
+    def batteries(side):
+        # R-R, R-Q, Q-Q on same file/rank; B-Q on same diagonal
+        count = 0
+        # Files and Ranks
+        for i in range(8):
+            # File
+            pieces_on_file = []
+            for r in range(8):
+                sq = chess.square(i, r)
+                p = board.piece_at(sq)
+                if p and p.color == side and p.piece_type in [chess.ROOK, chess.QUEEN]:
+                    pieces_on_file.append(p.piece_type)
+            if len(pieces_on_file) >= 2:
+                count += 1
+
+            # Rank
+            pieces_on_rank = []
+            for f in range(8):
+                sq = chess.square(f, i)
+                p = board.piece_at(sq)
+                if p and p.color == side and p.piece_type in [chess.ROOK, chess.QUEEN]:
+                    pieces_on_rank.append(p.piece_type)
+            if len(pieces_on_rank) >= 2:
+                count += 1
+
+        # Diagonals (B-Q)
+        # Scan all diagonals
+        # Positive diagonals (sum of rank+file is constant)
+        for s in range(15):
+            pieces_on_diag = []
+            for f in range(8):
+                r = s - f
+                if 0 <= r < 8:
+                    sq = chess.square(f, r)
+                    p = board.piece_at(sq)
+                    if (
+                        p
+                        and p.color == side
+                        and p.piece_type in [chess.BISHOP, chess.QUEEN]
+                    ):
+                        pieces_on_diag.append(p.piece_type)
+            if len(pieces_on_diag) >= 2:
+                count += 1
+
+        # Negative diagonals (diff of rank-file is constant)
+        for d in range(-7, 8):
+            pieces_on_diag = []
+            for f in range(8):
+                r = f + d
+                if 0 <= r < 8:
+                    sq = chess.square(f, r)
+                    p = board.piece_at(sq)
+                    if (
+                        p
+                        and p.color == side
+                        and p.piece_type in [chess.BISHOP, chess.QUEEN]
+                    ):
+                        pieces_on_diag.append(p.piece_type)
+            if len(pieces_on_diag) >= 2:
+                count += 1
+
+        return float(count)
+
+    def pawn_structure(side):
+        doubled = 0
+        isolated = 0
+
+        pawns = board.pieces(chess.PAWN, side)
+        for sq in pawns:
+            file = chess.square_file(sq)
+
+            # Doubled
+            pawns_on_file = 0
+            for r in range(8):
+                check_sq = chess.square(file, r)
+                p = board.piece_at(check_sq)
+                if p and p.piece_type == chess.PAWN and p.color == side:
+                    pawns_on_file += 1
+            if pawns_on_file > 1:
+                doubled += 1  # Counts each pawn involved, maybe divide by 2? Sticking to count.
+
+            # Isolated
+            has_neighbor = False
+            for f in [file - 1, file + 1]:
+                if 0 <= f <= 7:
+                    for r in range(8):
+                        check_sq = chess.square(f, r)
+                        p = board.piece_at(check_sq)
+                        if p and p.piece_type == chess.PAWN and p.color == side:
+                            has_neighbor = True
+                            break
+                if has_neighbor:
+                    break
+            if not has_neighbor:
+                isolated += 1
+
+        return float(doubled), float(isolated)
+
+    def space_advantage(side):
+        # Count squares behind enemy pawn structure controlled by us
+        # Refined: Focus on central files (c, d, e, f) and rank 5+ (for white)
+        count = 0
+        enemy_camp_ranks = range(4, 8) if side == chess.WHITE else range(0, 4)
+        central_files = [2, 3, 4, 5]  # c, d, e, f
+
+        for sq in chess.SQUARES:
+            if (
+                chess.square_rank(sq) in enemy_camp_ranks
+                and chess.square_file(sq) in central_files
+            ):
+                # Controlled by our pawn?
+                attackers = board.attackers(side, sq)
+                for attacker in attackers:
+                    if board.piece_type_at(attacker) == chess.PAWN:
+                        count += 1
+                        break
+        return float(count)
+
+    feats["outposts_us"] = outposts(board.turn)
+    feats["outposts_them"] = outposts(not board.turn)
+
+    feats["batteries_us"] = batteries(board.turn)
+    feats["batteries_them"] = batteries(not board.turn)
+
+    doubled_us, iso_us = pawn_structure(board.turn)
+    doubled_them, iso_them = pawn_structure(not board.turn)
+    feats["doubled_pawns_us"] = doubled_us
+    feats["doubled_pawns_them"] = doubled_them
+    feats["isolated_pawns_us"] = iso_us
+    feats["isolated_pawns_them"] = iso_them
+
+    feats["space_us"] = space_advantage(board.turn)
+    feats["space_them"] = space_advantage(not board.turn)
 
     # Store functions for later use in move ranking
     feats["_engine_probes"] = {

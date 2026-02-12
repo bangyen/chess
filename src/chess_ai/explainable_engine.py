@@ -194,94 +194,102 @@ class ExplainableChessEngine:
     def _generate_move_reasons(
         self, move: chess.Move, score: float, best_score: float
     ) -> List[Tuple[str, int, str]]:
-        """Generate specific reasons why a move is good or bad."""
+        """Generate specific reasons why a move is good or bad using feature deltas."""
         reasons = []
 
-        # Create a temporary board to analyze the move BEFORE it's played
+        # 1. Base features (before move)
+        try:
+            feats_before = baseline_extract_features(self.board)
+        except Exception:
+            feats_before = {}
+
+        # 2. Make move
         temp_board = self.board.copy()
 
+        # Capture logic (keep hardcoded as it's salient)
+        if temp_board.is_capture(move):
+            captured_piece = temp_board.piece_at(move.to_square)
+            if captured_piece:
+                piece_value = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}.get(
+                    captured_piece.symbol().upper(), 0
+                )
+                reasons.append(
+                    (
+                        "capture",
+                        piece_value,
+                        f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
+                    )
+                )
+
+        temp_board.push(move)
+
+        # Check logic (keep hardcoded)
+        if temp_board.is_check():
+            reasons.append(("check", 2, "Gives check to opponent's king"))
+
+        # 3. After features (after move)
+        # Note: Perspective flips! "us" becomes "them"
         try:
-            # Analyze the move's characteristics
-            # Get move string for analysis
-            try:
-                temp_board.san(move)
-            except Exception:
-                pass
-
-            # Check if it's a capture
-            if temp_board.is_capture(move):
-                captured_piece = temp_board.piece_at(move.to_square)
-                if captured_piece:
-                    piece_value = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}.get(
-                        captured_piece.symbol().upper(), 0
-                    )
-                    reasons.append(
-                        (
-                            "capture",
-                            piece_value,
-                            f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
-                        )
-                    )
-
-            # Check if it gives check
-            if temp_board.gives_check(move):
-                reasons.append(("check", 2, "Gives check to opponent's king"))
-
-            # Check if it's a tactical move
-            if temp_board.is_capture(move) or temp_board.gives_check(move):
-                reasons.append(("tactical", 1, "Tactical move (capture or check)"))
-
-            # Check piece development
-            piece = temp_board.piece_at(move.from_square)
-            if piece and piece.piece_type == chess.PAWN:
-                # Pawn moves
-                if (
-                    move.from_square < 16 or move.from_square > 47
-                ):  # From starting ranks
-                    reasons.append(
-                        ("development", 1, "Develops pawn from starting position")
-                    )
-            elif piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-                # Minor piece development
-                if (
-                    move.from_square < 16 or move.from_square > 47
-                ):  # From starting ranks
-                    reasons.append(
-                        (
-                            "development",
-                            2,
-                            "Develops minor piece from starting position",
-                        )
-                    )
-
-            # Check center control
-            center_squares = [chess.E4, chess.E5, chess.D4, chess.D5]
-            if move.to_square in center_squares:
-                reasons.append(("center_control", 1, "Controls central squares"))
-
-            # Check king safety
-            if piece and piece.piece_type == chess.KING:
-                # King moves in opening/middlegame
-                if len(self.move_history) < 20:
-                    reasons.append(
-                        (
-                            "king_safety",
-                            -1,
-                            "Moves king in opening (reduces castling options)",
-                        )
-                    )
-
-            # Check for castling
-            if temp_board.is_castling(move):
-                reasons.append(("castling", 3, "Castles to improve king safety"))
-
-            # Check for en passant
-            if temp_board.is_en_passant(move):
-                reasons.append(("en_passant", 1, "En passant capture"))
-
+            feats_after = baseline_extract_features(temp_board)
         except Exception:
-            # If there's an error, just return basic reasons
-            pass
+            feats_after = {}
+
+        # 4. Calculate Deltas
+        # We compare before['feature_us'] with after['feature_them'] (because side flipped)
+
+        def get_delta(feature_name):
+            val_before = feats_before.get(f"{feature_name}_us", 0.0)
+            val_after = feats_after.get(f"{feature_name}_them", 0.0)
+            return val_after - val_before
+
+        def get_opp_delta(feature_name):
+            # Did we reduce their feature?
+            val_before = feats_before.get(f"{feature_name}_them", 0.0)
+            val_after = feats_after.get(f"{feature_name}_us", 0.0)
+            return val_after - val_before
+
+        # Significant changes thresholds
+
+        # Batteries
+        delta = get_delta("batteries")
+        if delta > 0.5:
+            reasons.append(("batteries_us", 1, "Forms a battery arrangement"))
+
+        # Outposts
+        delta = get_delta("outposts")
+        if delta > 0.5:
+            reasons.append(("outposts_us", 2, "Establishes a knight outpost"))
+
+        # King Ring Pressure (weighted)
+        # Note: 'king_ring_pressure_them' (pressure ON them) vs after 'king_ring_pressure_us' (pressure ON them from our perspective? No.)
+        # baseline.py: king_ring_pressure_us is pressure EXERTED BY US onto THEM.
+        # So before: pressure_us (by White on Black)
+        # After (Black to move): pressure_them (by White on Black)
+        delta = get_delta("king_ring_pressure")
+        if delta > 0.5:
+            reasons.append(("king_pressure", 2, "Increases pressure on enemy king"))
+
+        # Bishop Pair
+        delta = get_delta("bishop_pair")
+        if delta > 0.5:
+            reasons.append(("bishop_pair", 1, "Secures the bishop pair"))
+
+        # Passed Pawns
+        delta = get_delta("passed")
+        if delta > 0.5:
+            reasons.append(("passed_pawns", 2, "Creates a passed pawn"))
+
+        # Isolated Pawns (we want to force them to have isolated pawns)
+        delta_opp = get_opp_delta("isolated_pawns")
+        if delta_opp > 0.5:
+            reasons.append(
+                ("structure_damage", 1, "Creates an isolated pawn for opponent")
+            )
+
+        # Center Control
+        delta = get_delta("center_control")
+        if delta > 0.5:
+            reasons.append(("center_control", 1, "Improves central control"))
 
         return reasons
 

@@ -52,18 +52,44 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         return min(moves, 40)
 
     def king_ring_pressure(attacking_side):
-        # Count attacks into the 8 squares around enemy king (ring1), weighted lightly
-        ks = board.king(not attacking_side)
-        if ks is None:
+        """Phase-normalized king-ring pressure"""
+        ksq = board.king(not attacking_side)
+        if ksq is None:
             return 0.0
-        # Use king attacks squares (the 8 squares around the king)
-        ring = board.attacks(ks)
 
-        count = 0
+        # Get king ring squares
+        ring = chess.SquareSet()
+        for sq in chess.SQUARES:
+            if chess.square_distance(sq, ksq) <= 1:
+                ring.add(sq)
+
+        weight = {
+            chess.PAWN: 1.0,
+            chess.KNIGHT: 3**0.7,
+            chess.BISHOP: 3.1**0.7,
+            chess.ROOK: 5**0.7,
+            chess.QUEEN: 9**0.7,
+        }
+        s = 0.0
+
         for sq in ring:
             if board.is_attacked_by(attacking_side, sq):
-                count += 1
-        return float(count)
+                # Find the strongest attacker
+                for pt, w in weight.items():
+                    if any(
+                        board.piece_type_at(x) == pt
+                        and board.color_at(x) == attacking_side
+                        for x in board.attackers(attacking_side, sq)
+                    ):
+                        s += w
+                        break
+
+        # Normalize by phase
+        phase = sum(
+            len(board.pieces(pt, True)) + len(board.pieces(pt, False))
+            for pt in [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
+        )
+        return s / max(6, phase)
 
     def passed_pawns(side):
         count = 0
@@ -319,45 +345,6 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             return max(swings) if swings else 0.0
         except Exception:
             return 0.0
-
-    def king_ring_pressure_real(board, attacker):
-        """Phase-normalized king-ring pressure"""
-        ksq = board.king(not attacker)
-        if ksq is None:
-            return 0.0
-
-        # Get king ring squares
-        ring = chess.SquareSet()
-        for sq in chess.SQUARES:
-            if chess.square_distance(sq, ksq) <= 1:
-                ring.add(sq)
-
-        weight = {
-            chess.PAWN: 1.0,
-            chess.KNIGHT: 3**0.7,
-            chess.BISHOP: 3.1**0.7,
-            chess.ROOK: 5**0.7,
-            chess.QUEEN: 9**0.7,
-        }
-        s = 0.0
-
-        for sq in ring:
-            if board.is_attacked_by(attacker, sq):
-                # Find the strongest attacker
-                for pt, w in weight.items():
-                    if any(
-                        board.piece_type_at(x) == pt and board.color_at(x) == attacker
-                        for x in board.attackers(attacker, sq)
-                    ):
-                        s += w
-                        break
-
-        # Normalize by phase
-        phase = sum(
-            len(board.pieces(pt, True)) + len(board.pieces(pt, False))
-            for pt in [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT]
-        )
-        return s / max(6, phase)
 
     # Add advanced positional features
     def outposts(side):

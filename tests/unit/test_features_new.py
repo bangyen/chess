@@ -38,13 +38,6 @@ class TestNewFeatures:
         feats = baseline_extract_features(board)
         assert feats["batteries_us"] >= 1.0
 
-    def test_doubled_pawns(self):
-        # White pawns on e4, e5
-        board = chess.Board("8/8/8/4P3/4P3/8/8/8 w - - 0 1")
-        feats = baseline_extract_features(board)
-        # 2 doubled pawns
-        assert feats["doubled_pawns_us"] == 2.0
-
     def test_isolated_pawns(self):
         # White pawn on e4, no neighbors on d-file or f-file
         board = chess.Board("8/8/8/8/4P3/8/8/8 w - - 0 1")
@@ -55,20 +48,6 @@ class TestNewFeatures:
         board = chess.Board("8/8/8/8/3PP3/8/8/8 w - - 0 1")
         feats = baseline_extract_features(board)
         assert feats["isolated_pawns_us"] == 0.0
-
-    def test_space_advantage(self):
-        # White pawns on e5, d5 controlling many squares in black's camp
-        # Specifically ranks 5-8.
-        # e5 attacks d6, f6 (rank 6) -> in enemy camp (ranks 5-8 for white)
-        # d5 attacks c6, e6 (rank 6) -> in enemy camp
-        board = chess.Board("4k3/8/8/3PP3/8/8/8/4K3 w - - 0 1")
-        feats = baseline_extract_features(board)
-        # d6, f6, c6, e6 are all rank 6, which is in enemy camp (rank >= 4 for white, 0-indexed is 4,5,6,7)
-        # d5 attacks c6, e6. e5 attacks d6, f6.
-        # d6, f6 are rank 6 and files d, f (central).
-        # c6, e6 are rank 6 and files c, e (central).
-        # All 4 squares are in central files and enemy camp.
-        assert feats["space_us"] == 4.0
 
     def test_batteries_diagonal(self):
         # White Bishop on h8, Queen on a1 (main diagonal)

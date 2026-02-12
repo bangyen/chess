@@ -1,9 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-py-modules = []
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "chess-ai"
@@ -44,6 +41,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "maturin>=1.0.0",
 ]
 
 [project.scripts]
@@ -57,11 +55,12 @@ Homepage = "https://github.com/yourusername/chess-feature-audit"
 Repository = "https://github.com/yourusername/chess-feature-audit"
 Issues = "https://github.com/yourusername/chess-feature-audit/issues"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-dir]
-"" = "src"
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "chess_ai.rust_utils"
+project-layout = "flat"
+python-source = "src"
+manifest-path = "rust/Cargo.toml"
 
 [tool.black]
 line-length = 88

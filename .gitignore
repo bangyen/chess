@@ -73,3 +73,12 @@ Desktop.ini
 
 # Linux
 *~
+# Rust
+rust/target/
+*.so
+*.dylib
+*.dll
+
+# Logs and profiling
+*.log
+profile_output*.txt

@@ -84,7 +84,9 @@ class TestExplainableChessEngine:
         mock_engine = Mock()
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine as e:
             assert e.engine == mock_engine
@@ -115,7 +117,9 @@ class TestExplainableChessEngine:
         mock_engine = Mock()
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             pass
@@ -200,7 +204,9 @@ class TestExplainableChessEngine:
         mock_engine.analyse.side_effect = Exception("Engine error")
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             best_move = engine.get_best_move()
@@ -387,7 +393,9 @@ class TestExplainableChessEngine:
         mock_engine.analyse.return_value = {"pv": [chess.Move.from_uci("e2e4")]}
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             recommendation = engine.get_move_recommendation()
@@ -434,7 +442,9 @@ class TestExplainableChessEngine:
         mock_engine.analyse.return_value = {"pv": [chess.Move.from_uci("d2d4")]}
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
         engine.make_move("e4")
 
         with engine:
@@ -458,7 +468,9 @@ class TestExplainableChessEngine:
         mock_engine.play.return_value = Mock(move=chess.Move.from_uci("e7e5"))
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             move = engine.get_stockfish_move()
@@ -480,7 +492,9 @@ class TestExplainableChessEngine:
         mock_engine.play.side_effect = Exception("Engine error")
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             move = engine.get_stockfish_move()
@@ -527,7 +541,9 @@ class TestExplainableChessEngine:
         mock_engine.analyse.return_value = {"pv": [chess.Move.from_uci("e2e4")]}
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         with engine:
             engine._show_best_move()
@@ -637,7 +653,9 @@ class TestExplainableChessEngine:
         mock_engine.play.return_value = Mock(move=chess.Move.from_uci("e7e5"))
         mock_popen_uci.return_value = mock_engine
 
-        engine = ExplainableChessEngine("/path/to/stockfish")
+        engine = ExplainableChessEngine(
+            "/path/to/stockfish", enable_model_explanations=False
+        )
 
         # Mock input to return valid move then "quit"
         input_calls = ["e4", "quit"]

@@ -710,7 +710,7 @@ def extract_features(board):
                             assert "Local faithfulness" in output
                             assert "Sparsity" in output
                             assert "Coverage" in output
-                            assert "Top features by SHAP importance" in output
+                            assert "Top features by |coef|" in output
                             assert "Guidance:" in output
 
     def test_cli_random_seed_setting(self):

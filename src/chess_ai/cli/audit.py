@@ -156,9 +156,9 @@ def main():
         f"Sparsity (reasons to cover 80% contribution for best move): {res.sparsity_mean:0.2f}"
     )
     print(f"Coverage (≥2 strong reasons):  {res.coverage_ratio*100:0.1f}%")
-    print("\nTop features by SHAP importance:")
-    for name, importance in res.top_features_by_coef:
-        print(f"  {name:30s}  importance={importance:.4f}")
+    print("\nTop features by |coef|:")
+    for name, coef in res.top_features_by_coef:
+        print(f"  {name:30s}  coef={coef:.4f}")
     if res.stable_features:
         print(f"\nStable features (picked ≥{100 * 0.7:.0f}% of bootstraps):")
         for name in res.stable_features:

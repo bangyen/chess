@@ -332,9 +332,17 @@ def audit_feature_set(
             self._explainer = None
             self._lasso_alpha: float = 1.0
             self.mean_abs_shap: np.ndarray = np.zeros(0)
+            self.distilled_coef: np.ndarray = np.zeros(0)
 
         def fit(self, X, y):
-            """Fit the GBT model and build a SHAP explainer."""
+            """Fit the GBT model, SHAP explainer, and distilled Lasso.
+
+            The distilled Lasso is trained on the GBT's *predictions*
+            (not raw Stockfish targets), giving a sparse linear
+            approximation of the learned decision boundary.  Its
+            coefficients drive the sparsity, coverage, and top-feature
+            metrics.
+            """
             self.gbt.fit(X, y)
             self._explainer = shap.TreeExplainer(self.gbt)
 
@@ -342,7 +350,8 @@ def audit_feature_set(
             train_shap = self._explainer.shap_values(X)
             self.mean_abs_shap = np.mean(np.abs(train_shap), axis=0)
 
-            # Side LassoCV fit for stability selection alpha
+            # Distill GBT into a sparse linear model for crisp explanations
+            y_distill = self.gbt.predict(X)
             n_samples = X.shape[0]
             cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
             alphas = (
@@ -352,14 +361,15 @@ def audit_feature_set(
             )
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", module="sklearn")
-                side_lasso = LassoCV(
+                distill_lasso = LassoCV(
                     cv=cv_folds,
                     alphas=alphas,
                     random_state=42,
                     max_iter=10000,
                 )
-                side_lasso.fit(X, y)
-            self._lasso_alpha = float(side_lasso.alpha_)
+                distill_lasso.fit(X, y_distill)
+            self.distilled_coef = distill_lasso.coef_
+            self._lasso_alpha = float(distill_lasso.alpha_)
 
         def predict(self, X):
             """Predict eval deltas."""
@@ -548,10 +558,11 @@ def audit_feature_set(
     coverage_hits = 0
     coverage_total = 0
 
-    mean_shap = model.mean_abs_shap
+    coef = model.distilled_coef
+    abs_coef = np.abs(coef)
     # define a minimal weight to count a feature toward coverage
     weight_threshold = (
-        np.percentile(mean_shap[mean_shap > 0], 50) if np.any(mean_shap > 0) else 0.0
+        np.percentile(abs_coef[abs_coef > 0], 50) if np.any(abs_coef > 0) else 0.0
     )
 
     for b in tqdm(B_test, desc="Faithfulness analysis"):
@@ -714,14 +725,14 @@ def audit_feature_set(
             vec_second = np.zeros(len(feature_names))
         b.pop()
 
-        # Predict with GBT and get SHAP attributions
+        # Predict with GBT; use distilled linear coefs for attribution
         vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
         vec_second_scaled = scaler.transform(vec_second.reshape(1, -1))
         sur_best = float(model.predict(vec_best_scaled)[0])
         sur_second = float(model.predict(vec_second_scaled)[0])
 
-        # SHAP-based per-sample contributions (additive, sum to prediction)
-        contrib_best = model.shap_values(vec_best_scaled)
+        # Distilled linear attribution: coef * scaled_feature
+        contrib_best = coef * vec_best_scaled[0]
 
         # sparsity: count top contributors above a small fraction of total
         def sparsity(contrib):
@@ -742,10 +753,10 @@ def audit_feature_set(
         if sp > 0:
             sparsity_counts.append(sp)
 
-        # coverage: at least 2 features with meaningful global SHAP and
-        # non-zero local SHAP contribution
+        # coverage: at least 2 features with meaningful |coef| and
+        # non-zero local linear contribution
         strong_feats: int = int(
-            np.sum((mean_shap >= weight_threshold) & (np.abs(contrib_best) > 0))
+            np.sum((abs_coef >= weight_threshold) & (np.abs(contrib_best) > 0))
         )
         coverage_total += 1
         if strong_feats >= 2:
@@ -858,15 +869,19 @@ def audit_feature_set(
     )
 
     # 5) Stability selection (L1 bootstraps): how often is a feature chosen (non-zero)
+    #    Bootstrap Lassos are trained on the GBT's predictions (not raw
+    #    Stockfish targets) so they measure which features the sparse
+    #    approximation consistently selects.
     if X_train.shape[0] >= 20:
         print("Running stability selection...")
+        y_gbt_train = model.predict(X_train_scaled)
         picks = np.zeros(len(feature_names), dtype=int)
         for b in tqdm(range(stability_bootstraps), desc="Stability selection"):
             idx = np.random.choice(
                 X_train.shape[0], size=X_train.shape[0], replace=True
             )
             Xb = X_train_scaled[idx]
-            yb = y_train[idx]
+            yb = y_gbt_train[idx]
             m = Lasso(
                 alpha=model.alpha_,
                 fit_intercept=True,
@@ -883,7 +898,7 @@ def audit_feature_set(
 
     stable_features = [feature_names[i] for i in stable_idx]
     top_features = sorted(
-        [(feature_names[i], float(mean_shap[i])) for i in range(len(feature_names))],
+        [(feature_names[i], float(coef[i])) for i in range(len(feature_names))],
         key=lambda x: -abs(x[1]),
     )[:15]
 

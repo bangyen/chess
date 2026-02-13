@@ -6,7 +6,7 @@ import chess
 import chess.engine
 import pytest
 
-from src.chess_ai.explainable_engine import ExplainableChessEngine, MoveExplanation
+from chess_ai.explainable_engine import ExplainableChessEngine, MoveExplanation
 
 
 class TestMoveExplanation:
@@ -207,9 +207,9 @@ class TestExplainableChessEngine:
 
         assert best_move is None
 
-    @patch("src.chess_ai.engine.sf_top_moves")
-    @patch("src.chess_ai.engine.sf_eval")
-    @patch("src.chess_ai.explainable_engine.baseline_extract_features")
+    @patch("chess_ai.engine.sf_top_moves")
+    @patch("chess_ai.engine.sf_eval")
+    @patch("chess_ai.explainable_engine.baseline_extract_features")
     def test_analyze_position_success(
         self, mock_extract_features, mock_sf_eval, mock_sf_top_moves
     ):
@@ -231,7 +231,7 @@ class TestExplainableChessEngine:
         assert result["stockfish_score"] == 25.0
         mock_extract_features.assert_called_once()
 
-    @patch("src.chess_ai.explainable_engine.baseline_extract_features")
+    @patch("chess_ai.explainable_engine.baseline_extract_features")
     def test_analyze_position_error(self, mock_extract_features):
         """Test position analysis with error."""
         mock_extract_features.side_effect = Exception("Feature extraction error")

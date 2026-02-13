@@ -1,6 +1,6 @@
 import chess
 
-from src.chess_ai.explainable_engine import ExplainableChessEngine
+from chess_ai.explainable_engine import ExplainableChessEngine
 
 
 class TestExplanationContent:

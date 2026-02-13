@@ -6,7 +6,7 @@ from unittest.mock import Mock, mock_open, patch
 import chess
 import pytest
 
-from src.chess_ai.cli.audit import main
+from chess_ai.cli.audit import main
 
 
 class TestCLI:
@@ -31,9 +31,9 @@ class TestCLI:
         """Test CLI with engine from environment variable."""
         with patch("sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]):
             with patch("os.environ.get", return_value="/path/to/stockfish"):
-                with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
                     with patch(
-                        "src.chess_ai.cli.audit.audit_feature_set"
+                        "chess_ai.cli.audit.audit_feature_set"
                     ) as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
@@ -54,7 +54,7 @@ class TestCLI:
                         # Mock the audit function to prevent it from running
                         mock_audit.side_effect = lambda *args, **kwargs: mock_result
                         with patch(
-                            "src.chess_ai.utils.sampling.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
@@ -91,8 +91,8 @@ class TestCLI:
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -110,7 +110,7 @@ class TestCLI:
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -147,8 +147,8 @@ class TestCLI:
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -166,7 +166,7 @@ class TestCLI:
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -217,9 +217,9 @@ def extract_features(board):
                     "2",
                 ],
             ):
-                with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
                     with patch(
-                        "src.chess_ai.cli.audit.audit_feature_set"
+                        "chess_ai.cli.audit.audit_feature_set"
                     ) as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
@@ -240,7 +240,7 @@ def extract_features(board):
                         # Mock the audit function to prevent it from running
                         mock_audit.side_effect = lambda *args, **kwargs: mock_result
                         with patch(
-                            "src.chess_ai.utils.sampling.sample_random_positions"
+                            "chess_ai.utils.sampling.sample_random_positions"
                         ) as mock_sample:
                             # Setup mocks
                             mock_engine = Mock()
@@ -287,8 +287,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -309,10 +309,10 @@ def extract_features(board):
                         "builtins.open", mock_open(read_data='[Event "Test"]\n1. e4 e5')
                     ):
                         with patch(
-                            "src.chess_ai.utils.sampling.sample_positions_from_pgn"
+                            "chess_ai.utils.sampling.sample_positions_from_pgn"
                         ) as mock_sample_pgn:
                             with patch(
-                                "src.chess_ai.utils.sampling.sample_random_positions"
+                                "chess_ai.utils.sampling.sample_random_positions"
                             ) as mock_sample_random:
                                 # Setup mocks
                                 mock_engine = Mock()
@@ -363,8 +363,8 @@ def extract_features(board):
                 "123",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -382,7 +382,7 @@ def extract_features(board):
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -422,8 +422,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -441,7 +441,7 @@ def extract_features(board):
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -481,8 +481,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -503,10 +503,10 @@ def extract_features(board):
                         "builtins.open", mock_open(read_data='[Event "Test"]\n1. e4 e5')
                     ):
                         with patch(
-                            "src.chess_ai.utils.sampling.sample_positions_from_pgn"
+                            "chess_ai.utils.sampling.sample_positions_from_pgn"
                         ) as mock_sample_pgn:
                             with patch(
-                                "src.chess_ai.utils.sampling.sample_random_positions"
+                                "chess_ai.utils.sampling.sample_random_positions"
                             ) as mock_sample_random:
                                 # Setup mocks
                                 mock_engine = Mock()
@@ -543,8 +543,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -562,7 +562,7 @@ def extract_features(board):
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -601,8 +601,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -620,7 +620,7 @@ def extract_features(board):
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         # Setup mocks
                         mock_engine = Mock()
@@ -663,8 +663,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -682,7 +682,7 @@ def extract_features(board):
                     mock_result = MockResult()
                     mock_audit.return_value = mock_result
                     with patch(
-                        "src.chess_ai.utils.sampling.sample_random_positions"
+                        "chess_ai.utils.sampling.sample_random_positions"
                     ) as mock_sample:
                         with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                             # Setup mocks
@@ -732,8 +732,8 @@ def extract_features(board):
                 "2",
             ],
         ):
-            with patch("src.chess_ai.cli.audit.sf_open") as mock_sf_open:
-                with patch("src.chess_ai.cli.audit.audit_feature_set") as mock_audit:
+            with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
+                with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                     # Mock the audit function to return a proper result without running the actual audit
                     class MockResult:
                         def __init__(self):
@@ -752,10 +752,10 @@ def extract_features(board):
                     mock_audit.return_value = mock_result
                     with patch("random.seed") as mock_random_seed:
                         with patch(
-                            "src.chess_ai.cli.audit.np.random.seed"
+                            "chess_ai.cli.audit.np.random.seed"
                         ) as mock_numpy_seed:
                             with patch(
-                                "src.chess_ai.utils.sampling.sample_random_positions"
+                                "chess_ai.utils.sampling.sample_random_positions"
                             ) as mock_sample:
                                 # Mock the seed functions to be called
                                 mock_random_seed.return_value = None

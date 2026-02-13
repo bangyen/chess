@@ -87,7 +87,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["src"]
+known-first-party = ["chess_ai"]
 
 [tool.mypy]
 python_version = "3.12"

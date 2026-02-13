@@ -308,7 +308,7 @@ def audit_feature_set(
         the sparsity, coverage, and faithfulness metrics.
         """
 
-        def __init__(self, n_samples: int = 100):
+        def __init__(self, n_samples: int = 100, distill_top_k: int = 10):
             # Adapt GBT complexity to dataset size: use early stopping
             # only when there are enough samples for a reliable validation
             # split; otherwise use a fixed, conservative iteration count.
@@ -331,6 +331,7 @@ def audit_feature_set(
             self.gbt = HistGradientBoostingRegressor(**gbt_kwargs)
             self._explainer = None
             self._lasso_alpha: float = 1.0
+            self._distill_top_k = distill_top_k
             self.mean_abs_shap: np.ndarray = np.zeros(0)
             self.distilled_coef: np.ndarray = np.zeros(0)
 
@@ -350,8 +351,16 @@ def audit_feature_set(
             train_shap = self._explainer.shap_values(X)
             self.mean_abs_shap = np.mean(np.abs(train_shap), axis=0)
 
-            # Distill GBT into a sparse linear model for crisp explanations
+            # Distill GBT into a sparse linear model for crisp explanations.
+            # Restrict the Lasso to the top-K SHAP-important features so that
+            # the resulting coefficients are concentrated on the features the
+            # GBT actually relies on, yielding sparsity in the 3-5 range.
             y_distill = self.gbt.predict(X)
+            n_features = X.shape[1]
+            k = min(self._distill_top_k, n_features)
+            top_k_idx = np.argsort(self.mean_abs_shap)[-k:]
+            X_distill = X[:, top_k_idx]
+
             n_samples = X.shape[0]
             cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
             alphas = (
@@ -367,8 +376,13 @@ def audit_feature_set(
                     random_state=42,
                     max_iter=10000,
                 )
-                distill_lasso.fit(X, y_distill)
-            self.distilled_coef = distill_lasso.coef_
+                distill_lasso.fit(X_distill, y_distill)
+
+            # Expand back to full-length coefficient vector (zeros for
+            # features excluded by the SHAP pre-selection).
+            full_coef = np.zeros(n_features)
+            full_coef[top_k_idx] = distill_lasso.coef_
+            self.distilled_coef = full_coef
             self._lasso_alpha = float(distill_lasso.alpha_)
 
         def predict(self, X):

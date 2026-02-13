@@ -3,7 +3,7 @@
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import chess
 import numpy as np
@@ -96,125 +96,114 @@ def audit_feature_set(
     Returns:
         AuditResult with all metrics
     """
-    # 1) Collect dataset (X, y) for fidelity (move delta-level)
-    print("Collecting move deltas for training...")
-    feature_names = None
-    X = []
-    y: List[float] = []
+    # -- FEN-keyed caches to avoid redundant Stockfish calls across loops --
+    _eval_cache: Dict[str, float] = {}
+    _top_moves_cache: Dict[str, List[Tuple[chess.Move, float]]] = {}
+    _analyse_cache: Dict[str, chess.Move] = {}
 
-    for b in tqdm(boards, desc="Move delta collection"):
-        # Get base evaluation
-        base_eval = sf_eval(engine, b, cfg)
+    def cached_sf_eval(eng, board: chess.Board, c: SFConfig) -> float:
+        """Return sf_eval result, caching by FEN to skip repeat calls."""
+        key = board.fen()
+        if key not in _eval_cache:
+            _eval_cache[key] = sf_eval(eng, board, c)
+        return _eval_cache[key]
 
-        # Store base board for delta computation
-        base_board = b.copy()
+    def cached_sf_top_moves(
+        eng, board: chess.Board, c: SFConfig
+    ) -> List[Tuple[chess.Move, float]]:
+        """Return sf_top_moves result, caching by FEN + multipv."""
+        key = f"{board.fen()}|mpv{c.multipv}"
+        if key not in _top_moves_cache:
+            _top_moves_cache[key] = sf_top_moves(eng, board, c)
+        return _top_moves_cache[key]
 
-        # Extract base features once per position for delta computation
-        base_feats_raw = extract_features_fn(base_board)
-        base_feats_raw.pop("_engine_probes", None)
-        base_feats_raw = {
+    def cached_best_reply(eng, board: chess.Board, depth: int):
+        """Find Stockfish's best reply, caching by FEN.
+
+        Returns the best reply Move or None.
+        """
+        key = board.fen()
+        if key in _analyse_cache:
+            return _analyse_cache[key]
+        reply_info = eng.analyse(board, chess.engine.Limit(depth=depth), multipv=1)
+        if isinstance(reply_info, list):
+            reply_info = reply_info[0]
+        reply_move = reply_info.get("pv", [None])[0]
+        _analyse_cache[key] = reply_move
+        return reply_move
+
+    # -- Helper to enrich features (avoids 4x copy-paste) --
+    def _enrich_features(
+        board: chess.Board,
+        base_board: chess.Board,
+        base_feats_raw: Dict[str, float],
+        extract_fn: Callable,
+        eng,
+        apply_inter: Callable,
+    ) -> Dict[str, float]:
+        """Extract features and add probes, deltas, and interactions.
+
+        Centralises the feature-enrichment pipeline that was previously
+        duplicated in every loop of the audit.
+        """
+        feats = extract_fn(board)
+        probes = feats.pop("_engine_probes", {})
+        feats = {
             k: (1.0 if isinstance(v, bool) and v else float(v))
-            for k, v in base_feats_raw.items()
+            for k, v in feats.items()
         }
 
-        # Get top moves from Stockfish
-        top_moves = sf_top_moves(engine, b, cfg)
-
-        for move, _ in top_moves:
-            # Push the move
-            b.push(move)
-
-            # Get Stockfish's best reply to this move
-            reply_info = engine.analyse(
-                b, chess.engine.Limit(depth=cfg.depth), multipv=1
+        # Engine-based probe features
+        if probes:
+            hang_cnt, hang_max_val, hang_near_king = probes["hanging_after_reply"](
+                eng, board, depth=6
             )
-            if isinstance(reply_info, list):
-                reply_info = reply_info[0]
-            reply_move = reply_info.get("pv", [None])[0]
+            feats["hang_cnt"] = hang_cnt
+            feats["hang_max_val"] = hang_max_val
+            feats["hang_near_king"] = hang_near_king
 
-            if reply_move is not None:
-                # Push the reply
-                b.push(reply_move)
+            forcing_swing = probes["best_forcing_swing"](eng, board, d_base=6, k_max=12)
+            feats["forcing_swing"] = forcing_swing
 
-                # Get evaluation after move → best reply
-                after_reply_eval = sf_eval(engine, b, cfg)
+        # Passed-pawn momentum delta
+        pp_delta = passed_pawn_momentum_delta(base_board, board)
+        feats.update(pp_delta)
 
-                # Calculate reply-consistent delta
-                delta_eval = after_reply_eval - base_eval
+        # Checkability delta
+        base_check = checkability_now(base_board)
+        after_check = checkability_now(board)
+        check_delta = {
+            "d_quiet_checks": after_check["d_quiet_checks"]
+            - base_check["d_quiet_checks"],
+            "d_capture_checks": after_check["d_capture_checks"]
+            - base_check["d_capture_checks"],
+        }
+        feats.update(check_delta)
 
-                # Get features after move → best reply
-                after_reply_feats = extract_features_fn(b)
-                after_reply_probes = after_reply_feats.pop("_engine_probes", {})
-                after_reply_feats = {
-                    k: (1.0 if isinstance(v, bool) and v else float(v))
-                    for k, v in after_reply_feats.items()
-                }
+        # Confinement delta
+        conf_delta = confinement_delta(base_board, board)
+        feats.update(conf_delta)
 
-                # Add engine-based features for training
-                if after_reply_probes:
-                    # Add hanging after reply features
-                    hang_cnt, hang_max_val, hang_near_king = after_reply_probes[
-                        "hanging_after_reply"
-                    ](engine, b, depth=6)
-                    after_reply_feats["hang_cnt"] = hang_cnt
-                    after_reply_feats["hang_max_val"] = hang_max_val
-                    after_reply_feats["hang_near_king"] = hang_near_king
+        # Compute delta features: d_<key> = after - base
+        for k in base_feats_raw:
+            if k in feats:
+                feats[f"d_{k}"] = feats[k] - base_feats_raw[k]
 
-                    # Add forcing swing
-                    forcing_swing = after_reply_probes["best_forcing_swing"](
-                        engine, b, d_base=6, k_max=12
-                    )
-                    after_reply_feats["forcing_swing"] = forcing_swing
+        # Interaction terms
+        apply_inter(feats)
+        return feats
 
-                # Add passed-pawn momentum delta features
-                pp_delta = passed_pawn_momentum_delta(base_board, b)
-                after_reply_feats.update(pp_delta)
+    def _extract_base_feats(
+        extract_fn: Callable, board: chess.Board
+    ) -> Dict[str, float]:
+        """Extract and clean base features for delta computation."""
+        raw = extract_fn(board)
+        raw.pop("_engine_probes", None)
+        return {
+            k: (1.0 if isinstance(v, bool) and v else float(v)) for k, v in raw.items()
+        }
 
-                # Add checkability delta features
-                base_check = checkability_now(base_board)
-                after_check = checkability_now(b)
-                check_delta = {
-                    "d_quiet_checks": after_check["d_quiet_checks"]
-                    - base_check["d_quiet_checks"],
-                    "d_capture_checks": after_check["d_capture_checks"]
-                    - base_check["d_capture_checks"],
-                }
-                after_reply_feats.update(check_delta)
-
-                # Add confinement delta features
-                conf_delta = confinement_delta(base_board, b)
-                after_reply_feats.update(conf_delta)
-
-                # Compute delta features: d_<key> = after - base
-                for k in base_feats_raw:
-                    if k in after_reply_feats:
-                        after_reply_feats[f"d_{k}"] = (
-                            after_reply_feats[k] - base_feats_raw[k]
-                        )
-
-                # Calculate delta features
-                if feature_names is None:
-                    feature_names = list(after_reply_feats.keys())
-                else:
-                    # keep common keys only
-                    feature_names = [k for k in feature_names if k in after_reply_feats]
-
-                # Features include both a handful of absolute values (phase,
-                # material) and d_<key> deltas that capture the positional
-                # change caused by the move+reply sequence.
-                X.append(after_reply_feats)
-                y.append(delta_eval)
-
-                # Pop the reply
-                b.pop()
-
-            # Pop the move
-            b.pop()
-
-    # realign feature vectors to common feature set
-    feature_names = feature_names or []
-
-    # Add interaction terms before matrix conversion
+    # Interaction term definitions (needed by _enrich_features)
     interaction_pairs = [
         ("material_diff", "phase"),
         ("passed_us", "phase"),
@@ -223,7 +212,6 @@ def audit_feature_set(
         ("batteries_us", "semi_open_us"),
         ("outposts_us", "phase"),
         ("bishop_pair_us", "open_files_us"),
-        # New: interactions for explainability features
         ("threats_us", "phase"),
         ("king_tropism_us", "phase"),
         ("space_us", "phase"),
@@ -237,17 +225,59 @@ def audit_feature_set(
     ]
 
     def apply_interactions(feats):
+        """Add pairwise interaction features in-place."""
         for p1, p2 in interaction_pairs:
             if p1 in feats and p2 in feats:
                 feats[f"{p1}_x_{p2}"] = float(feats[p1]) * float(feats[p2])
 
-    # First, apply interactions to all training samples
-    for x in X:
-        apply_interactions(x)
+    # 1) Collect dataset (X, y) for fidelity (move delta-level)
+    print("Collecting move deltas for training...")
+    feature_names = None
+    X = []
+    y: List[float] = []
 
-    # Update feature_names to include interactions
+    for b in tqdm(boards, desc="Move delta collection"):
+        base_eval = cached_sf_eval(engine, b, cfg)
+        base_board = b.copy()
+        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
+
+        top_moves = cached_sf_top_moves(engine, b, cfg)
+
+        for move, _ in top_moves:
+            b.push(move)
+            reply_move = cached_best_reply(engine, b, cfg.depth)
+
+            if reply_move is not None:
+                b.push(reply_move)
+                after_reply_eval = cached_sf_eval(engine, b, cfg)
+                delta_eval = after_reply_eval - base_eval
+
+                after_reply_feats = _enrich_features(
+                    b,
+                    base_board,
+                    base_feats_raw,
+                    extract_features_fn,
+                    engine,
+                    apply_interactions,
+                )
+
+                if feature_names is None:
+                    feature_names = list(after_reply_feats.keys())
+                else:
+                    feature_names = [k for k in feature_names if k in after_reply_feats]
+
+                X.append(after_reply_feats)
+                y.append(delta_eval)
+                b.pop()
+
+            b.pop()
+
+    # realign feature vectors to common feature set
+    # (interactions are already applied by _enrich_features)
+    feature_names = feature_names or []
+
+    # Update feature_names to include interaction term names
     for p1, p2 in interaction_pairs:
-        # Check if both parents are in the common feature set
         if p1 in feature_names and p2 in feature_names:
             combined_name = f"{p1}_x_{p2}"
             if combined_name not in feature_names:
@@ -406,115 +436,45 @@ def audit_feature_set(
     taus = []
     covered = 0
     n_tau = 0
+    cfg_local = SFConfig(
+        cfg.engine_path,
+        cfg.depth,
+        cfg.movetime,
+        multipv=min(multipv_for_ranking, cfg.multipv),
+        threads=cfg.threads,
+    )
     for b in tqdm(B_test, desc="Move ranking analysis"):
-        # Get engine top-k
-        cfg_local = SFConfig(
-            cfg.engine_path,
-            cfg.depth,
-            cfg.movetime,
-            multipv=min(multipv_for_ranking, cfg.multipv),
-            threads=cfg.threads,
-        )
-        cand = sf_top_moves(engine, b, cfg_local)
+        cand = cached_sf_top_moves(engine, b, cfg_local)
         if len(cand) < 2:
             continue
 
         sf_scores = []
         sur_scores = []
-
-        # Get base evaluation
-        base_eval = sf_eval(engine, b, cfg)
-
-        # Store base board for delta computation
+        base_eval = cached_sf_eval(engine, b, cfg)
         base_board = b.copy()
-
-        # Extract base features once per position for delta computation
-        base_feats_raw = extract_features_fn(base_board)
-        base_feats_raw.pop("_engine_probes", None)
-        base_feats_raw = {
-            k: (1.0 if isinstance(v, bool) and v else float(v))
-            for k, v in base_feats_raw.items()
-        }
+        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
 
         for mv, _ in cand:
-            # Push the move
             b.push(mv)
-
-            # Get Stockfish's best reply to this move
-            reply_info = engine.analyse(
-                b, chess.engine.Limit(depth=cfg.depth), multipv=1
-            )
-            if isinstance(reply_info, list):
-                reply_info = reply_info[0]
-            reply_move = reply_info.get("pv", [None])[0]
+            reply_move = cached_best_reply(engine, b, cfg.depth)
 
             if reply_move is not None:
-                # Push the reply
                 b.push(reply_move)
-
-                # Get evaluation after move → best reply
-                after_reply_eval = sf_eval(engine, b, cfg)
-
-                # Calculate reply-consistent delta
+                after_reply_eval = cached_sf_eval(engine, b, cfg)
                 delta_eval = after_reply_eval - base_eval
 
-                # Get features after move → best reply
-                feats_after_reply = extract_features_fn(b)
-                after_reply_probes = feats_after_reply.pop("_engine_probes", {})
-                feats_after_reply = {
-                    k: (1.0 if isinstance(v, bool) and v else float(v))
-                    for k, v in feats_after_reply.items()
-                }
-
-                # Add engine-based features (matching training)
-                if after_reply_probes:
-                    hang_cnt, hang_max_val, hang_near_king = after_reply_probes[
-                        "hanging_after_reply"
-                    ](engine, b, depth=6)
-                    feats_after_reply["hang_cnt"] = hang_cnt
-                    feats_after_reply["hang_max_val"] = hang_max_val
-                    feats_after_reply["hang_near_king"] = hang_near_king
-
-                    forcing_swing = after_reply_probes["best_forcing_swing"](
-                        engine, b, d_base=6, k_max=12
-                    )
-                    feats_after_reply["forcing_swing"] = forcing_swing
-
-                # Add passed-pawn momentum delta features
-                pp_delta = passed_pawn_momentum_delta(base_board, b)
-                feats_after_reply.update(pp_delta)
-
-                # Add checkability delta features
-                base_check = checkability_now(base_board)
-                after_check = checkability_now(b)
-                check_delta = {
-                    "d_quiet_checks": after_check["d_quiet_checks"]
-                    - base_check["d_quiet_checks"],
-                    "d_capture_checks": after_check["d_capture_checks"]
-                    - base_check["d_capture_checks"],
-                }
-                feats_after_reply.update(check_delta)
-
-                # Add confinement delta features
-                conf_delta = confinement_delta(base_board, b)
-                feats_after_reply.update(conf_delta)
-
-                # Compute delta features: d_<key> = after - base
-                for k in base_feats_raw:
-                    if k in feats_after_reply:
-                        feats_after_reply[f"d_{k}"] = (
-                            feats_after_reply[k] - base_feats_raw[k]
-                        )
-
-                # Add interactions
-                apply_interactions(feats_after_reply)
-
+                feats_after_reply = _enrich_features(
+                    b,
+                    base_board,
+                    base_feats_raw,
+                    extract_features_fn,
+                    engine,
+                    apply_interactions,
+                )
                 vec_after_reply = np.array(
                     [float(feats_after_reply.get(k, 0.0)) for k in feature_names],
                     dtype=float,
                 )
-
-                # Use linear model on after-reply features (delta training)
                 vec_after_reply_scaled = scaler.transform(
                     vec_after_reply.reshape(1, -1)
                 )
@@ -541,180 +501,88 @@ def audit_feature_set(
 
     tau_mean = float(np.mean(taus)) if taus else 0.0
 
-    # 4) Local counterfactual faithfulness & sparsity/coverage of explanations
+    # 4) Local faithfulness, sparsity, coverage, AND decisive faithfulness
+    #    (merged into a single pass to avoid redundant Stockfish calls)
     print("Computing local faithfulness and sparsity...")
     faithful_hits = 0
     faithful_total = 0
+    faithful_decisive_hits = 0
+    faithful_decisive_total = 0
     sparsity_counts = []
     coverage_hits = 0
     coverage_total = 0
 
     coef = model.distilled_coef
     abs_coef = np.abs(coef)
-    # define a minimal weight to count a feature toward coverage
     weight_threshold = (
         np.percentile(abs_coef[abs_coef > 0], 50) if np.any(abs_coef > 0) else 0.0
     )
 
+    def _sparsity(contrib):
+        """Count features needed to cover 80% of total |contribution|."""
+        tot = np.sum(np.abs(contrib))
+        if tot <= 1e-9:
+            return 0
+        contrib_sorted = np.sort(np.abs(contrib))[::-1]
+        cum = 0.0
+        k = 0
+        for v in contrib_sorted:
+            cum += v
+            k += 1
+            if cum >= 0.8 * tot:
+                break
+        return k
+
+    def _eval_move_delta(b, mv, base_eval, base_board, base_feats_raw):
+        """Evaluate a single move: push move+reply, get delta and features.
+
+        Returns (delta_sf, vec) where vec is the feature vector or zeros.
+        """
+        b.push(mv)
+        reply_move = cached_best_reply(engine, b, cfg.depth)
+
+        if reply_move is not None:
+            b.push(reply_move)
+            after_eval = cached_sf_eval(engine, b, cfg)
+            delta_sf = after_eval - base_eval
+
+            feats = _enrich_features(
+                b,
+                base_board,
+                base_feats_raw,
+                extract_features_fn,
+                engine,
+                apply_interactions,
+            )
+            vec = np.array(
+                [float(feats.get(k, 0.0)) for k in feature_names], dtype=float
+            )
+            b.pop()
+        else:
+            delta_sf = 0.0
+            vec = np.zeros(len(feature_names))
+        b.pop()
+        return delta_sf, vec
+
     for b in tqdm(B_test, desc="Faithfulness analysis"):
-        cand = sf_top_moves(engine, b, cfg)
+        cand = cached_sf_top_moves(engine, b, cfg)
         if len(cand) < 2:
             continue
-        # pick best and second-best
         cand_sorted = sorted(cand, key=lambda x: -x[1])
         (best_mv, best_cp), (second_mv, second_cp) = cand_sorted[0], cand_sorted[1]
         if abs(best_cp - second_cp) < gap_threshold_cp:
-            continue  # ambiguous; skip
+            continue
 
-        # Get base evaluation
-        base_eval = sf_eval(engine, b, cfg)
-
-        # Store base board for delta computation
+        base_eval = cached_sf_eval(engine, b, cfg)
         base_board = b.copy()
+        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
 
-        # Extract base features once per position for delta computation
-        base_feats_raw = extract_features_fn(base_board)
-        base_feats_raw.pop("_engine_probes", None)
-        base_feats_raw = {
-            k: (1.0 if isinstance(v, bool) and v else float(v))
-            for k, v in base_feats_raw.items()
-        }
-
-        # Evaluate best move → best reply
-        b.push(best_mv)
-        reply_info = engine.analyse(b, chess.engine.Limit(depth=cfg.depth), multipv=1)
-        if isinstance(reply_info, list):
-            reply_info = reply_info[0]
-        reply_move = reply_info.get("pv", [None])[0]
-
-        if reply_move is not None:
-            b.push(reply_move)
-            after_reply_eval_best = sf_eval(engine, b, cfg)
-            delta_sf_best = after_reply_eval_best - base_eval
-
-            # Get features after best move → best reply
-            f_best = extract_features_fn(b)
-            best_probes = f_best.pop("_engine_probes", {})
-            f_best = {
-                k: (1.0 if isinstance(v, bool) and v else float(v))
-                for k, v in f_best.items()
-            }
-
-            # Add engine-based features (matching training)
-            if best_probes:
-                hang_cnt, hang_max_val, hang_near_king = best_probes[
-                    "hanging_after_reply"
-                ](engine, b, depth=6)
-                f_best["hang_cnt"] = hang_cnt
-                f_best["hang_max_val"] = hang_max_val
-                f_best["hang_near_king"] = hang_near_king
-
-                forcing_swing = best_probes["best_forcing_swing"](
-                    engine, b, d_base=6, k_max=12
-                )
-                f_best["forcing_swing"] = forcing_swing
-
-            # Add delta features
-            pp_delta = passed_pawn_momentum_delta(base_board, b)
-            f_best.update(pp_delta)
-
-            base_check = checkability_now(base_board)
-            after_check = checkability_now(b)
-            check_delta = {
-                "d_quiet_checks": after_check["d_quiet_checks"]
-                - base_check["d_quiet_checks"],
-                "d_capture_checks": after_check["d_capture_checks"]
-                - base_check["d_capture_checks"],
-            }
-            f_best.update(check_delta)
-
-            conf_delta = confinement_delta(base_board, b)
-            f_best.update(conf_delta)
-
-            # Compute delta features: d_<key> = after - base
-            for k in base_feats_raw:
-                if k in f_best:
-                    f_best[f"d_{k}"] = f_best[k] - base_feats_raw[k]
-
-            # Add interactions
-            apply_interactions(f_best)
-
-            vec_best = np.array(
-                [float(f_best.get(k, 0.0)) for k in feature_names], dtype=float
-            )
-            b.pop()
-        else:
-            delta_sf_best = 0.0
-            vec_best = np.zeros(len(feature_names))
-        b.pop()
-
-        # Evaluate second move → best reply
-        b.push(second_mv)
-        reply_info = engine.analyse(b, chess.engine.Limit(depth=cfg.depth), multipv=1)
-        if isinstance(reply_info, list):
-            reply_info = reply_info[0]
-        reply_move = reply_info.get("pv", [None])[0]
-
-        if reply_move is not None:
-            b.push(reply_move)
-            after_reply_eval_second = sf_eval(engine, b, cfg)
-            delta_sf_second = after_reply_eval_second - base_eval
-
-            # Get features after second move → best reply
-            f_second = extract_features_fn(b)
-            second_probes = f_second.pop("_engine_probes", {})
-            f_second = {
-                k: (1.0 if isinstance(v, bool) and v else float(v))
-                for k, v in f_second.items()
-            }
-
-            # Add engine-based features (matching training)
-            if second_probes:
-                hang_cnt, hang_max_val, hang_near_king = second_probes[
-                    "hanging_after_reply"
-                ](engine, b, depth=6)
-                f_second["hang_cnt"] = hang_cnt
-                f_second["hang_max_val"] = hang_max_val
-                f_second["hang_near_king"] = hang_near_king
-
-                forcing_swing = second_probes["best_forcing_swing"](
-                    engine, b, d_base=6, k_max=12
-                )
-                f_second["forcing_swing"] = forcing_swing
-
-            # Add delta features
-            pp_delta = passed_pawn_momentum_delta(base_board, b)
-            f_second.update(pp_delta)
-
-            base_check = checkability_now(base_board)
-            after_check = checkability_now(b)
-            check_delta = {
-                "d_quiet_checks": after_check["d_quiet_checks"]
-                - base_check["d_quiet_checks"],
-                "d_capture_checks": after_check["d_capture_checks"]
-                - base_check["d_capture_checks"],
-            }
-            f_second.update(check_delta)
-
-            conf_delta = confinement_delta(base_board, b)
-            f_second.update(conf_delta)
-
-            # Compute delta features: d_<key> = after - base
-            for k in base_feats_raw:
-                if k in f_second:
-                    f_second[f"d_{k}"] = f_second[k] - base_feats_raw[k]
-
-            # Add interactions
-            apply_interactions(f_second)
-
-            vec_second = np.array(
-                [float(f_second.get(k, 0.0)) for k in feature_names], dtype=float
-            )
-            b.pop()
-        else:
-            delta_sf_second = 0.0
-            vec_second = np.zeros(len(feature_names))
-        b.pop()
+        delta_sf_best, vec_best = _eval_move_delta(
+            b, best_mv, base_eval, base_board, base_feats_raw
+        )
+        delta_sf_second, vec_second = _eval_move_delta(
+            b, second_mv, base_eval, base_board, base_feats_raw
+        )
 
         # Predict with GBT; use distilled linear coefs for attribution
         vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
@@ -725,22 +593,7 @@ def audit_feature_set(
         # Distilled linear attribution: coef * scaled_feature
         contrib_best = coef * vec_best_scaled[0]
 
-        # sparsity: count top contributors above a small fraction of total
-        def sparsity(contrib):
-            tot = np.sum(np.abs(contrib))
-            if tot <= 1e-9:
-                return 0
-            contrib_sorted = np.sort(np.abs(contrib))[::-1]
-            cum = 0.0
-            k = 0
-            for v in contrib_sorted:
-                cum += v
-                k += 1
-                if cum >= 0.8 * tot:
-                    break
-            return k
-
-        sp = sparsity(contrib_best)
+        sp = _sparsity(contrib_best)
         if sp > 0:
             sparsity_counts.append(sp)
 
@@ -754,105 +607,22 @@ def audit_feature_set(
             coverage_hits += 1
 
         # faithfulness: does the surrogate rank best > second in the same
-        # direction as Stockfish?  Use prediction difference directly.
+        # direction as Stockfish?
         dir_sur = sur_best - sur_second
         dir_sf = float(delta_sf_best - delta_sf_second)
         if dir_sur * dir_sf > 0:
             faithful_hits += 1
         faithful_total += 1
 
-    local_faithfulness = (faithful_hits / faithful_total) if faithful_total else 0.0
-    sparsity_mean = float(np.mean(sparsity_counts)) if sparsity_counts else 0.0
-    coverage_ratio = (coverage_hits / coverage_total) if coverage_total else 0.0
-
-    # Calculate decisive faithfulness (gap ≥ 80 cp)
-    faithful_decisive_hits = 0
-    faithful_decisive_total = 0
-    for b in tqdm(B_test, desc="Decisive faithfulness"):
-        cand = sf_top_moves(engine, b, cfg)
-        if len(cand) < 2:
-            continue
-        cand_sorted = sorted(cand, key=lambda x: -x[1])
-        (best_mv, best_cp), (second_mv, second_cp) = cand_sorted[0], cand_sorted[1]
-        if abs(best_cp - second_cp) < gap_threshold_cp:
-            continue
-
-        # Get base evaluation
-        base_eval = sf_eval(engine, b, cfg)
-
-        # Evaluate best move → best reply
-        b.push(best_mv)
-        reply_info = engine.analyse(b, chess.engine.Limit(depth=cfg.depth), multipv=1)
-        if isinstance(reply_info, list):
-            reply_info = reply_info[0]
-        reply_move = reply_info.get("pv", [None])[0]
-
-        if reply_move is not None:
-            b.push(reply_move)
-            after_reply_eval_best = sf_eval(engine, b, cfg)
-            delta_sf_best = after_reply_eval_best - base_eval
-            b.pop()
-        else:
-            delta_sf_best = 0.0
-        b.pop()
-
-        # Evaluate second move → best reply
-        b.push(second_mv)
-        reply_info = engine.analyse(b, chess.engine.Limit(depth=cfg.depth), multipv=1)
-        if isinstance(reply_info, list):
-            reply_info = reply_info[0]
-        reply_move = reply_info.get("pv", [None])[0]
-
-        if reply_move is not None:
-            b.push(reply_move)
-            after_reply_eval_second = sf_eval(engine, b, cfg)
-            delta_sf_second = after_reply_eval_second - base_eval
-            b.pop()
-        else:
-            delta_sf_second = 0.0
-        b.pop()
-
-        # Check if decisive gap
-        decisive_gap = abs(delta_sf_best - delta_sf_second)
-        if decisive_gap >= 80.0:
-            # Get features for both moves
-            b.push(best_mv)
-            if reply_move is not None:
-                b.push(reply_move)
-                f_best.update(pp_delta)
-                apply_interactions(f_best)
-                vec_best = np.array(
-                    [float(f_best.get(k, 0.0)) for k in feature_names], dtype=float
-                )
-                b.pop()
-            else:
-                vec_best = np.zeros(len(feature_names))
-            b.pop()
-
-            b.push(second_mv)
-            if reply_move is not None:
-                b.push(reply_move)
-                f_second.update(pp_delta)
-                apply_interactions(f_second)
-                vec_second = np.array(
-                    [float(f_second.get(k, 0.0)) for k in feature_names], dtype=float
-                )
-                b.pop()
-            else:
-                vec_second = np.zeros(len(feature_names))
-            b.pop()
-
-            # Use linear model on after-reply features
-            vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
-            vec_second_scaled = scaler.transform(vec_second.reshape(1, -1))
-            sur_best = float(model.predict(vec_best_scaled)[0])
-            sur_second = float(model.predict(vec_second_scaled)[0])
-
-            # Check faithfulness
+        # decisive faithfulness (gap ≥ 80 cp) — computed in the same pass
+        if abs(delta_sf_best - delta_sf_second) >= 80.0:
             if (sur_best > sur_second) == (delta_sf_best > delta_sf_second):
                 faithful_decisive_hits += 1
             faithful_decisive_total += 1
 
+    local_faithfulness = (faithful_hits / faithful_total) if faithful_total else 0.0
+    sparsity_mean = float(np.mean(sparsity_counts)) if sparsity_counts else 0.0
+    coverage_ratio = (coverage_hits / coverage_total) if coverage_total else 0.0
     local_faithfulness_decisive = (
         (faithful_decisive_hits / faithful_decisive_total)
         if faithful_decisive_total

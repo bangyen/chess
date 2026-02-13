@@ -152,12 +152,20 @@ def main():
         or "/opt/homebrew/bin/stockfish",
         help="Path to Stockfish engine",
     )
+    parser.add_argument(
+        "--deep",
+        action="store_true",
+        help="Deep audit: 400 positions at depth 16 (overrides --positions/--depth)",
+    )
 
     args = parser.parse_args()
 
     positions = args.positions
     depth = args.depth
     threads = args.threads
+
+    if args.deep:
+        positions, depth = 400, 16
 
     check_clean_state()
 

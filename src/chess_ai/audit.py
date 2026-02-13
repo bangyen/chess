@@ -40,16 +40,6 @@ except Exception:
     raise
 
 try:
-    import shap
-except Exception:
-    print(
-        "shap is required for SHAP-based explanations. "
-        "Install with: pip install shap",
-        file=sys.stderr,
-    )
-    raise
-
-try:
     from tqdm import tqdm
 except Exception:
     print(
@@ -293,19 +283,19 @@ def audit_feature_set(
     n_test_boards = max(1, int(len(boards) * test_size))
     B_test = boards[:n_test_boards]
 
-    # 2) Fit nonlinear surrogate (GBT) with SHAP explanations
-    # Normalize features (GBT is invariant but SHAP baselines and
-    # the side LassoCV for stability selection still benefit).
+    # 2) Fit nonlinear surrogate (GBT) with distilled Lasso explanations
+    # Normalize features (GBT is invariant but the distilled LassoCV
+    # for stability selection still benefits from scaling).
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
     class TreeSurrogate:
-        """Gradient-boosted tree surrogate with SHAP-based attributions.
+        """Gradient-boosted tree surrogate with distilled linear explanations.
 
-        Wraps HistGradientBoostingRegressor for prediction and
-        shap.TreeExplainer for per-sample feature attributions used by
-        the sparsity, coverage, and faithfulness metrics.
+        Wraps HistGradientBoostingRegressor for prediction and distils
+        its predictions into a sparse Lasso whose coefficients drive the
+        sparsity, coverage, and top-feature metrics.
         """
 
         def __init__(self, n_samples: int = 100, distill_top_k: int = 10):
@@ -329,36 +319,38 @@ def audit_feature_set(
             else:
                 gbt_kwargs["early_stopping"] = False
             self.gbt = HistGradientBoostingRegressor(**gbt_kwargs)
-            self._explainer = None
             self._lasso_alpha: float = 1.0
             self._distill_top_k = distill_top_k
-            self.mean_abs_shap: np.ndarray = np.zeros(0)
+            self.feature_importances: np.ndarray = np.zeros(0)
             self.distilled_coef: np.ndarray = np.zeros(0)
 
         def fit(self, X, y):
-            """Fit the GBT model, SHAP explainer, and distilled Lasso.
+            """Fit the GBT and distil into a sparse Lasso.
 
             The distilled Lasso is trained on the GBT's *predictions*
             (not raw Stockfish targets), giving a sparse linear
             approximation of the learned decision boundary.  Its
             coefficients drive the sparsity, coverage, and top-feature
-            metrics.
+            metrics.  Feature pre-selection uses the GBT's built-in
+            split-gain importances to keep only the top-K features.
             """
             self.gbt.fit(X, y)
-            self._explainer = shap.TreeExplainer(self.gbt)
-
-            # Compute mean |SHAP| over training data for global importance
-            train_shap = self._explainer.shap_values(X)
-            self.mean_abs_shap = np.mean(np.abs(train_shap), axis=0)
+            # feature_importances_ may be unavailable when all targets
+            # are constant (no splits), so fall back to uniform weights.
+            self.feature_importances = getattr(
+                self.gbt,
+                "feature_importances_",
+                np.ones(X.shape[1]) / X.shape[1],
+            )
 
             # Distill GBT into a sparse linear model for crisp explanations.
-            # Restrict the Lasso to the top-K SHAP-important features so that
+            # Restrict the Lasso to the top-K important features so that
             # the resulting coefficients are concentrated on the features the
             # GBT actually relies on, yielding sparsity in the 3-5 range.
             y_distill = self.gbt.predict(X)
             n_features = X.shape[1]
             k = min(self._distill_top_k, n_features)
-            top_k_idx = np.argsort(self.mean_abs_shap)[-k:]
+            top_k_idx = np.argsort(self.feature_importances)[-k:]
             X_distill = X[:, top_k_idx]
 
             n_samples = X.shape[0]
@@ -379,7 +371,7 @@ def audit_feature_set(
                 distill_lasso.fit(X_distill, y_distill)
 
             # Expand back to full-length coefficient vector (zeros for
-            # features excluded by the SHAP pre-selection).
+            # features excluded by the importance pre-selection).
             full_coef = np.zeros(n_features)
             full_coef[top_k_idx] = distill_lasso.coef_
             self.distilled_coef = full_coef
@@ -391,24 +383,9 @@ def audit_feature_set(
                 return self.gbt.predict(X.reshape(1, -1))
             return self.gbt.predict(X)
 
-        def shap_values(self, X):
-            """Compute SHAP values for one or more samples.
-
-            Returns an ndarray of shape (n_features,) for a single sample
-            or (n_samples, n_features) for multiple samples.
-            """
-            if self._explainer is None:
-                raise RuntimeError("Call fit() before shap_values()")
-            if len(X.shape) == 1:
-                X = X.reshape(1, -1)
-            vals = self._explainer.shap_values(X)
-            if vals.ndim == 2 and vals.shape[0] == 1:
-                return vals[0]
-            return vals
-
         @property
         def alpha_(self):
-            """Lasso alpha from the side fit, used by stability selection."""
+            """Lasso alpha from the distilled fit, used by stability selection."""
             return self._lasso_alpha
 
     model = TreeSurrogate(n_samples=X_train_scaled.shape[0])
@@ -418,7 +395,7 @@ def audit_feature_set(
         model.fit(X_train_scaled, y_train)
 
     print(f"GBT iterations: {model.gbt.n_iter_}")
-    print(f"Side Lasso alpha: {model.alpha_:.4f}")
+    print(f"Distilled Lasso alpha: {model.alpha_:.4f}")
 
     # Fidelity
     y_pred = model.predict(X_test_scaled)

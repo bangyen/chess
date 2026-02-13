@@ -786,7 +786,7 @@ class TestAuditFeatureSet:
         The top_features_by_coef list should contain (name, coef)
         tuples derived from the Lasso distilled on GBT predictions,
         with finite float coefficients (which may be negative).
-        SHAP-guided feature pre-selection should zero out most
+        Feature importance pre-selection should zero out most
         coefficients, concentrating weight on a handful of features.
         """
         mock_sf_eval.return_value = 50.0
@@ -817,6 +817,6 @@ class TestAuditFeatureSet:
             assert np.isfinite(coef_val)
             if coef_val != 0.0:
                 non_zero += 1
-        # SHAP pre-selection ensures most features have zero coefficients;
+        # Feature importance pre-selection ensures most coefficients are zero;
         # at most distill_top_k (default 10) can be non-zero.
         assert non_zero <= 10

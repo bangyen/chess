@@ -31,7 +31,6 @@ dependencies = [
     "tqdm>=4.60.0",
     "python-chess>=1.999",
     "flask>=3.0.0",
-    "shap>=0.42.0",
 ]
 
 [project.optional-dependencies]

@@ -21,6 +21,7 @@ try:
     from chess_ai.rust_utils import (
         SyzygyTablebase,
         calculate_forcing_swing,
+        extract_features_rust,
         find_best_reply,
     )
 
@@ -29,7 +30,7 @@ except ImportError:
     RUST_AVAILABLE = False
 
 
-_SYZYGY_TB: Optional[SyzygyTablebase] = None
+_SYZYGY_TB: Optional["SyzygyTablebase"] = None
 
 
 def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
@@ -43,6 +44,35 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     Returns:
         Dictionary of feature names to values
     """
+    global _SYZYGY_TB
+
+    if RUST_AVAILABLE:
+        try:
+            feats = extract_features_rust(board.fen())
+
+            # Add Syzygy tablebase features (if available) - Still in Python for path management
+            syzygy_path = os.environ.get("SYZYGY_PATH")
+            if syzygy_path:
+                try:
+                    if not _SYZYGY_TB:
+                        _SYZYGY_TB = SyzygyTablebase(syzygy_path)
+
+                    if len(board.piece_map()) <= 7:
+                        wdl = _SYZYGY_TB.probe_wdl(board.fen())
+                        dtz = _SYZYGY_TB.probe_dtz(board.fen())
+                        if wdl is not None:
+                            feats["syzygy_wdl"] = float(wdl) / 2.0
+                        if dtz is not None:
+                            feats["syzygy_dtz"] = float(dtz) / 100.0
+                except Exception:
+                    pass
+
+            # Continue to Python section to add engine probes
+        except Exception:
+            # Fallback to Python if Rust fails
+            feats = {}
+
+    # Python Implementation (Fallback)
     piece_values = {
         chess.PAWN: 1,
         chess.KNIGHT: 3,
@@ -292,7 +322,6 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         try:
             # We initialize a temporary tablebase if not cached?
             # Better to cache it globally to avoid reloading files.
-            global _SYZYGY_TB
             if _SYZYGY_TB is None:
                 _SYZYGY_TB = SyzygyTablebase(syzygy_path)
 
@@ -1239,5 +1268,12 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["pst_them"] = pst_value(not board.turn)
     feats["pinned_us"] = pinned_pieces(board.turn)
     feats["pinned_them"] = pinned_pieces(not board.turn)
+
+    # Add engine probes (callables)
+    feats["_engine_probes"] = {
+        "hanging_after_reply": hanging_after_reply_real,
+        "best_forcing_swing": best_forcing_swing_real,
+        "sf_eval_shallow": sf_eval_shallow,
+    }
 
     return feats

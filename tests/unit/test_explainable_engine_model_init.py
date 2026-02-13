@@ -17,19 +17,30 @@ class TestInitializeModel:
 
     @patch("chess_ai.explainable_engine.sample_stratified_positions")
     def test_initialize_model_success(self, mock_sample):
-        """Successful model training sets surrogate_explainer."""
+        """Successful model training sets surrogate_explainer.
+
+        Mocks sampling and train_surrogate_model so that the real
+        _initialize_model body (lines 126-155) executes end-to-end.
+        """
         mock_sample.return_value = [chess.Board() for _ in range(5)]
 
+        mock_engine = Mock()
+        mock_engine.analyse.return_value = {"pv": [chess.Move.from_uci("e7e5")]}
+
         eng = ExplainableChessEngine("/sf", model_training_positions=5)
-        eng.engine = Mock()
+        eng.engine = mock_engine
+
+        mock_model = Mock()
+        mock_model.distilled_coef = [0.1, 0.2]
+        mock_scaler = Mock()
 
         with patch(
-            "chess_ai.explainable_engine.ExplainableChessEngine._initialize_model"
-        ) as mock_init:
-            # Call the real method but verify it's invoked
-            eng._initialize_model = mock_init
+            "chess_ai.model_trainer.train_surrogate_model",
+            return_value=(mock_model, mock_scaler, ["f1", "f2"]),
+        ):
             eng._initialize_model()
-            mock_init.assert_called_once()
+
+        assert eng.surrogate_explainer is not None
 
     def test_initialize_model_failure_falls_back(self):
         """When model training fails, surrogate_explainer is set to None."""

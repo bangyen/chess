@@ -222,6 +222,9 @@ def audit_feature_set(
         ("d_mobility_us", "phase"),
         ("d_hanging_them", "phase"),
         ("d_space_us", "phase"),
+        ("d_king_ring_pressure_them", "phase"),
+        ("d_passed_us", "phase"),
+        ("d_rook_open_file_us", "phase"),
     ]
 
     def apply_interactions(feats):
@@ -334,9 +337,9 @@ def audit_feature_set(
             # split; otherwise use a fixed, conservative iteration count.
             use_early = n_samples >= 400
             gbt_kwargs = {
-                "max_depth": 3,
-                "learning_rate": 0.1,
-                "max_iter": 300 if use_early else 200,
+                "max_depth": 4,
+                "learning_rate": 0.05,
+                "max_iter": 500 if use_early else 300,
                 "min_samples_leaf": max(5, n_samples // 50),
                 "random_state": 42,
             }
@@ -344,7 +347,7 @@ def audit_feature_set(
                 gbt_kwargs.update(
                     early_stopping=True,
                     validation_fraction=0.15,
-                    n_iter_no_change=20,
+                    n_iter_no_change=30,
                 )
             else:
                 gbt_kwargs["early_stopping"] = False

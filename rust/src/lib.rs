@@ -912,6 +912,23 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("rook_open_file_us".to_string(), rook_on_open(turn));
     feats.insert("rook_open_file_them".to_string(), rook_on_open(opp));
 
+    // 13b. Connected Rooks (same rank, no pieces between)
+    let connected_rooks = |side: Color| -> f32 {
+        let rooks: Vec<Square> = (board.by_role(Role::Rook) & board.by_color(side)).into_iter().collect();
+        if rooks.len() < 2 {
+            return 0.0;
+        }
+        let (r0, r1) = (rooks[0], rooks[1]);
+        if r0.rank() != r1.rank() {
+            return 0.0;
+        }
+        // Check no pieces between the two rooks on their shared rank
+        let between = attacks::between(r0, r1) & board.occupied();
+        if between.is_empty() { 1.0 } else { 0.0 }
+    };
+    feats.insert("connected_rooks_us".to_string(), connected_rooks(turn));
+    feats.insert("connected_rooks_them".to_string(), connected_rooks(opp));
+
     // 14. Backward Pawns
     let count_backward = |side: Color| {
         let mut count = 0;

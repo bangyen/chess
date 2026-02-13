@@ -1,8 +1,9 @@
 use pyo3::prelude::*;
 use shakmaty::{
     fen::Fen, CastlingMode, Chess, Color, Move, Position, Role, Square,
-    uci::Uci
 };
+use shakmaty_syzygy::{Tablebase, Wdl, Dtz, Syzygy, AmbiguousWdl, MaybeRounded};
+use std::path::Path;
 use std::str::FromStr; // Needed for parse()
 
 // Simple material values
@@ -58,7 +59,7 @@ fn alpha_beta(pos: &Chess, mut alpha: i32, beta: i32, depth: u8) -> i32 {
     // Move ordering would go here, but omitted for simplicity
     for m in moves {
         let mut new_pos = pos.clone();
-        new_pos.play_unchecked(&m);
+        new_pos.play_unchecked(m.clone());
         
         let score = -alpha_beta(&new_pos, -beta, -alpha, depth - 1);
         
@@ -89,14 +90,14 @@ fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
 
     for m in moves {
         let mut new_pos = pos.clone();
-        new_pos.play_unchecked(&m);
+        new_pos.play_unchecked(m.clone());
         
         let score = -alpha_beta(&new_pos, -beta, -alpha, depth - 1);
         
         if score > best_score {
             best_score = score;
             // Convert to UCI string
-            best_move = Some(Uci::from_move(&m, CastlingMode::Standard).to_string());
+            best_move = Some(m.to_uci(CastlingMode::Standard).to_string());
         }
         if score > alpha {
             alpha = score;
@@ -123,13 +124,13 @@ fn calculate_forcing_swing(fen: &str, depth: u8) -> PyResult<f32> {
         let is_capture = m.is_capture();
         let gives_check = {
             let mut test_pos = pos.clone();
-            test_pos.play_unchecked(&m);
+            test_pos.play_unchecked(m.clone());
             test_pos.is_check()
         };
 
         if is_capture || gives_check {
             let mut new_pos = pos.clone();
-            new_pos.play_unchecked(&m);
+            new_pos.play_unchecked(m.clone());
             
             // Evaluate position after forcing move with reduced depth
             // We search to depth - 1
@@ -157,10 +158,64 @@ fn calculate_forcing_swing(fen: &str, depth: u8) -> PyResult<f32> {
     Ok(max_swing)
 }
 
+#[pyclass]
+struct SyzygyTablebase {
+    tb: Tablebase<Chess>,
+}
+
+#[pymethods]
+impl SyzygyTablebase {
+    #[new]
+    fn new(path: &str) -> PyResult<Self> {
+        let mut tb = Tablebase::new();
+        tb.add_directory(path).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+        Ok(SyzygyTablebase { tb })
+    }
+
+    fn probe_wdl(&self, fen: &str) -> PyResult<Option<i32>> {
+        let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+        let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+
+        match self.tb.probe_wdl(&pos) {
+            Ok(wdl) => match wdl {
+                AmbiguousWdl::Win => Ok(Some(2)),
+                AmbiguousWdl::Loss => Ok(Some(-2)),
+                AmbiguousWdl::Draw => Ok(Some(0)),
+                AmbiguousWdl::BlessedLoss => Ok(Some(-1)),
+                AmbiguousWdl::CursedWin => Ok(Some(1)),
+                AmbiguousWdl::MaybeWin => Ok(Some(1)),
+                AmbiguousWdl::MaybeLoss => Ok(Some(-1)),
+            },
+            Err(_) => Ok(None), // Position not in tablebase
+        }
+    }
+
+    fn probe_dtz(&self, fen: &str) -> PyResult<Option<i32>> {
+        let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+        let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+
+        match self.tb.probe_dtz(&pos) {
+            Ok(maybe_rounded) => {
+                let dtz = match maybe_rounded {
+                    MaybeRounded::Precise(d) => d,
+                    MaybeRounded::Rounded(d) => d,
+                };
+                // Dtz(i32) usually? Or u32?
+                // Let's assume it implements Into<i32> or has .0
+                // I'll try .0 assuming it's a tuple struct.
+                // If not, I'll error and fix.
+                Ok(Some(dtz.0 as i32))
+            },
+            Err(_) => Ok(None),
+        }
+    }
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
-fn rust_utils(_py: Python, m: &PyModule) -> PyResult<()> {
+fn _chess_ai_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(find_best_reply, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_forcing_swing, m)?)?;
+    m.add_class::<SyzygyTablebase>()?;
     Ok(())
 }

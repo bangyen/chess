@@ -31,6 +31,7 @@ class ExplainableChessEngine:
     def __init__(
         self,
         stockfish_path: str,
+        syzygy_path: Optional[str] = None,
         depth: int = 16,
         opponent_strength: str = "beginner",
         enable_model_explanations: bool = True,
@@ -38,11 +39,13 @@ class ExplainableChessEngine:
     ):
         """Initialize the explainable chess engine."""
         self.stockfish_path = stockfish_path
+        self.syzygy_path = syzygy_path
         self.depth = depth
         self.opponent_strength = opponent_strength
         self.enable_model_explanations = enable_model_explanations
         self.model_training_positions = model_training_positions
         self.engine = None
+        self.syzygy = None
         self.board = chess.Board()
         self.move_history: List[chess.Move] = []
         self.surrogate_explainer = None
@@ -75,14 +78,31 @@ class ExplainableChessEngine:
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
 
-            # Configure Stockfish strength
+            # Configure Stockfish strength and Syzygy
+            options = {}
             if self.opponent_strength in self.strength_settings:
-                settings = self.strength_settings[self.opponent_strength]
-                for option, value in settings.items():
-                    try:
-                        self.engine.configure({option: value})
-                    except chess.engine.EngineError:
-                        pass  # Some options might not be available in all Stockfish versions
+                options.update(self.strength_settings[self.opponent_strength])
+
+            if self.syzygy_path:
+                options["SyzygyPath"] = self.syzygy_path
+
+            try:
+                self.engine.configure(options)
+            except chess.engine.EngineError as e:
+                print(f"⚠️  Warning: Failed to configure Stockfish options: {e}")
+
+            # Initialize Syzygy tablebases (Python side wrapper)
+            if self.syzygy_path:
+                try:
+                    from .rust_utils import SyzygyTablebase
+
+                    self.syzygy = SyzygyTablebase(self.syzygy_path)
+                    print(f"✅ Syzygy tablebases initialized from {self.syzygy_path}")
+                except Exception as e:
+                    print(
+                        f"⚠️  Warning: Failed to initialize Syzygy tablebases wrapper: {e}"
+                    )
+                    self.syzygy = None
 
             # Train surrogate model if enabled
             if self.enable_model_explanations:
@@ -181,8 +201,31 @@ class ExplainableChessEngine:
             print(f"❌ Error getting best move: {e}")
             return None
 
+    def _get_syzygy_data(self, board: chess.Board) -> Dict:
+        """Get Syzygy tablebase data for the position."""
+        if not self.syzygy:
+            return {}
+
+        # Check piece count (Syzygy generally supports up to 7 pieces)
+        if len(board.piece_map()) > 7:
+            return {}
+
+        try:
+            fen = board.fen()
+            wdl = self.syzygy.probe_wdl(fen)
+            dtz = self.syzygy.probe_dtz(fen)
+
+            result = {}
+            if wdl is not None:
+                result["wdl"] = wdl
+            if dtz is not None:
+                result["dtz"] = dtz
+            return result
+        except Exception:
+            return {}
+
     def analyze_position(self) -> Dict:
-        """Analyze the current position using our explainable features."""
+        """Analyze the current position using our explainable features and Syzygy."""
         from .engine import SFConfig, sf_eval, sf_top_moves
 
         try:
@@ -198,10 +241,14 @@ class ExplainableChessEngine:
             stockfish_score = sf_eval(self.engine, self.board, cfg)
             top_moves = sf_top_moves(self.engine, self.board, cfg)
 
+            # Get Syzygy data
+            syzygy_data = self._get_syzygy_data(self.board)
+
             return {
                 "stockfish_score": stockfish_score,
                 "features": features,
                 "top_moves": top_moves,
+                "syzygy": syzygy_data,
             }
         except Exception as e:
             print(f"❌ Error analyzing position: {e}")
@@ -286,6 +333,50 @@ class ExplainableChessEngine:
         except Exception as e:
             return MoveExplanation(move, 0, [], f"Error analyzing move: {e}")
 
+        return reasons
+
+    def _get_syzygy_reason(
+        self, board_before: chess.Board, board_after: chess.Board
+    ) -> Optional[Tuple[str, float, str]]:
+        """Generate a reason based on Syzygy tablebase changes."""
+        data_before = self._get_syzygy_data(board_before)
+        if not data_before:
+            return None
+
+        data_after = self._get_syzygy_data(board_after)
+        if not data_after:
+            return None
+
+        wdl_before = data_before.get("wdl", 0)
+        # Invert wdl_after because it's from opponent's perspective
+        wdl_after = -data_after.get("wdl", 0)
+
+        # WDL: 2=Win, 1=MaybeWin, 0=Draw, -1=MaybeLoss, -2=Loss
+
+        # Check for blunders (Win -> Draw/Loss, Draw -> Loss)
+        if wdl_before == 2 and wdl_after < 2:
+            return ("syzygy_blunder", -500.0, "Tablebase: Throws away a forced win")
+        if wdl_before == 0 and wdl_after < 0:
+            return ("syzygy_blunder", -300.0, "Tablebase: Blunders into a forced loss")
+
+        # Check for good moves (maintaining win, finding win)
+        if wdl_before == 2 and wdl_after == 2:
+            # Check DTZ improvement?
+            # dtz_before = data_before.get("dtz", 0)
+            # dtz_after = data_after.get("dtz", 0)
+            # DTZ is distance to zeroing move (capture/pawn move) or mate.
+            # If we are winning, we want to minimize DTZ (to mate) or make progress.
+            # Note: DTZ behavior is complex. Simplified check.
+            return ("syzygy_good", 50.0, "Tablebase: Maintains forced win")
+
+        if wdl_before < 2 and wdl_after == 2:
+            return ("syzygy_brilliant", 500.0, "Tablebase: Finds a forced win!")
+
+        if wdl_before == -2 and wdl_after == 0:
+            return ("syzygy_save", 300.0, "Tablebase: Salvages a draw from a loss")
+
+        return None
+
     def _generate_move_reasons(
         self, move: chess.Move, score: float, best_score: float
     ) -> List[Tuple[str, float, str]]:
@@ -320,6 +411,11 @@ class ExplainableChessEngine:
         # Check logic (keep hardcoded)
         if temp_board.is_check():
             reasons.append(("check", 30.0, "Gives check (+30 cp)"))
+
+        # Syzygy Check
+        syzygy_reason = self._get_syzygy_reason(self.board, temp_board)
+        if syzygy_reason:
+            reasons.append(syzygy_reason)
 
         # 3. Extract features after move
         try:
@@ -471,6 +567,13 @@ class ExplainableChessEngine:
     ) -> List[Tuple[str, int, str]]:
         """Generate specific reasons why a move is good or bad using a specific board state."""
         reasons = []
+
+        # Syzygy Check
+        temp_board = board.copy()
+        temp_board.push(move)
+        syzygy_reason = self._get_syzygy_reason(board, temp_board)
+        if syzygy_reason:
+            reasons.append((syzygy_reason[0], int(syzygy_reason[1]), syzygy_reason[2]))
 
         try:
             # Analyze the move's characteristics

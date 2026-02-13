@@ -1,11 +1,10 @@
 use pyo3::prelude::*;
 use shakmaty::{
-    attacks, Bitboard, CastlingMode, Chess, Color, EnPassantMode, Fen, Move, Position, Role, Square,
+    attacks, Bitboard, CastlingMode, Chess, Color, Move, Position, Role, Square,
 };
-use shakmaty_syzygy::{Tablebase, Wdl, Dtz, Syzygy, AmbiguousWdl, MaybeRounded};
+use shakmaty::fen::Fen;
+use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
 use std::collections::BTreeMap;
-use std::path::Path;
-use std::str::FromStr; // Needed for parse()
 
 // Simple material values
 fn piece_value(role: Role) -> i32 {
@@ -102,7 +101,7 @@ fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
     }
 
     // Initial move ordering (captures/promotions)
-    let mut root_moves: Vec<(i32, Move)> = moves.into_iter().map(|m| {
+    let mut root_moves: Vec<(i32, Move)> = moves.into_iter().map(|m: Move| {
         let mut score = 0;
         if m.is_capture() {
             let board = pos.board();
@@ -134,7 +133,7 @@ fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
         
         for (score_ref, m) in root_moves.iter_mut() {
             let mut new_pos = pos.clone();
-            new_pos.play_unchecked(m.clone());
+            new_pos.play_unchecked(*m);
             
             let score = -alpha_beta(&new_pos, -beta, -alpha, d - 1);
             
@@ -182,16 +181,16 @@ fn calculate_forcing_swing(fen: &str, depth: u8) -> PyResult<f32> {
 
     for m in moves {
         // Is it forcing?
-        let is_capture = m.is_capture();
+        let is_capture: bool = m.is_capture();
         let gives_check = {
             let mut test_pos = pos.clone();
-            test_pos.play_unchecked(m.clone());
+            test_pos.play_unchecked(m);
             test_pos.is_check()
         };
 
         if is_capture || gives_check {
             let mut new_pos = pos.clone();
-            new_pos.play_unchecked(m.clone());
+            new_pos.play_unchecked(m);
             
             // Evaluate position after forcing move with reduced depth
             let ev_after = alpha_beta(&new_pos, -50000, 50000, depth.saturating_sub(1));
@@ -301,17 +300,15 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     let moves = pos.legal_moves();
     feats.insert("mobility_us".to_string(), (moves.len() as f32).min(40.0));
 
-    let mut opp_pos = pos.clone();
-    opp_pos.swap_turn();
+    let opp_pos = pos.clone().swap_turn().unwrap_or_else(|_| pos.clone());
     feats.insert("mobility_them".to_string(), (opp_pos.legal_moves().len() as f32).min(40.0));
 
     // 3. King Ring Pressure
     let get_king_ring = |side: Color| {
-        let ksq = board.king_of(side);
         let mut ring = Bitboard::EMPTY;
-        if let Some(sq) = ksq {
+        if let Some(ksq) = board.king_of(side) {
             for s in Square::ALL {
-                if sq.distance(s) <= 1 {
+                if ksq.distance(s) <= 1 {
                     ring |= Bitboard::from_square(s);
                 }
             }
@@ -360,7 +357,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         let enemy_pawns = board.by_role(Role::Pawn) & board.by_color(side.other());
         
         for f_off in -1..=1 {
-            let f = (file as i8 + f_off);
+            let f = file as i8 + f_off;
             if f < 0 || f > 7 { continue; }
             let check_file = shakmaty::File::new(f as u32);
             let file_bb = Bitboard::from_file(check_file);
@@ -468,7 +465,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     let king_safety = |side: Color| {
         if let Some(ksq) = board.king_of(side) {
             let mut safety = 0.0;
-            let occupied = board.occupied();
+            let _occupied = board.occupied();
             // In shakmaty, king attacks don't need occupied? 
             // Actually board.attacks_from(Role::King, ksq, EMPTY) works.
             for sq in board.attacks_from(ksq) {
@@ -563,7 +560,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         let knights = board.by_role(Role::Knight) & board.by_color(side);
         let occupied = board.occupied();
         for sq in knights {
-            let rank = sq.rank();
+            let rank: shakmaty::Rank = sq.rank();
             let rel_rank = if side == Color::White { rank as usize } else { 7 - rank as usize };
             if rel_rank < 3 || rel_rank > 5 { continue; }
             
@@ -675,7 +672,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         let mut count = 0;
         let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
         for sq in my_pawns {
-            let file = sq.file();
+            let file: shakmaty::File = sq.file();
             let mut has_neighbor = false;
             for f_off in [-1, 1] {
                 let f = file as i32 + f_off;
@@ -701,7 +698,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         let side = pos_in.turn();
         let opp = side.other();
         let mut enemy_pawn_attacks = Bitboard::EMPTY;
-        let occupied = pos_in.board().occupied();
+        let _occupied = pos_in.board().occupied();
         for sq in pos_in.board().by_role(Role::Pawn) & pos_in.board().by_color(opp) {
             enemy_pawn_attacks |= shakmaty::attacks::pawn_attacks(opp, sq);
         }
@@ -725,7 +722,8 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         let mut count = 0.0;
         let rooks = board.by_role(Role::Rook) & board.by_color(side);
         for sq in rooks {
-            let file_bb = Bitboard::from_file(sq.file());
+            let sq_file: shakmaty::File = sq.file();
+            let file_bb = Bitboard::from_file(sq_file);
             let pawns_on_file = board.by_role(Role::Pawn) & file_bb;
             if pawns_on_file.is_empty() {
                 count += 1.0;
@@ -749,9 +747,10 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         }
 
         for sq in my_pawns {
-            let file = sq.file();
-            let rank = sq.rank() as usize;
-            
+            let file: shakmaty::File = sq.file();
+            let rank: shakmaty::Rank = sq.rank();
+            let rank_usize = rank as usize;
+
             // 1. Is supported?
             let mut is_supported = false;
             for f_off in [-1, 1] {
@@ -761,8 +760,8 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
                     let adj_bb = Bitboard::from_file(adj_file);
                     let adj_pawns = board.by_role(Role::Pawn) & board.by_color(side) & adj_bb;
                     for p_sq in adj_pawns {
-                        let p_rank = p_sq.rank() as usize;
-                        if (side == Color::White && p_rank <= rank) || (side == Color::Black && p_rank >= rank) {
+                        let p_rank: shakmaty::Rank = p_sq.rank();
+                        if (side == Color::White && (p_rank as usize) <= rank_usize) || (side == Color::Black && (p_rank as usize) >= rank_usize) {
                             is_supported = true;
                             break;
                         }
@@ -794,7 +793,7 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
                 | (attacks::bishop_attacks(king, Bitboard::EMPTY) & board.bishops_and_queens());
 
             let mut blockers = Bitboard::EMPTY;
-            for sniper in (snipers & board.by_color(enemy_side)) {
+            for sniper in snipers & board.by_color(enemy_side) {
                 let b = attacks::between(king, sniper) & board.occupied();
                 if !b.more_than_one() && !b.is_empty() {
                     blockers |= b;

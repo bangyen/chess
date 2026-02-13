@@ -5,9 +5,11 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "chess_ai_rust"
+name = "_chess_ai_rust"
 crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.20.0", features = ["extension-module"] }
-shakmaty = "0.26.0"
+shakmaty = "0.28.0"
+shakmaty-syzygy = "0.26"
+anyhow = "1.0"

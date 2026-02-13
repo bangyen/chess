@@ -82,3 +82,6 @@ rust/target/
 # Logs and profiling
 *.log
 profile_output*.txt
+.ruff_cache/
+rust/*.txt
+.maturin/

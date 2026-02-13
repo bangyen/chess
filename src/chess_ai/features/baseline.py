@@ -298,7 +298,10 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             reply = None
             if RUST_AVAILABLE:
                 try:
-                    uci = find_best_reply(board.fen(), depth)
+                    # Rust alpha-beta is unoptimized (no TT/move ordering), so depth 6 is too slow.
+                    # Clamp to 4 which is sufficient for hanging pieces and fast.
+                    rust_depth = min(depth, 4)
+                    uci = find_best_reply(board.fen(), rust_depth)
                     if uci:
                         reply = chess.Move.from_uci(uci)
                 except Exception:
@@ -354,7 +357,9 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             try:
                 # Rust implementation handles the full swing calculation
                 # Note: Rust returns float centipawns
-                return float(calculate_forcing_swing(board.fen(), d_base))
+                # Clamp depth to 4 for performance
+                rust_depth = min(d_base, 4)
+                return float(calculate_forcing_swing(board.fen(), rust_depth))
             except Exception:
                 pass
 

@@ -57,7 +57,7 @@ Issues = "https://github.com/yourusername/chess-feature-audit/issues"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "chess_ai.rust_utils"
+module-name = "chess_ai.rust_utils._chess_ai_rust"
 project-layout = "flat"
 python-source = "src"
 manifest-path = "rust/Cargo.toml"

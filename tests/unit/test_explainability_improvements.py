@@ -341,18 +341,25 @@ class TestRustSearchOptimisations:
         assert move in board.legal_moves
 
     def test_find_best_reply_depth_8(self):
-        """Engine returns a valid UCI move at depth 8.
+        """Engine returns a valid UCI move at depth 8 within 5 seconds.
 
         Depth 8 is the new cap.  With all search optimisations the
-        engine should complete within a few seconds on typical midgame
-        positions.
+        engine should complete quickly.  We check both correctness and
+        wall-clock time in a single search to avoid running the
+        expensive depth-8 tree twice.
         """
+        import time
+
         fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        start = time.monotonic()
         result = find_best_reply(fen, 8)
-        assert result is not None
+        elapsed = time.monotonic() - start
+
+        assert result is not None, "Engine returned no move"
         move = chess.Move.from_uci(result)
         board = chess.Board(fen)
         assert move in board.legal_moves
+        assert elapsed < 5.0, f"Depth-8 search took {elapsed:.2f}s (limit 5s)"
 
     def test_forcing_swing_nonnegative_depth_6(self):
         """Forcing swing at depth 6 must still be non-negative.
@@ -363,17 +370,3 @@ class TestRustSearchOptimisations:
         fen = "r1bqkbnr/pppppppp/2n5/4P3/8/8/PPPP1PPP/RNBQKBNR w KQkq - 1 3"
         swing = calculate_forcing_swing(fen, 6)
         assert swing >= 0.0
-
-    def test_depth_8_completes_in_time(self):
-        """A depth-8 search on the opening position must finish within
-        5 seconds, confirming that the TT and pruning are working.
-        """
-        import time
-
-        fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        start = time.monotonic()
-        result = find_best_reply(fen, 8)
-        elapsed = time.monotonic() - start
-
-        assert result is not None, "Engine returned no move"
-        assert elapsed < 5.0, f"Depth-8 search took {elapsed:.2f}s (limit 5s)"

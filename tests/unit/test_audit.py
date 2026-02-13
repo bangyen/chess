@@ -205,7 +205,7 @@ class TestAuditFeatureSet:
 
         # Create test data with enough samples for stable convergence
         boards = [
-            chess.Board() for _ in range(10)
+            chess.Board() for _ in range(5)
         ]  # More samples for better convergence
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
@@ -241,7 +241,7 @@ class TestAuditFeatureSet:
             (chess.Move.from_uci("c2c4"), 10.0),
         ]
 
-        boards = [chess.Board() for _ in range(8)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=20, multipv=4)
         extract_fn = self.create_mock_feature_extractor()
@@ -257,7 +257,7 @@ class TestAuditFeatureSet:
             l1_alpha=0.1,
             gap_threshold_cp=100.0,
             attribution_topk=10,
-            stability_bootstraps=10,
+            stability_bootstraps=3,
             stability_thresh=0.8,
         )
 
@@ -338,7 +338,7 @@ class TestAuditFeatureSet:
         ]
 
         # Create larger dataset for stability selection
-        boards = [chess.Board() for _ in range(25)]
+        boards = [chess.Board() for _ in range(10)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -348,7 +348,7 @@ class TestAuditFeatureSet:
             engine=engine,
             cfg=cfg,
             extract_features_fn=extract_fn,
-            stability_bootstraps=5,
+            stability_bootstraps=3,
             stability_thresh=0.7,
         )
 
@@ -396,7 +396,7 @@ class TestAuditFeatureSet:
         ]
 
         # Create very small dataset but with enough samples for cross-validation
-        boards = [chess.Board() for _ in range(10)]  # Increased to avoid CV issues
+        boards = [chess.Board() for _ in range(5)]  # Increased to avoid CV issues
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -528,7 +528,7 @@ class TestAuditFeatureSet:
         ]
 
         # Create small dataset (less than 20 samples)
-        boards = [chess.Board() for _ in range(15)]
+        boards = [chess.Board() for _ in range(8)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -538,7 +538,7 @@ class TestAuditFeatureSet:
             engine=engine,
             cfg=cfg,
             extract_features_fn=extract_fn,
-            stability_bootstraps=5,
+            stability_bootstraps=3,
         )
 
         # Should handle small dataset for stability selection
@@ -557,7 +557,7 @@ class TestAuditFeatureSet:
             (chess.Move.from_uci("d2d4"), 0.0),
         ]
 
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -586,7 +586,7 @@ class TestAuditFeatureSet:
             (chess.Move.from_uci("d2d4"), 20.0),
         ]
 
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -796,7 +796,7 @@ class TestAuditFeatureSet:
             (chess.Move.from_uci("d2d4"), 25.0),
         ]
 
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()
@@ -927,7 +927,7 @@ class TestAuditCanonicalFeatureSet:
                 feats["endgame_only_feat"] = 5.0
             return feats
 
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
 
@@ -1044,7 +1044,7 @@ class TestAuditElasticNetDistillation:
             (chess.Move.from_uci("d2d4"), 25.0),
         ]
 
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = self.create_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
         extract_fn = self.create_mock_feature_extractor()

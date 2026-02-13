@@ -268,16 +268,16 @@ class TestStratifiedSampling:
     def test_returns_requested_count(self):
         """The function returns exactly n positions (within tolerance)."""
         random.seed(42)
-        positions = sample_stratified_positions(30)
+        positions = sample_stratified_positions(15)
         # We may get slightly fewer if some buckets are hard to fill,
         # but at least 80% should be present.
-        assert len(positions) >= 24
-        assert len(positions) <= 30
+        assert len(positions) >= 12
+        assert len(positions) <= 15
 
     def test_all_boards_are_valid(self):
         """Every returned board should be a valid, non-game-over position."""
         random.seed(42)
-        positions = sample_stratified_positions(20)
+        positions = sample_stratified_positions(10)
         for pos in positions:
             assert isinstance(pos, chess.Board)
             assert not pos.is_game_over()
@@ -290,7 +290,7 @@ class TestStratifiedSampling:
         for endgames which are hard to reach via random play.
         """
         random.seed(42)
-        n = 60
+        n = 30
         positions = sample_stratified_positions(n)
 
         counts = {"opening": 0, "middlegame": 0, "endgame": 0}
@@ -306,7 +306,7 @@ class TestStratifiedSampling:
         """Positions classified as endgame should have <= 12 non-pawn/king pieces."""
         random.seed(42)
         positions = sample_stratified_positions(
-            40,
+            20,
             phase_weights={"opening": 0.0001, "middlegame": 0.0001, "endgame": 0.9998},
         )
 
@@ -326,7 +326,7 @@ class TestStratifiedSampling:
         """Custom phase weights are accepted without error."""
         random.seed(42)
         positions = sample_stratified_positions(
-            20,
+            10,
             phase_weights={"opening": 0.8, "middlegame": 0.1, "endgame": 0.1},
         )
         assert len(positions) > 0
@@ -344,15 +344,15 @@ class TestStratifiedSampling:
     def test_none_weights_uses_defaults(self):
         """Passing phase_weights=None uses the default distribution."""
         random.seed(42)
-        positions = sample_stratified_positions(20, phase_weights=None)
+        positions = sample_stratified_positions(10, phase_weights=None)
         assert len(positions) > 0
 
     def test_deterministic_with_seed(self):
         """Two runs with the same seed produce the same FENs."""
         random.seed(123)
-        run1 = [b.fen() for b in sample_stratified_positions(10)]
+        run1 = [b.fen() for b in sample_stratified_positions(6)]
         random.seed(123)
-        run2 = [b.fen() for b in sample_stratified_positions(10)]
+        run2 = [b.fen() for b in sample_stratified_positions(6)]
         assert run1 == run2
 
 

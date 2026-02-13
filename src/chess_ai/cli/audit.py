@@ -137,6 +137,20 @@ def main():
         )
         sys.exit(1)
 
+    # Feature extractor — checked early so we fail fast before expensive
+    # position sampling when neither flag is provided.
+    if args.baseline_features:
+        extract_fn = baseline_extract_features
+    elif args.features_module:
+        mod = load_feature_module(args.features_module)
+        extract_fn = mod.extract_features  # type: ignore
+    else:
+        print(
+            "Provide --features_module PATH or use --baseline_features to run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     cfg = SFConfig(
         engine_path=args.engine,
         depth=args.depth if args.depth > 0 else 0,
@@ -177,19 +191,6 @@ def main():
             boards = sample_random_positions(args.positions)
     if not boards:
         print("No positions sampled.", file=sys.stderr)
-        sys.exit(1)
-
-    # Feature extractor
-    if args.baseline_features:
-        extract_fn = baseline_extract_features
-    elif args.features_module:
-        mod = load_feature_module(args.features_module)
-        extract_fn = mod.extract_features  # type: ignore
-    else:
-        print(
-            "Provide --features_module PATH or use --baseline_features to run.",
-            file=sys.stderr,
-        )
         sys.exit(1)
 
     # Engine

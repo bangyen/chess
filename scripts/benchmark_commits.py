@@ -220,6 +220,8 @@ def main():
             run_command(f"git checkout {original_branch}")
         else:
             run_command(f"git checkout {original_commit}")
+        print("  Rebuilding Rust extension for restored commit...")
+        run_command("uv run maturin develop --release", check=False)
 
     # Print comparison -------------------------------------------------------
     wall_total = time.monotonic() - wall_start

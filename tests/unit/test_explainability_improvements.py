@@ -15,7 +15,11 @@ from chess_ai.features.baseline import baseline_extract_features
 
 # Try importing Rust utilities — tests that require them are skipped otherwise.
 try:
-    from chess_ai.rust_utils import calculate_forcing_swing, extract_features_rust
+    from chess_ai.rust_utils import (
+        calculate_forcing_swing,
+        extract_features_rust,
+        find_best_reply,
+    )
 
     RUST_AVAILABLE = True
 except ImportError:
@@ -310,3 +314,66 @@ class TestForcingSwingQuiescence:
         fen = "4k3/8/8/8/8/8/8/4K3 w - - 0 1"
         swing = calculate_forcing_swing(fen, 3)
         assert math.isclose(swing, 0.0, abs_tol=1.0)
+
+
+# ---------------------------------------------------------------------------
+#  Optimised Rust search (TT, aspiration windows, pruning)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not RUST_AVAILABLE, reason="Rust extension not built")
+class TestRustSearchOptimisations:
+    """Verify the optimised Rust search engine (with transposition table,
+    aspiration windows, null-move pruning, and LMR) returns correct and
+    timely results at depths previously too slow."""
+
+    def test_find_best_reply_depth_6(self):
+        """Engine returns a valid UCI move at depth 6.
+
+        Previously the Rust engine was clamped to depth 4; the new TT
+        and pruning optimisations make depth 6 practical.
+        """
+        fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        result = find_best_reply(fen, 6)
+        assert result is not None
+        move = chess.Move.from_uci(result)
+        board = chess.Board(fen)
+        assert move in board.legal_moves
+
+    def test_find_best_reply_depth_8(self):
+        """Engine returns a valid UCI move at depth 8.
+
+        Depth 8 is the new cap.  With all search optimisations the
+        engine should complete within a few seconds on typical midgame
+        positions.
+        """
+        fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        result = find_best_reply(fen, 8)
+        assert result is not None
+        move = chess.Move.from_uci(result)
+        board = chess.Board(fen)
+        assert move in board.legal_moves
+
+    def test_forcing_swing_nonnegative_depth_6(self):
+        """Forcing swing at depth 6 must still be non-negative.
+
+        The deeper search should not introduce negative swings because
+        the metric is defined as max(0, …).
+        """
+        fen = "r1bqkbnr/pppppppp/2n5/4P3/8/8/PPPP1PPP/RNBQKBNR w KQkq - 1 3"
+        swing = calculate_forcing_swing(fen, 6)
+        assert swing >= 0.0
+
+    def test_depth_8_completes_in_time(self):
+        """A depth-8 search on the opening position must finish within
+        5 seconds, confirming that the TT and pruning are working.
+        """
+        import time
+
+        fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        start = time.monotonic()
+        result = find_best_reply(fen, 8)
+        elapsed = time.monotonic() - start
+
+        assert result is not None, "Engine returned no move"
+        assert elapsed < 5.0, f"Depth-8 search took {elapsed:.2f}s (limit 5s)"

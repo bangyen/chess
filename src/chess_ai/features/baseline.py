@@ -91,7 +91,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                     reply = None
                     if RUST_AVAILABLE:
                         try:
-                            rust_depth = min(depth, 4)
+                            # Rust search uses TT + pruning; depth 8 is safe.
+                            rust_depth = min(depth, 8)
                             uci = find_best_reply(board.fen(), rust_depth)
                             if uci:
                                 reply = chess.Move.from_uci(uci)
@@ -142,7 +143,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 """Forcing swing via Rust or Stockfish fallback."""
                 if RUST_AVAILABLE:
                     try:
-                        rust_depth = min(d_base, 4)
+                        # Rust search uses TT + pruning; depth 8 is safe.
+                        rust_depth = min(d_base, 8)
                         return float(calculate_forcing_swing(board.fen(), rust_depth))
                     except Exception:
                         pass
@@ -459,9 +461,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             reply = None
             if RUST_AVAILABLE:
                 try:
-                    # Rust alpha-beta is unoptimized (no TT/move ordering), so depth 6 is too slow.
-                    # Clamp to 4 which is sufficient for hanging pieces and fast.
-                    rust_depth = min(depth, 4)
+                    # Rust search uses TT + pruning; depth 8 is safe.
+                    rust_depth = min(depth, 8)
                     uci = find_best_reply(board.fen(), rust_depth)
                     if uci:
                         reply = chess.Move.from_uci(uci)
@@ -516,10 +517,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         """Real forcing swing with eval differences (or Rust optimization)"""
         if RUST_AVAILABLE:
             try:
-                # Rust implementation handles the full swing calculation
-                # Note: Rust returns float centipawns
-                # Clamp depth to 4 for performance
-                rust_depth = min(d_base, 4)
+                # Rust search uses TT + pruning; depth 8 is safe.
+                rust_depth = min(d_base, 8)
                 return float(calculate_forcing_swing(board.fen(), rust_depth))
             except Exception:
                 pass

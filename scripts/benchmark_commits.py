@@ -1,14 +1,24 @@
+"""Compare explainability-audit metrics across two git commits.
+
+Automates: checkout → build Rust extension → run audit → parse metrics → restore.
+The dominant cost is Stockfish analysis (~4,500 depth-16 calls per audit).
+Use ``--quick`` for a fast smoke-test (≈3 min) or tune ``--depth`` / ``--threads``
+to trade accuracy for speed.
+"""
+
 import argparse
+import os
 import re
 import subprocess
 import sys
+import time
 from typing import Dict
 
 
 def run_command(
     command: str, check: bool = True, capture_output: bool = True
 ) -> subprocess.CompletedProcess:
-    """Run a shell command."""
+    """Run a shell command and return the completed process."""
     result = subprocess.run(
         command, shell=True, check=check, capture_output=capture_output, text=True
     )
@@ -21,26 +31,36 @@ def get_current_commit() -> str:
 
 
 def check_clean_state():
-    """Ensure the git working directory is clean."""
+    """Ensure the git working directory is clean before switching commits."""
     status = run_command("git status --porcelain").stdout.strip()
     if status:
         print("Error: Working directory is not clean. Please commit or stash changes.")
         sys.exit(1)
 
 
-def run_audit(commit: str, positions: int, seed: int, engine: str) -> str:
+def run_audit(
+    commit: str,
+    positions: int,
+    seed: int,
+    engine: str,
+    depth: int,
+    threads: int,
+) -> str:
     """Run the audit tool on a specific commit.
 
     Streams stderr (tqdm progress bars) to the terminal in real time
     while capturing stdout for metric parsing.
     """
-    print(f"Running audit on commit {commit}...")
+    print(f"  Running audit on {commit[:8]}  "
+          f"(positions={positions}, depth={depth}, threads={threads})")
     cmd = (
         f"uv run python -m chess_ai.cli.audit "
         f"--engine {engine} "
         f"--baseline_features "
         f"--positions {positions} "
-        f"--seed {seed}"
+        f"--seed {seed} "
+        f"--depth {depth} "
+        f"--threads {threads}"
     )
     # Capture stdout for parsing; let stderr (tqdm) flow to terminal
     result = subprocess.run(
@@ -60,34 +80,35 @@ def run_audit(commit: str, positions: int, seed: int, engine: str) -> str:
 
 def parse_metrics(output: str) -> Dict[str, float]:
     """Parse metrics from the audit tool output."""
-    metrics = {}
+    metrics: Dict[str, float] = {}
 
-    # Fidelity (Delta-R^2):          0.124
     m = re.search(r"Fidelity \(Delta-R\^2\):\s+([0-9.]+)", output)
     if m:
         metrics["r2"] = float(m.group(1))
 
-    # Move ranking (Kendall tau):    0.387
     m = re.search(r"Move ranking \(Kendall tau\):\s+([0-9.]+)", output)
     if m:
         metrics["tau"] = float(m.group(1))
 
-    # Local faithfulness (best vs 2): 87.5%
     m = re.search(r"Local faithfulness \(best vs 2\):\s+([0-9.]+)%", output)
     if m:
         metrics["faithfulness"] = float(m.group(1))
 
-    # Sparsity (reasons...): 1.25
     m = re.search(r"Sparsity .*:\s+([0-9.]+)", output)
     if m:
         metrics["sparsity"] = float(m.group(1))
 
-    # Coverage (>=2 strong reasons):  93.8%
     m = re.search(r"Coverage .*:\s+([0-9.]+)%", output)
     if m:
         metrics["coverage"] = float(m.group(1))
 
     return metrics
+
+
+def fmt_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as a human-readable string."""
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m{s:02d}s"
 
 
 def main():
@@ -96,11 +117,23 @@ def main():
     )
     parser.add_argument("old_commit", help="Baseline commit hash/ref")
     parser.add_argument("new_commit", help="Candidate commit hash/ref")
+
+    # Tuning knobs ----------------------------------------------------------
     parser.add_argument(
-        "--positions", type=int, default=400, help="Number of positions to test"
+        "--positions", type=int, default=None,
+        help="Number of positions to test (default: 400, or 100 with --quick)",
     )
     parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for reproducibility"
+        "--seed", type=int, default=42,
+        help="Random seed for reproducibility",
+    )
+    parser.add_argument(
+        "--depth", type=int, default=None,
+        help="Stockfish search depth (default: 16, or 12 with --quick)",
+    )
+    parser.add_argument(
+        "--threads", type=int, default=None,
+        help="Stockfish threads (default: 1, or half your CPUs with --quick)",
     )
     parser.add_argument(
         "--engine",
@@ -108,8 +141,23 @@ def main():
         or "/opt/homebrew/bin/stockfish",
         help="Path to Stockfish engine",
     )
+    parser.add_argument(
+        "--quick", action="store_true",
+        help="Fast smoke-test preset: 100 positions, depth 12, multi-threaded",
+    )
 
     args = parser.parse_args()
+
+    # Apply --quick defaults, then let explicit flags override ---------------
+    cpu_count = os.cpu_count() or 2
+    if args.quick:
+        positions = args.positions if args.positions is not None else 100
+        depth = args.depth if args.depth is not None else 12
+        threads = args.threads if args.threads is not None else max(1, cpu_count // 2)
+    else:
+        positions = args.positions if args.positions is not None else 400
+        depth = args.depth if args.depth is not None else 16
+        threads = args.threads if args.threads is not None else 1
 
     check_clean_state()
 
@@ -117,24 +165,39 @@ def main():
     original_commit = get_current_commit()
 
     print(f"Starting benchmark: {args.old_commit} vs {args.new_commit}")
-    print(f"Positions: {args.positions}, Seed: {args.seed}")
+    print(f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}")
+    if args.quick:
+        print("  (--quick mode)")
+    print()
+
+    wall_start = time.monotonic()
 
     try:
-        # Run on new commit first
-        print(f"\nSwitching to new commit: {args.new_commit}")
+        # ---- New commit ----------------------------------------------------
+        print(f"[1/2] Switching to new commit: {args.new_commit}")
         run_command(f"git checkout {args.new_commit}")
-        print("Building Rust extension...")
+        print("  Building Rust extension...")
         run_command("uv run maturin develop --release", check=False)
-        new_output = run_audit(args.new_commit, args.positions, args.seed, args.engine)
+        t0 = time.monotonic()
+        new_output = run_audit(
+            args.new_commit, positions, args.seed, args.engine, depth, threads,
+        )
+        new_elapsed = time.monotonic() - t0
         new_metrics = parse_metrics(new_output)
+        print(f"  Done in {fmt_elapsed(new_elapsed)}\n")
 
-        # Run on old commit
-        print(f"\nSwitching to old commit: {args.old_commit}")
+        # ---- Old commit ----------------------------------------------------
+        print(f"[2/2] Switching to old commit: {args.old_commit}")
         run_command(f"git checkout {args.old_commit}")
-        print("Building Rust extension...")
+        print("  Building Rust extension...")
         run_command("uv run maturin develop --release", check=False)
-        old_output = run_audit(args.old_commit, args.positions, args.seed, args.engine)
+        t0 = time.monotonic()
+        old_output = run_audit(
+            args.old_commit, positions, args.seed, args.engine, depth, threads,
+        )
+        old_elapsed = time.monotonic() - t0
         old_metrics = parse_metrics(old_output)
+        print(f"  Done in {fmt_elapsed(old_elapsed)}\n")
 
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -148,8 +211,10 @@ def main():
         else:
             run_command(f"git checkout {original_commit}")
 
-    # Print comparison
-    print("\n=== Benchmark Comparison ===")
+    # Print comparison -------------------------------------------------------
+    wall_total = time.monotonic() - wall_start
+    print(f"\n=== Benchmark Comparison  (total {fmt_elapsed(wall_total)}) ===")
+    print(f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}")
     print(f"{'Metric':<30} | {'Old':<10} | {'New':<10} | {'Delta':<10}")
     print("-" * 70)
 

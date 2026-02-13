@@ -774,6 +774,28 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["rook_open_file_them"] = rook_on_open_file(not board.turn)
     feats["backward_pawns_us"] = backward_pawns(board.turn)
     feats["backward_pawns_them"] = backward_pawns(not board.turn)
+
+    def connected_rooks(side: chess.Color) -> float:
+        """Detect whether a side's rooks are connected (on the same rank with no pieces between).
+
+        Connected rooks reinforce each other on open files and ranks,
+        a key positional factor that the feature set was previously missing.
+        """
+        rooks = list(board.pieces(chess.ROOK, side))
+        if len(rooks) < 2:
+            return 0.0
+        r0, r1 = rooks[0], rooks[1]
+        if chess.square_rank(r0) != chess.square_rank(r1):
+            return 0.0
+        # Check no pieces between the two rooks on their shared rank
+        lo, hi = min(r0, r1), max(r0, r1)
+        for sq in range(lo + 1, hi):
+            if board.piece_at(sq) is not None:
+                return 0.0
+        return 1.0
+
+    feats["connected_rooks_us"] = connected_rooks(board.turn)
+    feats["connected_rooks_them"] = connected_rooks(not board.turn)
     feats["_engine_probes"] = {
         "hanging_after_reply": hanging_after_reply_real,
         "best_forcing_swing": best_forcing_swing_real,

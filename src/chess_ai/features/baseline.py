@@ -17,7 +17,11 @@ except Exception:
 
 
 try:
-    from chess_ai.rust_utils import calculate_forcing_swing, find_best_reply
+    from chess_ai.rust_utils import (
+        SyzygyTablebase,
+        calculate_forcing_swing,
+        find_best_reply,
+    )
 
     RUST_AVAILABLE = True
 except ImportError:
@@ -277,6 +281,30 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["rook_on_7th_them"] = rook_on_7th(not board.turn)
     feats["king_pawn_shield_us"] = king_pawn_shield(board.turn)
     feats["king_pawn_shield_them"] = king_pawn_shield(not board.turn)
+
+    # Add Syzygy tablebase features (if available)
+    import os
+
+    syzygy_path = os.environ.get("SYZYGY_PATH")
+    if syzygy_path and RUST_AVAILABLE:
+        try:
+            # We initialize a temporary tablebase if not cached?
+            # Better to cache it globally to avoid reloading files.
+            global _SYZYGY_TB
+            if "_SYZYGY_TB" not in globals():
+                _SYZYGY_TB = SyzygyTablebase(syzygy_path)
+
+            if board.piece_count() <= 7:
+                wdl = _SYZYGY_TB.probe_wdl(board.fen())
+                dtz = _SYZYGY_TB.probe_dtz(board.fen())
+                if wdl is not None:
+                    # Map WDL to -1..1 or similar. Syzygy WDL is usually -2..2
+                    feats["syzygy_wdl"] = float(wdl) / 2.0
+                if dtz is not None:
+                    # DTZ can be large; normalize or just cap
+                    feats["syzygy_dtz"] = float(dtz) / 100.0
+        except Exception:
+            pass
 
     # Add engine-based dynamic probes for better move ranking
     def sf_eval_shallow(engine, board, depth=6):

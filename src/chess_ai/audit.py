@@ -96,10 +96,12 @@ def audit_feature_set(
     Returns:
         AuditResult with all metrics
     """
-    # -- FEN-keyed caches to avoid redundant Stockfish calls across loops --
+    # -- FEN-keyed caches to avoid redundant Stockfish / Rust calls --
     _eval_cache: Dict[str, float] = {}
     _top_moves_cache: Dict[str, List[Tuple[chess.Move, float]]] = {}
     _analyse_cache: Dict[str, chess.Move] = {}
+    _hanging_cache: Dict[str, Tuple[int, float, int]] = {}
+    _swing_cache: Dict[str, float] = {}
 
     def cached_sf_eval(eng, board: chess.Board, c: SFConfig) -> float:
         """Return sf_eval result, caching by FEN to skip repeat calls."""
@@ -153,16 +155,28 @@ def audit_feature_set(
             for k, v in feats.items()
         }
 
-        # Engine-based probe features
+        # Engine-based probe features (cached by FEN to skip
+        # redundant Rust searches on repeated positions).
         if probes:
-            hang_cnt, hang_max_val, hang_near_king = probes["hanging_after_reply"](
-                eng, board, depth=6
-            )
+            fen_key = board.fen()
+            if fen_key in _hanging_cache:
+                hang_cnt, hang_max_val, hang_near_king = _hanging_cache[fen_key]
+            else:
+                hang_cnt, hang_max_val, hang_near_king = probes[
+                    "hanging_after_reply"
+                ](eng, board, depth=6)
+                _hanging_cache[fen_key] = (hang_cnt, hang_max_val, hang_near_king)
             feats["hang_cnt"] = hang_cnt
             feats["hang_max_val"] = hang_max_val
             feats["hang_near_king"] = hang_near_king
 
-            forcing_swing = probes["best_forcing_swing"](eng, board, d_base=6, k_max=12)
+            if fen_key in _swing_cache:
+                forcing_swing = _swing_cache[fen_key]
+            else:
+                forcing_swing = probes["best_forcing_swing"](
+                    eng, board, d_base=6, k_max=12
+                )
+                _swing_cache[fen_key] = forcing_swing
             feats["forcing_swing"] = forcing_swing
 
         # Passed-pawn momentum delta

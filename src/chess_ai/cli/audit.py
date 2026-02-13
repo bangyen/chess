@@ -168,7 +168,7 @@ def main():
 
     print("\nGuidance:")
     print(
-        " - Aim for Delta-R^2 ≥ 0.60 on mixed middlegames at depth ~16 as a healthy baseline."
+        " - Aim for Delta-R^2 ≥ 0.35 on mixed middlegames at depth ~16 as a healthy baseline."
     )
     print(" - Tau ≥ 0.45 for top-3 move ranking is decent; higher is better.")
     print(

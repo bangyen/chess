@@ -12,6 +12,7 @@ from .metrics.positional import (
     confinement_delta,
     passed_pawn_momentum_delta,
 )
+from .utils.math import cp_to_winrate
 
 # Suppress sklearn warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -188,7 +189,8 @@ def train_surrogate_model(
     # Missing values are filled with 0.0 during matrix construction.
     _seen_features: Dict[str, None] = {}
     X = []
-    y: List[float] = []
+    y_cp: List[float] = []
+    y_base_evals: List[float] = []
 
     for b in boards:
         # Get base evaluation
@@ -255,7 +257,8 @@ def train_surrogate_model(
                         _seen_features[k] = None
 
                 X.append(after_reply_feats)
-                y.append(delta_eval)
+                y_cp.append(delta_eval)
+                y_base_evals.append(base_eval)
 
                 b.pop()
             b.pop()
@@ -265,7 +268,17 @@ def train_surrogate_model(
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )
-    y_arr = np.array(y, dtype=float)
+
+    # Convert centipawn deltas to win-rate deltas for consistency
+    # with the audit pipeline.  This compresses extreme evaluations
+    # while preserving sensitivity around 0, producing better-behaved
+    # regression targets.
+    y_cp_arr = np.array(y_cp, dtype=float)
+    y_base_arr = np.array(y_base_evals, dtype=float)
+    y_arr = np.asarray(
+        cp_to_winrate(y_base_arr + y_cp_arr) - cp_to_winrate(y_base_arr),
+        dtype=float,
+    )
 
     # Scale features
     scaler = StandardScaler()

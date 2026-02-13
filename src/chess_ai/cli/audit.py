@@ -1,6 +1,7 @@
 """Command-line interface for the chess feature audit tool."""
 
 import argparse
+import json
 import os
 import random
 import sys
@@ -10,7 +11,43 @@ import numpy as np
 from ..audit import audit_feature_set
 from ..engine import SFConfig, sf_open
 from ..features import baseline_extract_features, load_feature_module
-from ..utils import sample_positions_from_pgn, sample_random_positions
+from ..utils import (
+    sample_positions_from_pgn,
+    sample_random_positions,
+    sample_stratified_positions,
+)
+from ..utils.sampling import DEFAULT_PHASE_WEIGHTS
+
+
+def _parse_phase_weights(raw: str) -> dict:
+    """Parse a JSON string into a phase-weights dict.
+
+    Validates that every key is a recognised game phase and that
+    values are positive numbers.
+
+    Raises:
+        argparse.ArgumentTypeError: On invalid input.
+    """
+    try:
+        weights: dict[str, float] = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--phase-weights must be valid JSON: {exc}"
+        ) from exc
+
+    valid_phases = {"opening", "middlegame", "endgame"}
+    unknown = set(weights.keys()) - valid_phases
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"Unknown phase(s) in --phase-weights: {unknown}. "
+            f"Valid phases: {valid_phases}"
+        )
+    for k, v in weights.items():
+        if not isinstance(v, (int, float)) or v <= 0:
+            raise argparse.ArgumentTypeError(
+                f"Phase weight for '{k}' must be a positive number, got {v!r}"
+            )
+    return weights
 
 
 def main():
@@ -73,6 +110,21 @@ def main():
         help="CP gap to treat best vs second as decisive for faithfulness",
     )
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument(
+        "--no-stratify",
+        action="store_true",
+        help="Disable phase-stratified sampling and use uniform random positions",
+    )
+    ap.add_argument(
+        "--phase-weights",
+        type=_parse_phase_weights,
+        default=None,
+        help=(
+            "JSON dict of phase weights for stratified sampling, e.g. "
+            '\'{"opening": 0.25, "middlegame": 0.50, "endgame": 0.25}\'. '
+            "Ignored when --no-stratify is set."
+        ),
+    )
     args = ap.parse_args()
 
     random.seed(args.seed)
@@ -93,16 +145,36 @@ def main():
         threads=args.threads,
     )
 
+    # Determine whether to use stratified sampling (on by default).
+    use_stratify = not args.no_stratify
+    phase_weights = args.phase_weights if use_stratify else None
+
     # Positions
     if args.pgn:
         boards = sample_positions_from_pgn(
-            args.pgn, args.positions, ply_skip=args.ply_skip
+            args.pgn,
+            args.positions,
+            ply_skip=args.ply_skip,
+            phase_weights=phase_weights,
         )
         if len(boards) < args.positions:
-            # supplement with randoms
-            boards += sample_random_positions(args.positions - len(boards))
+            # Supplement shortfall with generated positions.
+            shortfall = args.positions - len(boards)
+            if use_stratify:
+                boards += sample_stratified_positions(
+                    shortfall,
+                    phase_weights=phase_weights or DEFAULT_PHASE_WEIGHTS,
+                )
+            else:
+                boards += sample_random_positions(shortfall)
     else:
-        boards = sample_random_positions(args.positions)
+        if use_stratify:
+            boards = sample_stratified_positions(
+                args.positions,
+                phase_weights=phase_weights or DEFAULT_PHASE_WEIGHTS,
+            )
+        else:
+            boards = sample_random_positions(args.positions)
     if not boards:
         print("No positions sampled.", file=sys.stderr)
         sys.exit(1)

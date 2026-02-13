@@ -5,7 +5,7 @@ use shakmaty::{
 use shakmaty::fen::Fen;
 use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 // Material values in centipawns.
 fn piece_value(role: Role) -> i32 {
@@ -123,13 +123,25 @@ fn pst_index(sq: Square, color: Color) -> usize {
     vis_r * 8 + sq.file() as usize
 }
 
-/// Positional evaluation: material + piece-square tables + bishop-pair
-/// bonus.  Returns score from the side-to-move's perspective so
-/// negamax works directly.
+/// Compute a continuous game-phase factor in 0.0..=1.0 where 0.0 is
+/// pure endgame and 1.0 is the opening.  Based on total non-pawn,
+/// non-king piece counts: max count of 14 maps to 1.0.
+#[inline]
+fn phase_factor(phase_count: i32) -> f32 {
+    (phase_count as f32 / 14.0).clamp(0.0, 1.0)
+}
+
+/// Positional evaluation: material + phase-interpolated piece-square
+/// tables + bishop-pair bonus.  Returns score from the side-to-move's
+/// perspective so negamax works directly.
+///
+/// The king PST smoothly blends between middlegame and endgame values
+/// using a continuous phase factor instead of a binary threshold,
+/// giving more accurate positional scores in transitional positions.
 fn evaluate(pos: &Chess) -> i32 {
     let board = pos.board();
     let phase = count_phase(board);
-    let is_endgame = phase < 10;
+    let pf = phase_factor(phase);
 
     let mut score = 0i32;
 
@@ -143,8 +155,11 @@ fn evaluate(pos: &Chess) -> i32 {
                 Role::Bishop => EVAL_PST_BISHOP[idx],
                 Role::Rook   => EVAL_PST_ROOK[idx],
                 Role::Queen  => EVAL_PST_QUEEN[idx],
-                Role::King   => if is_endgame { EVAL_PST_KING_EG[idx] }
-                                else          { EVAL_PST_KING_MG[idx] },
+                Role::King   => {
+                    let mg = EVAL_PST_KING_MG[idx] as f32;
+                    let eg = EVAL_PST_KING_EG[idx] as f32;
+                    (pf * mg + (1.0 - pf) * eg) as i32
+                }
             };
             let val = mat + pst;
             if piece.color == Color::White {
@@ -162,6 +177,118 @@ fn evaluate(pos: &Chess) -> i32 {
     if black_bishops >= 2 { score -= 30; }
 
     if pos.turn() == Color::White { score } else { -score }
+}
+
+// ── Static Exchange Evaluation (SEE) ─────────────────────────────────
+
+/// Return the least-valuable attacker of `sq` belonging to `side`.
+/// Uses the standard approach: try pawns first, then knights, bishops,
+/// rooks, queens, king.  Returns `None` when `side` has no attacker.
+fn least_valuable_attacker(
+    board: &shakmaty::Board,
+    sq: Square,
+    side: Color,
+    occupied: Bitboard,
+) -> Option<(Square, Role)> {
+    let by_side = board.by_color(side);
+    // Pawns
+    let pawn_attackers = attacks::pawn_attacks(side.other(), sq) & board.by_role(Role::Pawn) & by_side & occupied;
+    if let Some(a) = pawn_attackers.into_iter().next() {
+        return Some((a, Role::Pawn));
+    }
+    // Knights
+    let knight_attackers = attacks::knight_attacks(sq) & board.by_role(Role::Knight) & by_side & occupied;
+    if let Some(a) = knight_attackers.into_iter().next() {
+        return Some((a, Role::Knight));
+    }
+    // Bishops
+    let bishop_attackers = attacks::bishop_attacks(sq, occupied) & board.by_role(Role::Bishop) & by_side & occupied;
+    if let Some(a) = bishop_attackers.into_iter().next() {
+        return Some((a, Role::Bishop));
+    }
+    // Rooks
+    let rook_attackers = attacks::rook_attacks(sq, occupied) & board.by_role(Role::Rook) & by_side & occupied;
+    if let Some(a) = rook_attackers.into_iter().next() {
+        return Some((a, Role::Rook));
+    }
+    // Queens
+    let queen_attackers = (attacks::bishop_attacks(sq, occupied) | attacks::rook_attacks(sq, occupied))
+        & board.by_role(Role::Queen) & by_side & occupied;
+    if let Some(a) = queen_attackers.into_iter().next() {
+        return Some((a, Role::Queen));
+    }
+    // King
+    let king_attackers = attacks::king_attacks(sq) & board.by_role(Role::King) & by_side & occupied;
+    if let Some(a) = king_attackers.into_iter().next() {
+        return Some((a, Role::King));
+    }
+    None
+}
+
+/// Static Exchange Evaluation: determines the net material gain/loss
+/// from a sequence of captures on `target` square, assuming both sides
+/// always recapture with their least valuable attacker.
+///
+/// A positive SEE means the initial capture wins material; negative
+/// means it loses material.  This gives far more accurate tactical
+/// assessment than the binary "attacked and undefended" hanging check.
+///
+/// `attacker_sq` is the square of the piece initiating the capture.
+fn see(board: &shakmaty::Board, target: Square, attacker_sq: Square) -> i32 {
+    let attacker_piece = match board.piece_at(attacker_sq) {
+        Some(p) => p,
+        None => return 0,
+    };
+    let victim_piece = match board.piece_at(target) {
+        Some(p) => p,
+        None => return 0,
+    };
+
+    // Gain array: gain[i] is the material balance from the i-th capture's
+    // perspective.  We fill it iteratively, then propagate backwards.
+    let mut gain: [i32; 33] = [0; 33]; // max 32 pieces on board + 1
+    let mut depth = 0;
+    let mut side = attacker_piece.color;
+    let mut occupied = board.occupied();
+
+    gain[0] = piece_value(victim_piece.role);
+
+    // Remove the initial attacker from the occupied set so x-ray
+    // attacks through it are revealed.
+    occupied ^= Bitboard::from_square(attacker_sq);
+
+    let mut current_attacker_value = piece_value(attacker_piece.role);
+
+    loop {
+        depth += 1;
+        side = side.other();
+
+        // The gain for this depth is the value of the piece just captured
+        // minus the gain that the opponent will realise in subsequent
+        // captures (filled in later via the negamax-style propagation).
+        gain[depth] = current_attacker_value - gain[depth - 1];
+
+        // Pruning: if gain cannot improve the situation for the moving side,
+        // stop early (stand-pat optimisation).
+        if (-gain[depth - 1]).max(gain[depth]) < 0 {
+            break;
+        }
+
+        if let Some((sq, role)) = least_valuable_attacker(board, target, side, occupied) {
+            current_attacker_value = piece_value(role);
+            occupied ^= Bitboard::from_square(sq);
+        } else {
+            break;
+        }
+    }
+
+    // Propagate backwards: each side chooses max(not-capturing, capturing).
+    while depth > 1 {
+        depth -= 1;
+        gain[depth - 1] = -((-gain[depth - 1]).max(gain[depth]));
+    }
+
+    gain[0]
 }
 
 // ── Zobrist Hashing ──────────────────────────────────────────────────
@@ -250,6 +377,65 @@ fn zobrist_hash(pos: &Chess) -> u64 {
         hash ^= keys.en_passant[ep.file() as usize];
     }
     hash
+}
+
+// ── Pawn Structure Cache ─────────────────────────────────────────────
+
+/// Compute a Zobrist hash of only the pawn positions so that pawn
+/// structure features can be cached and reused when only pieces move.
+fn pawn_zobrist(board: &shakmaty::Board) -> u64 {
+    let keys = zobrist_keys();
+    let mut hash = 0u64;
+    let pawns = board.by_role(Role::Pawn);
+    for sq in pawns {
+        if let Some(piece) = board.piece_at(sq) {
+            let pi = piece_index(piece.color, piece.role);
+            hash ^= keys.pieces[sq as usize][pi];
+        }
+    }
+    hash
+}
+
+/// Cached pawn structure features for one side: isolated, doubled,
+/// backward, passed, and pawn chain counts.  Keyed by a combined
+/// hash of both colours' pawn placements plus the perspective side.
+#[derive(Clone)]
+struct PawnCacheEntry {
+    key: u64,
+    isolated_us: f32,
+    isolated_them: f32,
+    doubled_us: f32,
+    doubled_them: f32,
+    backward_us: f32,
+    backward_them: f32,
+    passed_us: f32,
+    passed_them: f32,
+    pawn_chain_us: f32,
+    pawn_chain_them: f32,
+}
+
+const PAWN_CACHE_SIZE: usize = 1 << 16; // 65536 entries
+
+/// Global pawn structure cache shared across feature extraction calls.
+/// The cache is protected by a `Mutex` for thread-safety.
+fn pawn_cache() -> &'static Mutex<Vec<PawnCacheEntry>> {
+    static CACHE: OnceLock<Mutex<Vec<PawnCacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| {
+        let entry = PawnCacheEntry {
+            key: 0,
+            isolated_us: 0.0,
+            isolated_them: 0.0,
+            doubled_us: 0.0,
+            doubled_them: 0.0,
+            backward_us: 0.0,
+            backward_them: 0.0,
+            passed_us: 0.0,
+            passed_them: 0.0,
+            pawn_chain_us: 0.0,
+            pawn_chain_them: 0.0,
+        };
+        Mutex::new(vec![entry; PAWN_CACHE_SIZE])
+    })
 }
 
 // ── Transposition Table & Search Context ─────────────────────────────
@@ -894,6 +1080,9 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         count as f32
     };
 
+    // NOTE: passed pawn values are overwritten later by the pawn
+    // structure cache; we insert placeholders here to keep feature
+    // ordering deterministic, then replace them below.
     feats.insert("passed_us".to_string(), count_passed(turn));
     feats.insert("passed_them".to_string(), count_passed(opp));
 
@@ -1166,30 +1355,149 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("batteries_us".to_string(), count_batteries(turn));
     feats.insert("batteries_them".to_string(), count_batteries(opp));
 
-    // 11. Isolated Pawns
-    let count_isolated = |side: Color| {
-        let mut count = 0;
-        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
-        for sq in my_pawns {
-            let file: shakmaty::File = sq.file();
-            let mut has_neighbor = false;
-            for f_off in [-1, 1] {
-                let f = file as i32 + f_off;
-                if f >= 0 && f < 8 {
-                    let adj_file = shakmaty::File::new(f as u32);
-                    let adj_bb = Bitboard::from_file(adj_file);
-                    if !(board.by_role(Role::Pawn) & board.by_color(side) & adj_bb).is_empty() {
-                        has_neighbor = true;
-                        break;
+    // 11. Pawn structure features (isolated, doubled, backward, passed,
+    //     pawn chain) — cached by pawn Zobrist hash so positions where
+    //     only pieces moved reuse the previous computation.
+    let pawn_hash = pawn_zobrist(board);
+    // Incorporate the side-to-move into the key so us/them are correct.
+    let pawn_key = pawn_hash ^ if turn == Color::White { 0 } else { 0xAAAA_AAAA_AAAA_AAAA };
+
+    let pawn_feats = {
+        let cache = pawn_cache().lock().unwrap();
+        let idx = (pawn_key as usize) % PAWN_CACHE_SIZE;
+        if cache[idx].key == pawn_key {
+            Some(cache[idx].clone())
+        } else {
+            None
+        }
+    };
+
+    let pawn_feats = pawn_feats.unwrap_or_else(|| {
+        // ── Compute from scratch ─────────────────────────────────
+        let count_isolated_fn = |side: Color| -> f32 {
+            let mut count = 0;
+            let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+            for sq in my_pawns {
+                let file: shakmaty::File = sq.file();
+                let mut has_neighbor = false;
+                for f_off in [-1, 1] {
+                    let f = file as i32 + f_off;
+                    if f >= 0 && f < 8 {
+                        let adj_file = shakmaty::File::new(f as u32);
+                        let adj_bb = Bitboard::from_file(adj_file);
+                        if !(board.by_role(Role::Pawn) & board.by_color(side) & adj_bb).is_empty() {
+                            has_neighbor = true;
+                            break;
+                        }
+                    }
+                }
+                if !has_neighbor { count += 1; }
+            }
+            count as f32
+        };
+
+        let count_doubled_fn = |side: Color| -> f32 {
+            let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+            let mut count = 0.0;
+            for f in 0..8 {
+                let file_bb = Bitboard::from_file(shakmaty::File::new(f as u32));
+                let pawns_on_file = (my_pawns & file_bb).count();
+                if pawns_on_file >= 2 {
+                    count += (pawns_on_file - 1) as f32;
+                }
+            }
+            count
+        };
+
+        let count_backward_fn = |side: Color| -> f32 {
+            let mut count = 0;
+            let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+            let opp_side = side.other();
+            let mut enemy_pawn_attacks = Bitboard::EMPTY;
+            for sq in board.by_role(Role::Pawn) & board.by_color(opp_side) {
+                enemy_pawn_attacks |= attacks::pawn_attacks(opp_side, sq);
+            }
+            for sq in my_pawns {
+                let file: shakmaty::File = sq.file();
+                let rank: shakmaty::Rank = sq.rank();
+                let rank_usize = rank as usize;
+                let mut is_supported = false;
+                for f_off in [-1, 1] {
+                    let f = file as i32 + f_off;
+                    if f >= 0 && f < 8 {
+                        let adj_file = shakmaty::File::new(f as u32);
+                        let adj_bb = Bitboard::from_file(adj_file);
+                        let adj_pawns = board.by_role(Role::Pawn) & board.by_color(side) & adj_bb;
+                        for p_sq in adj_pawns {
+                            let p_rank = p_sq.rank();
+                            if (side == Color::White && (p_rank as usize) <= rank_usize)
+                                || (side == Color::Black && (p_rank as usize) >= rank_usize) {
+                                is_supported = true;
+                                break;
+                            }
+                        }
+                    }
+                    if is_supported { break; }
+                }
+                if is_supported { continue; }
+                let stop_rank = if side == Color::White { sq.rank().offset(1) } else { sq.rank().offset(-1) };
+                if let Some(r) = stop_rank {
+                    let stop_sq = Square::from_coords(file, r);
+                    if !(enemy_pawn_attacks & Bitboard::from_square(stop_sq)).is_empty() {
+                        count += 1;
                     }
                 }
             }
-            if !has_neighbor { count += 1; }
+            count as f32
+        };
+
+        let count_passed_fn = |side: Color| -> f32 {
+            let mut count = 0;
+            let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+            for sq in my_pawns {
+                if is_passed(sq, side) {
+                    count += 1;
+                }
+            }
+            count as f32
+        };
+
+        let pawn_chain_fn = |side: Color| -> f32 {
+            let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+            let mut count = 0.0;
+            for sq in my_pawns {
+                let pawn_attackers = attacks::pawn_attacks(side.other(), sq) & my_pawns;
+                if !pawn_attackers.is_empty() {
+                    count += 1.0;
+                }
+            }
+            count
+        };
+
+        let entry = PawnCacheEntry {
+            key: pawn_key,
+            isolated_us: count_isolated_fn(turn),
+            isolated_them: count_isolated_fn(opp),
+            doubled_us: count_doubled_fn(turn),
+            doubled_them: count_doubled_fn(opp),
+            backward_us: count_backward_fn(turn),
+            backward_them: count_backward_fn(opp),
+            passed_us: count_passed_fn(turn),
+            passed_them: count_passed_fn(opp),
+            pawn_chain_us: pawn_chain_fn(turn),
+            pawn_chain_them: pawn_chain_fn(opp),
+        };
+
+        // Store in cache
+        if let Ok(mut cache) = pawn_cache().lock() {
+            let idx = (pawn_key as usize) % PAWN_CACHE_SIZE;
+            cache[idx] = entry.clone();
         }
-        count as f32
-    };
-    feats.insert("isolated_pawns_us".to_string(), count_isolated(turn));
-    feats.insert("isolated_pawns_them".to_string(), count_isolated(opp));
+        entry
+    });
+
+    feats.insert("isolated_pawns_us".to_string(), pawn_feats.isolated_us);
+    feats.insert("isolated_pawns_them".to_string(), pawn_feats.isolated_them);
 
     // 12. Safe Mobility
     // Moves that don't land on squares attacked by enemy pawns
@@ -1252,54 +1560,13 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("connected_rooks_us".to_string(), connected_rooks(turn));
     feats.insert("connected_rooks_them".to_string(), connected_rooks(opp));
 
-    // 14. Backward Pawns
-    let count_backward = |side: Color| {
-        let mut count = 0;
-        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
-        let opp = side.other();
-        let mut enemy_pawn_attacks = Bitboard::EMPTY;
-        for sq in board.by_role(Role::Pawn) & board.by_color(opp) {
-            enemy_pawn_attacks |= shakmaty::attacks::pawn_attacks(opp, sq); 
-        }
+    // 14. Backward Pawns (from pawn cache)
+    feats.insert("backward_pawns_us".to_string(), pawn_feats.backward_us);
+    feats.insert("backward_pawns_them".to_string(), pawn_feats.backward_them);
 
-        for sq in my_pawns {
-            let file: shakmaty::File = sq.file();
-            let rank: shakmaty::Rank = sq.rank();
-            let rank_usize = rank as usize;
-
-            // 1. Is supported?
-            let mut is_supported = false;
-            for f_off in [-1, 1] {
-                let f = file as i32 + f_off;
-                if f >= 0 && f < 8 {
-                    let adj_file = shakmaty::File::new(f as u32);
-                    let adj_bb = Bitboard::from_file(adj_file);
-                    let adj_pawns = board.by_role(Role::Pawn) & board.by_color(side) & adj_bb;
-                    for p_sq in adj_pawns {
-                        let p_rank: shakmaty::Rank = p_sq.rank();
-                        if (side == Color::White && (p_rank as usize) <= rank_usize) || (side == Color::Black && (p_rank as usize) >= rank_usize) {
-                            is_supported = true;
-                            break;
-                        }
-                    }
-                }
-                if is_supported { break; }
-            }
-            if is_supported { continue; }
-
-            // 2. Is stop square controlled by enemy pawn?
-            let stop_rank = if side == Color::White { sq.rank().offset(1) } else { sq.rank().offset(-1) };
-            if let Some(r) = stop_rank {
-                let stop_sq = Square::from_coords(file, r);
-                if !(enemy_pawn_attacks & Bitboard::from_square(stop_sq)).is_empty() {
-                    count += 1;
-                }
-            }
-        }
-        count as f32
-    };
-    feats.insert("backward_pawns_us".to_string(), count_backward(turn));
-    feats.insert("backward_pawns_them".to_string(), count_backward(opp));
+    // Overwrite passed pawn placeholders with cached values
+    feats.insert("passed_us".to_string(), pawn_feats.passed_us);
+    feats.insert("passed_them".to_string(), pawn_feats.passed_them);
 
     let count_pinned = |side: Color| {
         let mut count = 0;
@@ -1344,21 +1611,9 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("threats_us".to_string(), count_threats(turn));
     feats.insert("threats_them".to_string(), count_threats(opp));
 
-    // 17. Doubled pawns: files with 2+ own pawns
-    let count_doubled = |side: Color| {
-        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
-        let mut count = 0.0;
-        for f in 0..8 {
-            let file_bb = Bitboard::from_file(shakmaty::File::new(f as u32));
-            let pawns_on_file = (my_pawns & file_bb).count();
-            if pawns_on_file >= 2 {
-                count += (pawns_on_file - 1) as f32;
-            }
-        }
-        count
-    };
-    feats.insert("doubled_pawns_us".to_string(), count_doubled(turn));
-    feats.insert("doubled_pawns_them".to_string(), count_doubled(opp));
+    // 17. Doubled pawns (from pawn cache)
+    feats.insert("doubled_pawns_us".to_string(), pawn_feats.doubled_us);
+    feats.insert("doubled_pawns_them".to_string(), pawn_feats.doubled_them);
 
     // 18. Space: squares controlled in the opponent's half
     let count_space = |side: Color| {
@@ -1405,24 +1660,13 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("king_tropism_us".to_string(), king_tropism(turn));
     feats.insert("king_tropism_them".to_string(), king_tropism(opp));
 
-    // 20. Pawn chain: pawns defended by another pawn
-    let pawn_chain = |side: Color| {
-        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
-        let mut count = 0.0;
-        for sq in my_pawns {
-            // Check if any friendly pawn attacks this square
-            let pawn_attackers = attacks::pawn_attacks(side.other(), sq)
-                & my_pawns;
-            if !pawn_attackers.is_empty() {
-                count += 1.0;
-            }
-        }
-        count
-    };
-    feats.insert("pawn_chain_us".to_string(), pawn_chain(turn));
-    feats.insert("pawn_chain_them".to_string(), pawn_chain(opp));
+    // 20. Pawn chain (from pawn cache)
+    feats.insert("pawn_chain_us".to_string(), pawn_feats.pawn_chain_us);
+    feats.insert("pawn_chain_them".to_string(), pawn_feats.pawn_chain_them);
 
-    // 21. PST (Piece-Square Tables)
+    // 21. PST (Piece-Square Tables) with continuous phase interpolation
+    //     for the king table, giving more accurate positional scores in
+    //     transitional positions than the old binary threshold.
     const PST_PAWN: [i16; 64] = [
         0,  0,  0,  0,  0,  0,  0,  0,
         50, 50, 50, 50, 50, 50, 50, 50,
@@ -1494,30 +1738,96 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
         -50,-30,-30,-30,-30,-30,-30,-50
     ];
 
+    let pf = phase_factor(phase);
     let calc_pst = |side: Color| {
         let mut score = 0.0;
-        let is_endgame = phase < 10;
-        
+
         for sq in board.by_color(side) {
             let piece = board.piece_at(sq).unwrap();
-            let table = match piece.role {
-                Role::Pawn => &PST_PAWN,
-                Role::Knight => &PST_KNIGHT,
-                Role::Bishop => &PST_BISHOP,
-                Role::Rook => &PST_ROOK,
-                Role::Queen => &PST_QUEEN,
-                Role::King => if is_endgame { &PST_KING_EG } else { &PST_KING_MG },
-            };
-            
             let vis_r = if side == Color::White { 7 - sq.rank() as usize } else { sq.rank() as usize };
             let vis_c = sq.file() as usize;
-            score += table[vis_r * 8 + vis_c] as f32;
+            let idx = vis_r * 8 + vis_c;
+
+            let pst_val = match piece.role {
+                Role::Pawn => PST_PAWN[idx] as f32,
+                Role::Knight => PST_KNIGHT[idx] as f32,
+                Role::Bishop => PST_BISHOP[idx] as f32,
+                Role::Rook => PST_ROOK[idx] as f32,
+                Role::Queen => PST_QUEEN[idx] as f32,
+                Role::King => {
+                    let mg = PST_KING_MG[idx] as f32;
+                    let eg = PST_KING_EG[idx] as f32;
+                    pf * mg + (1.0 - pf) * eg
+                }
+            };
+            score += pst_val;
         }
         score / 100.0
     };
 
     feats.insert("pst_us".to_string(), calc_pst(turn));
     feats.insert("pst_them".to_string(), calc_pst(opp));
+
+    // 22. SEE (Static Exchange Evaluation) features — give far more
+    //     accurate tactical assessment than the binary hanging check by
+    //     simulating full capture sequences on each square.
+    //
+    //     see_advantage_us:  sum of positive SEE scores (in pawns) for
+    //                        captures we can initiate that win material.
+    //     see_advantage_them: same from the opponent's perspective.
+    //     see_vulnerability_us:  count of our pieces sitting on squares
+    //                            where the opponent has a positive SEE.
+    //     see_vulnerability_them: same from the opponent's perspective.
+    let calc_see_features = |side: Color| -> (f32, f32) {
+        let them = side.other();
+        let occupied = board.occupied();
+        let mut advantage = 0.0f32;
+        let mut vulnerability = 0.0f32;
+
+        // Advantage: for each enemy piece, check if we have an attacker
+        // with a positive SEE.
+        for target_sq in board.by_color(them) {
+            let victim = match board.piece_at(target_sq) {
+                Some(p) => p,
+                None => continue,
+            };
+            if victim.role == Role::King { continue; }
+
+            // Find our least-valuable attacker
+            if let Some((attacker_sq, _role)) = least_valuable_attacker(board, target_sq, side, occupied) {
+                let see_val = see(board, target_sq, attacker_sq);
+                if see_val > 0 {
+                    advantage += see_val as f32 / 100.0;
+                }
+            }
+        }
+
+        // Vulnerability: for each of our pieces, check if the opponent
+        // can capture with a positive SEE.
+        for our_sq in board.by_color(side) {
+            let piece = match board.piece_at(our_sq) {
+                Some(p) => p,
+                None => continue,
+            };
+            if piece.role == Role::King { continue; }
+
+            if let Some((attacker_sq, _role)) = least_valuable_attacker(board, our_sq, them, occupied) {
+                let see_val = see(board, our_sq, attacker_sq);
+                if see_val > 0 {
+                    vulnerability += 1.0;
+                }
+            }
+        }
+
+        (advantage, vulnerability)
+    };
+
+    let (see_adv_us, see_vuln_us) = calc_see_features(turn);
+    let (see_adv_them, see_vuln_them) = calc_see_features(opp);
+    feats.insert("see_advantage_us".to_string(), see_adv_us);
+    feats.insert("see_advantage_them".to_string(), see_adv_them);
+    feats.insert("see_vulnerability_us".to_string(), see_vuln_us);
+    feats.insert("see_vulnerability_them".to_string(), see_vuln_them);
 
     Ok(feats)
 }
@@ -1631,5 +1941,133 @@ mod tests {
                 result.unwrap()
             );
         }
+    }
+
+    // ── SEE Tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_see_winning_capture() {
+        // Pawn captures undefended knight: SEE should be positive (~220 cp).
+        let pos = pos_from_fen(
+            "rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1",
+        );
+        let board = pos.board();
+        // White pawn on d4 can capture knight on e5
+        let see_val = see(board, Square::E5, Square::D4);
+        assert!(see_val > 0, "Pawn x undefended Knight should win: got {see_val}");
+    }
+
+    #[test]
+    fn test_see_losing_capture() {
+        // Queen captures defended pawn: SEE should be negative.
+        // Pawn on e5 defended by pawn on d6.
+        let pos = pos_from_fen(
+            "rnbqkbnr/ppp2ppp/3p4/4p3/8/8/PPPPQPPP/RNB1KBNR w KQkq - 0 1",
+        );
+        let board = pos.board();
+        let see_val = see(board, Square::E5, Square::E2);
+        assert!(see_val < 0, "Queen x defended Pawn should lose: got {see_val}");
+    }
+
+    #[test]
+    fn test_see_equal_exchange() {
+        // Knight captures knight (equal trade, possibly with recaptures).
+        let pos = pos_from_fen(
+            "r1bqkbnr/pppppppp/8/4n3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1",
+        );
+        let board = pos.board();
+        // Nf3 captures Ne5 — should be roughly 0 (knight for knight).
+        let see_val = see(board, Square::E5, Square::F3);
+        assert!(
+            see_val.abs() <= 10,
+            "Knight x Knight should be ~0: got {see_val}"
+        );
+    }
+
+    // ── Phase Interpolation Tests ────────────────────────────────────
+
+    #[test]
+    fn test_phase_factor_opening() {
+        // Full complement: 14 non-pawn, non-king pieces => factor = 1.0.
+        assert!((phase_factor(14) - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_phase_factor_endgame() {
+        // No pieces left => factor = 0.0 (pure endgame).
+        assert!(phase_factor(0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_phase_factor_midgame() {
+        // 7 pieces => factor = 0.5.
+        assert!((phase_factor(7) - 0.5).abs() < f32::EPSILON);
+    }
+
+    // ── Pawn Hash Tests ─────────────────────────────────────────────
+
+    #[test]
+    fn test_pawn_hash_same_position() {
+        // Same position should produce the same pawn hash.
+        let pos1 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        );
+        let pos2 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        );
+        assert_eq!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
+    }
+
+    #[test]
+    fn test_pawn_hash_different_on_pawn_move() {
+        // After a pawn move, the pawn hash should change.
+        let pos1 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        );
+        let pos2 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+        );
+        assert_ne!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
+    }
+
+    #[test]
+    fn test_pawn_hash_same_after_piece_move() {
+        // Moving a knight should NOT change the pawn hash.
+        let pos1 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        );
+        let pos2 = pos_from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1",
+        );
+        assert_eq!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
+    }
+
+    // ── Feature Extraction Tests (SEE features present) ─────────────
+
+    #[test]
+    fn test_extract_features_includes_see() {
+        let feats = extract_features_rust(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        ).unwrap();
+        assert!(feats.contains_key("see_advantage_us"), "Missing see_advantage_us");
+        assert!(feats.contains_key("see_advantage_them"), "Missing see_advantage_them");
+        assert!(feats.contains_key("see_vulnerability_us"), "Missing see_vulnerability_us");
+        assert!(feats.contains_key("see_vulnerability_them"), "Missing see_vulnerability_them");
+    }
+
+    #[test]
+    fn test_extract_features_initial_position_no_see_advantage() {
+        // In the starting position no side can win material via captures.
+        let feats = extract_features_rust(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        ).unwrap();
+        assert!(
+            feats["see_advantage_us"].abs() < f32::EPSILON,
+            "Initial pos should have 0 SEE advantage for us"
+        );
+        assert!(
+            feats["see_advantage_them"].abs() < f32::EPSILON,
+            "Initial pos should have 0 SEE advantage for them"
+        );
     }
 }

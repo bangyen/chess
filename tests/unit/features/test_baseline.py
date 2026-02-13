@@ -1,5 +1,7 @@
 """Tests for baseline feature extraction."""
 
+import math
+
 import chess
 
 from chess_ai.features.baseline import baseline_extract_features
@@ -39,6 +41,10 @@ class TestBaselineFeatures:
             "hanging_them",
             "king_ring_pressure_us",
             "king_ring_pressure_them",
+            "see_advantage_us",
+            "see_advantage_them",
+            "see_vulnerability_us",
+            "see_vulnerability_them",
             "_engine_probes",
         ]
 
@@ -184,3 +190,127 @@ class TestBaselineFeatures:
         # All should be callable functions
         for probe_name, probe_func in probes.items():
             assert callable(probe_func), f"Probe {probe_name} should be callable"
+
+    # ── SEE feature tests ────────────────────────────────────────────
+
+    def test_see_features_present(self):
+        """SEE features should always be present in the feature dict."""
+        board = chess.Board()
+        features = baseline_extract_features(board)
+        for key in [
+            "see_advantage_us",
+            "see_advantage_them",
+            "see_vulnerability_us",
+            "see_vulnerability_them",
+        ]:
+            assert key in features, f"Missing SEE feature: {key}"
+            assert isinstance(features[key], (int, float))
+
+    def test_see_initial_position_zero(self):
+        """No side can win material in the starting position, so SEE
+        advantage should be zero for both sides.
+        """
+        board = chess.Board()
+        features = baseline_extract_features(board)
+        assert math.isclose(features["see_advantage_us"], 0.0, abs_tol=1e-6)
+        assert math.isclose(features["see_advantage_them"], 0.0, abs_tol=1e-6)
+        assert math.isclose(features["see_vulnerability_us"], 0.0, abs_tol=1e-6)
+        assert math.isclose(
+            features["see_vulnerability_them"], 0.0, abs_tol=1e-6
+        )
+
+    def test_see_undefended_piece(self):
+        """An undefended knight should give the opponent positive SEE
+        advantage and show up as a vulnerability.
+        """
+        # Black knight on e5 undefended, White pawn on d4 attacks it.
+        board = chess.Board(
+            "rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1"
+        )
+        features = baseline_extract_features(board)
+
+        # White (us) can profitably capture the knight.
+        assert features["see_advantage_us"] > 0, (
+            "White should have positive SEE advantage (can capture knight)"
+        )
+        # Black's knight is vulnerable.
+        assert features["see_vulnerability_them"] >= 1.0, (
+            "Black should have at least 1 vulnerable piece"
+        )
+
+    def test_see_defended_piece_no_advantage(self):
+        """A pawn-defended knight should yield no SEE advantage for
+        the attacker because Nxe5 dxe5 is an equal trade.
+        """
+        # Black knight on e5 defended by pawn on d6.
+        board = chess.Board(
+            "rnbqkb1r/ppp1pppp/3p4/4n3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1"
+        )
+        features = baseline_extract_features(board)
+        # SEE of Nf3xe5 dxe5 is ~0 (knight for knight equivalent), not
+        # positive, so see_advantage should remain 0.
+        assert math.isclose(features["see_advantage_us"], 0.0, abs_tol=0.15)
+
+    # ── Phase-interpolated PST tests ─────────────────────────────────
+
+    def test_pst_features_present(self):
+        """PST features should exist for both sides."""
+        board = chess.Board()
+        features = baseline_extract_features(board)
+        assert "pst_us" in features
+        assert "pst_them" in features
+
+    def test_pst_symmetric_initial_position(self):
+        """In the starting position the PST score should be equal for
+        both sides because the position is symmetric.
+        """
+        board = chess.Board()
+        features = baseline_extract_features(board)
+        assert math.isclose(
+            features["pst_us"], features["pst_them"], abs_tol=0.01
+        ), f"PST should be equal: us={features['pst_us']}, them={features['pst_them']}"
+
+    def test_pst_phase_interpolation(self):
+        """With very few pieces (endgame), the PST should reflect
+        endgame king values — a centralized king should score higher
+        than a cornered king.
+        """
+        # King + pawn endgame: king on e4 (centralized) vs king on a1
+        # phase ~ 0 (pure endgame)
+        board_central = chess.Board("8/8/8/8/4K3/8/P7/k7 w - - 0 1")
+        board_corner = chess.Board("8/8/8/8/8/8/P7/K6k b - - 0 1")
+
+        feats_central = baseline_extract_features(board_central)
+        feats_corner = baseline_extract_features(board_corner)
+
+        # In endgame PST, a centralized king scores higher
+        assert feats_central["pst_us"] > feats_corner["pst_us"], (
+            "Centralized king should have higher PST than corner king in endgame"
+        )
+
+    # ── Pawn structure cache consistency tests ───────────────────────
+
+    def test_pawn_features_consistent(self):
+        """Pawn structure features should be consistent between
+        repeated calls on the same position (cache correctness).
+        """
+        board = chess.Board()
+        f1 = baseline_extract_features(board)
+        f2 = baseline_extract_features(board)
+
+        pawn_keys = [
+            "isolated_pawns_us",
+            "isolated_pawns_them",
+            "doubled_pawns_us",
+            "doubled_pawns_them",
+            "backward_pawns_us",
+            "backward_pawns_them",
+            "passed_us",
+            "passed_them",
+            "pawn_chain_us",
+            "pawn_chain_them",
+        ]
+        for key in pawn_keys:
+            assert math.isclose(f1[key], f2[key], abs_tol=1e-6), (
+                f"{key} changed between calls: {f1[key]} vs {f2[key]}"
+            )

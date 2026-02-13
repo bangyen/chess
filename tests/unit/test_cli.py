@@ -32,9 +32,7 @@ class TestCLI:
         with patch("sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]):
             with patch("os.environ.get", return_value="/path/to/stockfish"):
                 with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch(
-                        "chess_ai.cli.audit.audit_feature_set"
-                    ) as mock_audit:
+                    with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
                             def __init__(self):
@@ -218,9 +216,7 @@ def extract_features(board):
                 ],
             ):
                 with patch("chess_ai.cli.audit.sf_open") as mock_sf_open:
-                    with patch(
-                        "chess_ai.cli.audit.audit_feature_set"
-                    ) as mock_audit:
+                    with patch("chess_ai.cli.audit.audit_feature_set") as mock_audit:
                         # Mock the audit function to return a proper result without running the actual audit
                         class MockResult:
                             def __init__(self):
@@ -714,7 +710,7 @@ def extract_features(board):
                             assert "Local faithfulness" in output
                             assert "Sparsity" in output
                             assert "Coverage" in output
-                            assert "Top features by |coef|" in output
+                            assert "Top features by SHAP importance" in output
                             assert "Guidance:" in output
 
     def test_cli_random_seed_setting(self):

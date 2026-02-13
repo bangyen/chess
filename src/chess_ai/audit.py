@@ -206,6 +206,11 @@ def audit_feature_set(
         ("batteries_us", "semi_open_us"),
         ("outposts_us", "phase"),
         ("bishop_pair_us", "open_files_us"),
+        # New: interactions for explainability features
+        ("threats_us", "phase"),
+        ("king_tropism_us", "phase"),
+        ("space_us", "phase"),
+        ("doubled_pawns_us", "phase"),
     ]
 
     def apply_interactions(feats):
@@ -415,11 +420,25 @@ def audit_feature_set(
 
                 # Get features after move → best reply
                 feats_after_reply = extract_features_fn(b)
-                feats_after_reply.pop("_engine_probes", {})
+                after_reply_probes = feats_after_reply.pop("_engine_probes", {})
                 feats_after_reply = {
                     k: (1.0 if isinstance(v, bool) and v else float(v))
                     for k, v in feats_after_reply.items()
                 }
+
+                # Add engine-based features (matching training)
+                if after_reply_probes:
+                    hang_cnt, hang_max_val, hang_near_king = after_reply_probes[
+                        "hanging_after_reply"
+                    ](engine, b, depth=6)
+                    feats_after_reply["hang_cnt"] = hang_cnt
+                    feats_after_reply["hang_max_val"] = hang_max_val
+                    feats_after_reply["hang_near_king"] = hang_near_king
+
+                    forcing_swing = after_reply_probes["best_forcing_swing"](
+                        engine, b, d_base=6, k_max=12
+                    )
+                    feats_after_reply["forcing_swing"] = forcing_swing
 
                 # Add passed-pawn momentum delta features
                 pp_delta = passed_pawn_momentum_delta(base_board, b)
@@ -520,11 +539,25 @@ def audit_feature_set(
 
             # Get features after best move → best reply
             f_best = extract_features_fn(b)
-            f_best.pop("_engine_probes", {})
+            best_probes = f_best.pop("_engine_probes", {})
             f_best = {
                 k: (1.0 if isinstance(v, bool) and v else float(v))
                 for k, v in f_best.items()
             }
+
+            # Add engine-based features (matching training)
+            if best_probes:
+                hang_cnt, hang_max_val, hang_near_king = best_probes[
+                    "hanging_after_reply"
+                ](engine, b, depth=6)
+                f_best["hang_cnt"] = hang_cnt
+                f_best["hang_max_val"] = hang_max_val
+                f_best["hang_near_king"] = hang_near_king
+
+                forcing_swing = best_probes["best_forcing_swing"](
+                    engine, b, d_base=6, k_max=12
+                )
+                f_best["forcing_swing"] = forcing_swing
 
             # Add delta features
             pp_delta = passed_pawn_momentum_delta(base_board, b)
@@ -569,11 +602,25 @@ def audit_feature_set(
 
             # Get features after second move → best reply
             f_second = extract_features_fn(b)
-            f_second.pop("_engine_probes", {})
+            second_probes = f_second.pop("_engine_probes", {})
             f_second = {
                 k: (1.0 if isinstance(v, bool) and v else float(v))
                 for k, v in f_second.items()
             }
+
+            # Add engine-based features (matching training)
+            if second_probes:
+                hang_cnt, hang_max_val, hang_near_king = second_probes[
+                    "hanging_after_reply"
+                ](engine, b, depth=6)
+                f_second["hang_cnt"] = hang_cnt
+                f_second["hang_max_val"] = hang_max_val
+                f_second["hang_near_king"] = hang_near_king
+
+                forcing_swing = second_probes["best_forcing_swing"](
+                    engine, b, d_base=6, k_max=12
+                )
+                f_second["forcing_swing"] = forcing_swing
 
             # Add delta features
             pp_delta = passed_pawn_momentum_delta(base_board, b)

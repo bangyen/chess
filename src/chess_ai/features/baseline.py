@@ -2,7 +2,7 @@
 
 import os
 import sys
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import chess
 import chess.engine
@@ -46,6 +46,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     """
     global _SYZYGY_TB
 
+    feats: Dict[str, Any] = {}
+
     if RUST_AVAILABLE:
         try:
             feats = extract_features_rust(board.fen())
@@ -67,7 +69,107 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 except Exception:
                     pass
 
-            # Continue to Python section to add engine probes
+            # Rust succeeded — define engine probes and return early,
+            # skipping the slower Python feature recomputation.
+            def _sf_eval_shallow(engine, board, depth=6):
+                """Shallow engine evaluation with depth limit."""
+                try:
+                    info = engine.analyse(
+                        board, chess.engine.Limit(depth=depth), multipv=1
+                    )
+                    if isinstance(info, list):
+                        info = info[0]
+                    score = info["score"].pov(board.turn)
+                    cp = score.score(mate_score=100000)
+                    return float(max(-1000, min(1000, cp)))
+                except Exception:
+                    return 0.0
+
+            def _hanging_after_reply(engine, board, depth=6):
+                """Hanging-after-reply via Rust or Stockfish fallback."""
+                try:
+                    reply = None
+                    if RUST_AVAILABLE:
+                        try:
+                            rust_depth = min(depth, 4)
+                            uci = find_best_reply(board.fen(), rust_depth)
+                            if uci:
+                                reply = chess.Move.from_uci(uci)
+                        except Exception:
+                            pass
+                    if reply is None:
+                        info = engine.analyse(
+                            board,
+                            chess.engine.Limit(depth=depth),
+                            multipv=1,
+                        )
+                        if isinstance(info, list):
+                            info = info[0]
+                        reply = info.get("pv", [None])[0]
+                    if reply is None:
+                        return 0, 0, 0
+                    board.push(reply)
+                    side = board.turn
+                    cnt, v_max, near_king = 0, 0, 0
+                    opp = not side
+                    opp_king_sq = board.king(opp)
+                    for sq in chess.SQUARES:
+                        piece = board.piece_at(sq)
+                        if piece and piece.color == opp:
+                            defenders = board.attackers(opp, sq)
+                            attackers = board.attackers(side, sq)
+                            if not defenders and attackers:
+                                cnt += 1
+                                pv = {
+                                    chess.PAWN: 1,
+                                    chess.KNIGHT: 3,
+                                    chess.BISHOP: 3,
+                                    chess.ROOK: 5,
+                                    chess.QUEEN: 9,
+                                }.get(piece.piece_type, 0)
+                                v_max = max(v_max, pv)
+                                if (
+                                    opp_king_sq is not None
+                                    and chess.square_distance(sq, opp_king_sq) <= 1
+                                ):
+                                    near_king = 1
+                    board.pop()
+                    return cnt, v_max, near_king
+                except Exception:
+                    return 0, 0, 0
+
+            def _best_forcing_swing(engine, board, d_base=6, k_max=12):
+                """Forcing swing via Rust or Stockfish fallback."""
+                if RUST_AVAILABLE:
+                    try:
+                        rust_depth = min(d_base, 4)
+                        return float(calculate_forcing_swing(board.fen(), rust_depth))
+                    except Exception:
+                        pass
+                try:
+                    base = _sf_eval_shallow(engine, board, d_base)
+                    forcing = [
+                        m
+                        for m in board.legal_moves
+                        if board.is_capture(m) or board.gives_check(m)
+                    ]
+                    swings = []
+                    for m in forcing[:k_max]:
+                        board.push(m)
+                        v = _sf_eval_shallow(engine, board, d_base - 1)
+                        board.pop()
+                        swings.append(v - base)
+                    return max(swings) if swings else 0.0
+                except Exception:
+                    return 0.0
+
+            feats["_engine_probes"] = {
+                "hanging_after_reply": _hanging_after_reply,
+                "best_forcing_swing": _best_forcing_swing,
+                "sf_eval_shallow": _sf_eval_shallow,
+            }
+            return feats
+
         except Exception:
             # Fallback to Python if Rust fails
             feats = {}
@@ -1268,6 +1370,136 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["pst_them"] = pst_value(not board.turn)
     feats["pinned_us"] = pinned_pieces(board.turn)
     feats["pinned_them"] = pinned_pieces(not board.turn)
+
+    # ── New explainability features ──────────────────────────────────
+
+    def threats(side: bool) -> float:
+        """Count attacks on higher-value enemy pieces.
+
+        A threat is an attack by a lower-value piece on a higher-value
+        enemy piece.  Captures the "why this move creates threats" signal
+        that helps the surrogate predict Stockfish evaluation deltas.
+        """
+        count = 0
+        them = not side
+        pv = {
+            chess.PAWN: 1,
+            chess.KNIGHT: 3,
+            chess.BISHOP: 3,
+            chess.ROOK: 5,
+            chess.QUEEN: 9,
+        }
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if piece and piece.color == them and piece.piece_type != chess.KING:
+                victim_val = pv.get(piece.piece_type, 0)
+                for a_sq in board.attackers(side, sq):
+                    attacker = board.piece_at(a_sq)
+                    if attacker:
+                        attacker_val = pv.get(attacker.piece_type, 0)
+                        if attacker_val < victim_val:
+                            count += 1
+        return float(count)
+
+    feats["threats_us"] = threats(board.turn)
+    feats["threats_them"] = threats(not board.turn)
+
+    def doubled_pawns(side: bool) -> float:
+        """Count extra pawns on files with 2+ own pawns.
+
+        Doubled pawns are a well-known structural weakness; this
+        feature helps the surrogate distinguish positions where pawn
+        structure quality drives the Stockfish evaluation.
+        """
+        my_pawns = board.pieces(chess.PAWN, side)
+        count = 0
+        for f in range(8):
+            pawns_on_file = sum(1 for sq in my_pawns if chess.square_file(sq) == f)
+            if pawns_on_file >= 2:
+                count += pawns_on_file - 1
+        return float(count)
+
+    feats["doubled_pawns_us"] = doubled_pawns(board.turn)
+    feats["doubled_pawns_them"] = doubled_pawns(not board.turn)
+
+    def space(side: bool) -> float:
+        """Squares attacked/controlled in the opponent's half.
+
+        Space advantage captures positional squeezes that Stockfish
+        values highly but pure material counts miss.
+        """
+        controlled: set = set()
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if piece and piece.color == side:
+                for a_sq in board.attacks(sq):
+                    controlled.add(a_sq)
+        # Opponent's half: ranks 4-7 for White, ranks 0-3 for Black
+        if side == chess.WHITE:
+            opp_half = {s for s in chess.SQUARES if chess.square_rank(s) >= 4}
+        else:
+            opp_half = {s for s in chess.SQUARES if chess.square_rank(s) <= 3}
+        return float(len(controlled & opp_half))
+
+    feats["space_us"] = space(board.turn)
+    feats["space_them"] = space(not board.turn)
+
+    def king_tropism(side: bool) -> float:
+        """Sum of (7 - distance) for non-pawn, non-king pieces to enemy
+        king.
+
+        Captures attack buildup: pieces clustered near the enemy king
+        often signal dangerous initiative that Stockfish reflects in
+        its evaluation.
+        """
+        them = not side
+        enemy_king_sq = board.king(them)
+        if enemy_king_sq is None:
+            return 0.0
+        tropism = 0.0
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if (
+                piece
+                and piece.color == side
+                and piece.piece_type not in (chess.KING, chess.PAWN)
+            ):
+                dist = chess.square_distance(sq, enemy_king_sq)
+                tropism += 7.0 - dist
+        return tropism
+
+    feats["king_tropism_us"] = king_tropism(board.turn)
+    feats["king_tropism_them"] = king_tropism(not board.turn)
+
+    def pawn_chain_count(side: bool) -> float:
+        """Pawns defended by another friendly pawn.
+
+        Pawn chains provide structural integrity; this feature helps
+        the surrogate model understand why Stockfish prefers positions
+        with solid pawn structures.
+        """
+        my_pawns = board.pieces(chess.PAWN, side)
+        count = 0
+        for sq in my_pawns:
+            # Squares that would be attacked by an *opponent* pawn on sq
+            # are exactly the squares where a friendly pawn defends sq.
+            rank = chess.square_rank(sq)
+            f = chess.square_file(sq)
+            # A pawn on `sq` is defended if a same-color pawn sits on an
+            # adjacent file one rank behind.
+            behind_rank = rank - 1 if side == chess.WHITE else rank + 1
+            if 0 <= behind_rank <= 7:
+                for adj_f in (f - 1, f + 1):
+                    if 0 <= adj_f <= 7:
+                        def_sq = chess.square(adj_f, behind_rank)
+                        p = board.piece_at(def_sq)
+                        if p and p.piece_type == chess.PAWN and p.color == side:
+                            count += 1
+                            break
+        return float(count)
+
+    feats["pawn_chain_us"] = pawn_chain_count(board.turn)
+    feats["pawn_chain_them"] = pawn_chain_count(not board.turn)
 
     # Add engine probes (callables)
     feats["_engine_probes"] = {

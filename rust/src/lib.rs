@@ -6,7 +6,7 @@ use shakmaty::fen::Fen;
 use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
 use std::collections::BTreeMap;
 
-// Simple material values
+// Material values in centipawns.
 fn piece_value(role: Role) -> i32 {
     match role {
         Role::Pawn => 100,
@@ -18,14 +18,134 @@ fn piece_value(role: Role) -> i32 {
     }
 }
 
-fn evaluate(pos: &Chess) -> i32 {
-    let board = pos.board();
-    let mut score = 0;
-    
-    // Iterate over all squares to avoid iterator issues with &Board
+// ── Piece-square tables (from White's perspective, rank-8 = index 0) ──
+
+static EVAL_PST_PAWN: [i32; 64] = [
+     0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+     5,  5, 10, 25, 25, 10,  5,  5,
+     0,  0,  0, 20, 20,  0,  0,  0,
+     5, -5,-10,  0,  0,-10, -5,  5,
+     5, 10, 10,-20,-20, 10, 10,  5,
+     0,  0,  0,  0,  0,  0,  0,  0,
+];
+
+static EVAL_PST_KNIGHT: [i32; 64] = [
+    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,  0,  0,  0,  0,-20,-40,
+    -30,  0, 10, 15, 15, 10,  0,-30,
+    -30,  5, 15, 20, 20, 15,  5,-30,
+    -30,  0, 15, 20, 20, 15,  0,-30,
+    -30,  5, 10, 15, 15, 10,  5,-30,
+    -40,-20,  0,  5,  5,  0,-20,-40,
+    -50,-40,-30,-30,-30,-30,-40,-50,
+];
+
+static EVAL_PST_BISHOP: [i32; 64] = [
+    -20,-10,-10,-10,-10,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5, 10, 10,  5,  0,-10,
+    -10,  5,  5, 10, 10,  5,  5,-10,
+    -10,  0, 10, 10, 10, 10,  0,-10,
+    -10, 10, 10, 10, 10, 10, 10,-10,
+    -10,  5,  0,  0,  0,  0,  5,-10,
+    -20,-10,-10,-10,-10,-10,-10,-20,
+];
+
+static EVAL_PST_ROOK: [i32; 64] = [
+     0,  0,  0,  0,  0,  0,  0,  0,
+     5, 10, 10, 10, 10, 10, 10,  5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+    -5,  0,  0,  0,  0,  0,  0, -5,
+     0,  0,  0,  5,  5,  0,  0,  0,
+];
+
+static EVAL_PST_QUEEN: [i32; 64] = [
+    -20,-10,-10, -5, -5,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5,  5,  5,  5,  0,-10,
+     -5,  0,  5,  5,  5,  5,  0, -5,
+     -5,  0,  5,  5,  5,  5,  0, -5,
+    -10,  5,  5,  5,  5,  5,  0,-10,
+    -10,  0,  5,  0,  0,  0,  0,-10,
+    -20,-10,-10, -5, -5,-10,-10,-20,
+];
+
+static EVAL_PST_KING_MG: [i32; 64] = [
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -30,-40,-40,-50,-50,-40,-40,-30,
+    -20,-30,-30,-40,-40,-30,-30,-20,
+    -10,-20,-20,-20,-20,-20,-20,-10,
+     20, 20,  0,  0,  0,  0, 20, 20,
+     20, 30, 10,  0,  0, 10, 30, 20,
+];
+
+static EVAL_PST_KING_EG: [i32; 64] = [
+    -50,-40,-30,-20,-20,-30,-40,-50,
+    -30,-20,-10,  0,  0,-10,-20,-30,
+    -30,-10, 20, 30, 30, 20,-10,-30,
+    -30,-10, 30, 40, 40, 30,-10,-30,
+    -30,-10, 30, 40, 40, 30,-10,-30,
+    -30,-10, 20, 30, 30, 20,-10,-30,
+    -30,-30,  0,  0,  0,  0,-30,-30,
+    -50,-30,-30,-30,-30,-30,-30,-50,
+];
+
+/// Count non-pawn, non-king pieces for game-phase detection.
+fn count_phase(board: &shakmaty::Board) -> i32 {
+    let mut phase = 0i32;
     for sq in Square::ALL {
         if let Some(piece) = board.piece_at(sq) {
-            let val = piece_value(piece.role);
+            if piece.role != Role::Pawn && piece.role != Role::King {
+                phase += 1;
+            }
+        }
+    }
+    phase
+}
+
+/// PST index for a square, flipped for Black so tables are always
+/// written from White's perspective.
+#[inline]
+fn pst_index(sq: Square, color: Color) -> usize {
+    let vis_r = if color == Color::White {
+        7 - sq.rank() as usize
+    } else {
+        sq.rank() as usize
+    };
+    vis_r * 8 + sq.file() as usize
+}
+
+/// Positional evaluation: material + piece-square tables + bishop-pair
+/// bonus.  Returns score from the side-to-move's perspective so
+/// negamax works directly.
+fn evaluate(pos: &Chess) -> i32 {
+    let board = pos.board();
+    let phase = count_phase(board);
+    let is_endgame = phase < 10;
+
+    let mut score = 0i32;
+
+    for sq in Square::ALL {
+        if let Some(piece) = board.piece_at(sq) {
+            let mat = piece_value(piece.role);
+            let idx = pst_index(sq, piece.color);
+            let pst = match piece.role {
+                Role::Pawn   => EVAL_PST_PAWN[idx],
+                Role::Knight => EVAL_PST_KNIGHT[idx],
+                Role::Bishop => EVAL_PST_BISHOP[idx],
+                Role::Rook   => EVAL_PST_ROOK[idx],
+                Role::Queen  => EVAL_PST_QUEEN[idx],
+                Role::King   => if is_endgame { EVAL_PST_KING_EG[idx] }
+                                else          { EVAL_PST_KING_MG[idx] },
+            };
+            let val = mat + pst;
             if piece.color == Color::White {
                 score += val;
             } else {
@@ -33,18 +153,74 @@ fn evaluate(pos: &Chess) -> i32 {
             }
         }
     }
-    
-    if pos.turn() == Color::White {
-        score
-    } else {
-        -score
-    }
+
+    // Bishop-pair bonus (+30 cp)
+    let white_bishops = (board.by_role(Role::Bishop) & board.by_color(Color::White)).count();
+    let black_bishops = (board.by_role(Role::Bishop) & board.by_color(Color::Black)).count();
+    if white_bishops >= 2 { score += 30; }
+    if black_bishops >= 2 { score -= 30; }
+
+    if pos.turn() == Color::White { score } else { -score }
 }
 
-// Simple alpha-beta search
+/// Quiescence search: continue searching captures (and promotions)
+/// until the position is quiet, preventing the horizon effect.
+fn quiesce(pos: &Chess, mut alpha: i32, beta: i32) -> i32 {
+    let stand_pat = evaluate(pos);
+    if stand_pat >= beta {
+        return beta;
+    }
+    if stand_pat > alpha {
+        alpha = stand_pat;
+    }
+
+    let moves = pos.legal_moves();
+    // Only search captures and promotions
+    let mut tactical: Vec<(i32, Move)> = moves
+        .into_iter()
+        .filter(|m| m.is_capture() || m.is_promotion())
+        .map(|m| {
+            let mut score = 0i32;
+            if m.is_capture() {
+                let victim = pos.board().piece_at(m.to())
+                    .map(|p| p.role).unwrap_or(Role::Pawn);
+                let attacker = pos.board().piece_at(m.from().unwrap())
+                    .map(|p| p.role).unwrap_or(Role::Pawn);
+                score = 10000 + piece_value(victim) - piece_value(attacker);
+            }
+            if m.is_promotion() {
+                score += 20000;
+            }
+            (score, m)
+        })
+        .collect();
+    tactical.sort_by(|a, b| b.0.cmp(&a.0));
+
+    for (_, m) in tactical {
+        let mut new_pos = pos.clone();
+        new_pos.play_unchecked(m);
+        let score = -quiesce(&new_pos, -beta, -alpha);
+        if score >= beta {
+            return beta;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+    alpha
+}
+
+/// Alpha-beta search with quiescence at the leaves to avoid the
+/// horizon effect on tactical positions.
 fn alpha_beta(pos: &Chess, mut alpha: i32, beta: i32, depth: u8) -> i32 {
-    if depth == 0 || pos.is_game_over() {
-        return evaluate(pos);
+    if pos.is_game_over() {
+        if pos.is_checkmate() {
+            return -30000;
+        }
+        return 0; // stalemate / draw
+    }
+    if depth == 0 {
+        return quiesce(pos, alpha, beta);
     }
 
     let moves = pos.legal_moves();
@@ -806,7 +982,107 @@ fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("pinned_us".to_string(), count_pinned(turn));
     feats.insert("pinned_them".to_string(), count_pinned(opp));
 
-    // 16. PST (Piece-Square Tables)
+    // 16. Threats: attacks on higher-value enemy pieces
+    let count_threats = |side: Color| {
+        let mut count = 0.0;
+        let occupied = board.occupied();
+        let them = side.other();
+        for sq in board.by_color(them) {
+            let victim = board.piece_at(sq).unwrap();
+            if victim.role == Role::King { continue; }
+            let attackers = board.attacks_to(sq, side, occupied);
+            for a_sq in attackers {
+                if let Some(attacker) = board.piece_at(a_sq) {
+                    if piece_value(attacker.role) < piece_value(victim.role) {
+                        count += 1.0;
+                    }
+                }
+            }
+        }
+        count
+    };
+    feats.insert("threats_us".to_string(), count_threats(turn));
+    feats.insert("threats_them".to_string(), count_threats(opp));
+
+    // 17. Doubled pawns: files with 2+ own pawns
+    let count_doubled = |side: Color| {
+        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+        let mut count = 0.0;
+        for f in 0..8 {
+            let file_bb = Bitboard::from_file(shakmaty::File::new(f as u32));
+            let pawns_on_file = (my_pawns & file_bb).count();
+            if pawns_on_file >= 2 {
+                count += (pawns_on_file - 1) as f32;
+            }
+        }
+        count
+    };
+    feats.insert("doubled_pawns_us".to_string(), count_doubled(turn));
+    feats.insert("doubled_pawns_them".to_string(), count_doubled(opp));
+
+    // 18. Space: squares controlled in the opponent's half
+    let count_space = |side: Color| {
+        let mut controlled = Bitboard::EMPTY;
+        for sq in board.by_color(side) {
+            controlled |= board.attacks_from(sq);
+        }
+        // Opponent's half: ranks 5-8 for White, ranks 1-4 for Black
+        let opp_half = if side == Color::White {
+            Bitboard::from_rank(shakmaty::Rank::Fifth)
+                | Bitboard::from_rank(shakmaty::Rank::Sixth)
+                | Bitboard::from_rank(shakmaty::Rank::Seventh)
+                | Bitboard::from_rank(shakmaty::Rank::Eighth)
+        } else {
+            Bitboard::from_rank(shakmaty::Rank::First)
+                | Bitboard::from_rank(shakmaty::Rank::Second)
+                | Bitboard::from_rank(shakmaty::Rank::Third)
+                | Bitboard::from_rank(shakmaty::Rank::Fourth)
+        };
+        (controlled & opp_half).count() as f32
+    };
+    feats.insert("space_us".to_string(), count_space(turn));
+    feats.insert("space_them".to_string(), count_space(opp));
+
+    // 19. King tropism: sum of (7 - distance) for attacking pieces to
+    //     the opponent king.  Higher = pieces are closer to enemy king.
+    let king_tropism = |side: Color| {
+        let them = side.other();
+        let enemy_king = board.king_of(them);
+        if enemy_king.is_none() { return 0.0; }
+        let ksq = enemy_king.unwrap();
+        let mut tropism = 0.0;
+        for sq in board.by_color(side) {
+            if let Some(piece) = board.piece_at(sq) {
+                if piece.role == Role::King || piece.role == Role::Pawn {
+                    continue;
+                }
+                let dist = ksq.distance(sq) as f32;
+                tropism += 7.0 - dist;
+            }
+        }
+        tropism
+    };
+    feats.insert("king_tropism_us".to_string(), king_tropism(turn));
+    feats.insert("king_tropism_them".to_string(), king_tropism(opp));
+
+    // 20. Pawn chain: pawns defended by another pawn
+    let pawn_chain = |side: Color| {
+        let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+        let mut count = 0.0;
+        for sq in my_pawns {
+            // Check if any friendly pawn attacks this square
+            let pawn_attackers = attacks::pawn_attacks(side.other(), sq)
+                & my_pawns;
+            if !pawn_attackers.is_empty() {
+                count += 1.0;
+            }
+        }
+        count
+    };
+    feats.insert("pawn_chain_us".to_string(), pawn_chain(turn));
+    feats.insert("pawn_chain_them".to_string(), pawn_chain(opp));
+
+    // 21. PST (Piece-Square Tables)
     const PST_PAWN: [i16; 64] = [
         0,  0,  0,  0,  0,  0,  0,  0,
         50, 50, 50, 50, 50, 50, 50, 50,

@@ -4,7 +4,6 @@ Explainable Chess Engine
 An interactive chess engine that analyzes your moves and explains what you should have done instead.
 """
 
-import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -13,6 +12,7 @@ import chess.engine
 import chess.pgn
 
 from .features import baseline_extract_features
+from .utils.sampling import sample_stratified_positions
 
 
 @dataclass
@@ -35,7 +35,7 @@ class ExplainableChessEngine:
         depth: int = 16,
         opponent_strength: str = "beginner",
         enable_model_explanations: bool = True,
-        model_training_positions: int = 50,
+        model_training_positions: int = 200,
     ):
         """Initialize the explainable chess engine."""
         self.stockfish_path = stockfish_path
@@ -128,17 +128,10 @@ class ExplainableChessEngine:
             from .model_trainer import train_surrogate_model
             from .surrogate_explainer import SurrogateExplainer
 
-            # Generate random positions for training
-            training_boards = []
-            for _ in range(self.model_training_positions):
-                board = chess.Board()
-                # Play 5-15 random moves to get diverse positions
-                for _ in range(random.randint(5, 15)):
-                    moves = list(board.legal_moves)
-                    if not moves:
-                        break
-                    board.push(random.choice(moves))
-                training_boards.append(board)
+            # Generate phase-stratified positions so the surrogate
+            # model sees a representative mix of opening, middlegame,
+            # and endgame states rather than only chaotic random play.
+            training_boards = sample_stratified_positions(self.model_training_positions)
 
             cfg = SFConfig(
                 engine_path=self.stockfish_path,

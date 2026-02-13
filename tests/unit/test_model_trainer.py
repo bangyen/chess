@@ -274,3 +274,58 @@ class TestTrainSurrogateModel:
         # Under intersection semantics "endgame_only" would be dropped;
         # under union semantics it is preserved.
         assert "endgame_only" in names
+
+
+# ---------------------------------------------------------------------------
+# Winrate-scaled targets tests
+# ---------------------------------------------------------------------------
+
+
+class TestWinrateScaledTargets:
+    """Verify that model training applies the winrate sigmoid transform.
+
+    The training pipeline should convert centipawn deltas into
+    win-rate deltas before fitting.  This compresses outlier
+    evaluations and produces better-behaved regression targets.
+    """
+
+    @patch(
+        "chess_ai.model_trainer.sf_top_moves",
+        return_value=[
+            (chess.Move.from_uci("e2e4"), 100.0),
+        ],
+    )
+    def test_targets_are_in_winrate_range(self, _mock_top):
+        """Targets after conversion should be bounded within [-1, 1].
+
+        Raw centipawn deltas can be arbitrarily large, but winrate
+        deltas are bounded by the sigmoid's [0, 1] output range, so
+        their differences lie in [-1, 1].
+        """
+        engine = _make_mock_engine()
+        cfg = SFConfig(engine_path="/mock/stockfish", depth=12)
+        boards = [chess.Board() for _ in range(4)]
+
+        # Use varying base evals so deltas are non-trivial.
+        base_evals = iter([100.0, -200.0, 0.0, 300.0, 100.0, -200.0, 0.0, 300.0])
+
+        def varying_sf_eval(eng, board, c):
+            return next(base_evals, 50.0)
+
+        extract_fn = _make_feature_extractor(vary=True)
+
+        with patch("chess_ai.model_trainer.sf_eval", side_effect=varying_sf_eval):
+            model, scaler, names = train_surrogate_model(
+                boards, engine, cfg, extract_fn
+            )
+
+        # The model should have been trained; verify it can predict.
+        vec = np.zeros(len(names))
+        pred = model.predict(vec)
+        assert pred.shape == (1,)
+
+        # Predictions from winrate-space models should be small-ish
+        # (not raw centipawn magnitudes like 200+ cp).
+        assert (
+            abs(float(pred[0])) < 5.0
+        ), f"Prediction {pred[0]} is suspiciously large for a winrate-space model"

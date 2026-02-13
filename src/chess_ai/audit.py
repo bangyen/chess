@@ -3,7 +3,7 @@
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Tuple
 
 import chess
 import numpy as np
@@ -16,6 +16,7 @@ from .metrics.positional import (
     confinement_delta,
     passed_pawn_momentum_delta,
 )
+from .utils.math import cp_to_winrate
 
 # Suppress sklearn convergence warnings for small datasets
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -49,29 +50,8 @@ except Exception:
     raise
 
 
-def _cp_to_winrate(
-    cp: Union[float, npt.NDArray[np.floating]], k: float = 111.0
-) -> Union[float, npt.NDArray[np.floating]]:
-    """Convert a centipawn score to a win probability via sigmoid.
-
-    Stockfish uses this mapping internally so that extreme evaluations
-    (e.g. +500 vs +700) are compressed while the mid-range (around 0)
-    retains high sensitivity.  Using win-rate space as the training
-    target produces better-behaved regression targets and reduces
-    the influence of outlier evaluations on model fitting.
-
-    Accepts both scalar floats and numpy arrays (element-wise).
-
-    Args:
-        cp: Centipawn evaluation (positive = side-to-move advantage).
-        k: Sigmoid steepness.  Default 111 matches Stockfish's
-           internal win-rate model.
-
-    Returns:
-        Win probability in [0, 1], same type as *cp*.
-    """
-    result: Union[float, npt.NDArray[np.floating]] = 1.0 / (1.0 + np.exp(-cp / k))
-    return result
+# _cp_to_winrate has been factored into utils.math.cp_to_winrate
+_cp_to_winrate = cp_to_winrate
 
 
 @dataclass

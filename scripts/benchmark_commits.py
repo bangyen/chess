@@ -29,7 +29,11 @@ def check_clean_state():
 
 
 def run_audit(commit: str, positions: int, seed: int, engine: str) -> str:
-    """Run the audit tool on a specific commit."""
+    """Run the audit tool on a specific commit.
+
+    Streams stderr (tqdm progress bars) to the terminal in real time
+    while capturing stdout for metric parsing.
+    """
     print(f"Running audit on commit {commit}...")
     cmd = (
         f"uv run python -m chess_ai.cli.audit "
@@ -38,11 +42,17 @@ def run_audit(commit: str, positions: int, seed: int, engine: str) -> str:
         f"--positions {positions} "
         f"--seed {seed}"
     )
-    # We set check=False so we can handle errors gracefully
-    result = run_command(cmd, check=False)
+    # Capture stdout for parsing; let stderr (tqdm) flow to terminal
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=None,  # inherit — tqdm progress is visible live
+        text=True,
+    )
     if result.returncode != 0:
         print(f"Error running audit on {commit}:")
-        print(result.stderr)
         print(result.stdout)
         sys.exit(1)
     return str(result.stdout)
@@ -111,14 +121,18 @@ def main():
 
     try:
         # Run on new commit first
-        print(f"Switching to new commit: {args.new_commit}")
+        print(f"\nSwitching to new commit: {args.new_commit}")
         run_command(f"git checkout {args.new_commit}")
+        print("Building Rust extension...")
+        run_command("uv run maturin develop --release", check=False)
         new_output = run_audit(args.new_commit, args.positions, args.seed, args.engine)
         new_metrics = parse_metrics(new_output)
 
         # Run on old commit
-        print(f"Switching to old commit: {args.old_commit}")
+        print(f"\nSwitching to old commit: {args.old_commit}")
         run_command(f"git checkout {args.old_commit}")
+        print("Building Rust extension...")
+        run_command("uv run maturin develop --release", check=False)
         old_output = run_audit(args.old_commit, args.positions, args.seed, args.engine)
         old_metrics = parse_metrics(old_output)
 

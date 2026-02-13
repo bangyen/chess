@@ -1,7 +1,8 @@
 """Baseline feature extraction functions."""
 
+import os
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 import chess
 import chess.engine
@@ -26,6 +27,9 @@ try:
     RUST_AVAILABLE = True
 except ImportError:
     RUST_AVAILABLE = False
+
+
+_SYZYGY_TB: Optional[SyzygyTablebase] = None
 
 
 def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
@@ -283,18 +287,16 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["king_pawn_shield_them"] = king_pawn_shield(not board.turn)
 
     # Add Syzygy tablebase features (if available)
-    import os
-
     syzygy_path = os.environ.get("SYZYGY_PATH")
     if syzygy_path and RUST_AVAILABLE:
         try:
             # We initialize a temporary tablebase if not cached?
             # Better to cache it globally to avoid reloading files.
             global _SYZYGY_TB
-            if "_SYZYGY_TB" not in globals():
+            if _SYZYGY_TB is None:
                 _SYZYGY_TB = SyzygyTablebase(syzygy_path)
 
-            if board.piece_count() <= 7:
+            if len(board.piece_map()) <= 7:
                 wdl = _SYZYGY_TB.probe_wdl(board.fen())
                 dtz = _SYZYGY_TB.probe_dtz(board.fen())
                 if wdl is not None:

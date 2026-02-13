@@ -3,7 +3,7 @@
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple, Union
 
 import chess
 import numpy as np
@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 try:
     from sklearn.ensemble import HistGradientBoostingRegressor
     from sklearn.exceptions import ConvergenceWarning
-    from sklearn.linear_model import Lasso, LassoCV
+    from sklearn.linear_model import ElasticNet, ElasticNetCV
     from sklearn.metrics import r2_score
     from sklearn.model_selection import train_test_split
     from sklearn.preprocessing import StandardScaler
@@ -47,6 +47,31 @@ except Exception:
         file=sys.stderr,
     )
     raise
+
+
+def _cp_to_winrate(
+    cp: Union[float, npt.NDArray[np.floating]], k: float = 111.0
+) -> Union[float, npt.NDArray[np.floating]]:
+    """Convert a centipawn score to a win probability via sigmoid.
+
+    Stockfish uses this mapping internally so that extreme evaluations
+    (e.g. +500 vs +700) are compressed while the mid-range (around 0)
+    retains high sensitivity.  Using win-rate space as the training
+    target produces better-behaved regression targets and reduces
+    the influence of outlier evaluations on model fitting.
+
+    Accepts both scalar floats and numpy arrays (element-wise).
+
+    Args:
+        cp: Centipawn evaluation (positive = side-to-move advantage).
+        k: Sigmoid steepness.  Default 111 matches Stockfish's
+           internal win-rate model.
+
+    Returns:
+        Win probability in [0, 1], same type as *cp*.
+    """
+    result: Union[float, npt.NDArray[np.floating]] = 1.0 / (1.0 + np.exp(-cp / k))
+    return result
 
 
 @dataclass
@@ -162,9 +187,9 @@ def audit_feature_set(
             if fen_key in _hanging_cache:
                 hang_cnt, hang_max_val, hang_near_king = _hanging_cache[fen_key]
             else:
-                hang_cnt, hang_max_val, hang_near_king = probes[
-                    "hanging_after_reply"
-                ](eng, board, depth=6)
+                hang_cnt, hang_max_val, hang_near_king = probes["hanging_after_reply"](
+                    eng, board, depth=6
+                )
                 _hanging_cache[fen_key] = (hang_cnt, hang_max_val, hang_near_king)
             feats["hang_cnt"] = hang_cnt
             feats["hang_max_val"] = hang_max_val
@@ -249,9 +274,13 @@ def audit_feature_set(
 
     # 1) Collect dataset (X, y) for fidelity (move delta-level)
     print("Collecting move deltas for training...")
-    feature_names = None
+    # Use a canonical (union) feature set so that features appearing
+    # in only some positions are kept rather than silently dropped.
+    # Missing values are filled with 0.0 during matrix construction.
+    _seen_features: Dict[str, None] = {}
     X = []
     y: List[float] = []
+    y_base_evals: List[float] = []
 
     for b in tqdm(boards, desc="Move delta collection"):
         base_eval = cached_sf_eval(engine, b, cfg)
@@ -278,20 +307,18 @@ def audit_feature_set(
                     apply_interactions,
                 )
 
-                if feature_names is None:
-                    feature_names = list(after_reply_feats.keys())
-                else:
-                    feature_names = [k for k in feature_names if k in after_reply_feats]
+                for k in after_reply_feats:
+                    if k not in _seen_features:
+                        _seen_features[k] = None
 
                 X.append(after_reply_feats)
                 y.append(delta_eval)
+                y_base_evals.append(base_eval)
                 b.pop()
 
             b.pop()
 
-    # realign feature vectors to common feature set
-    # (interactions are already applied by _enrich_features)
-    feature_names = feature_names or []
+    feature_names: List[str] = list(_seen_features.keys())
 
     # Update feature_names to include interaction term names
     for p1, p2 in interaction_pairs:
@@ -318,11 +345,26 @@ def audit_feature_set(
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )
-    y_arr: npt.NDArray[np.floating] = np.array(y, dtype=float)
+    y_arr_cp: npt.NDArray[np.floating] = np.array(y, dtype=float)
+
+    # Convert centipawn deltas to win-rate deltas.  This compresses
+    # extreme evaluations (e.g. +500 vs +700 cp) while preserving
+    # high sensitivity around 0, producing better-behaved regression
+    # targets and reducing the influence of outlier positions.
+    y_base_arr = np.array(y_base_evals, dtype=float)
+    y_arr: npt.NDArray[np.floating] = np.asarray(
+        _cp_to_winrate(y_base_arr + y_arr_cp) - _cp_to_winrate(y_base_arr),
+        dtype=float,
+    )
 
     # Train/test split on move deltas
     X_train, X_test, y_train, y_test = train_test_split(
         X_mat, y_arr, test_size=test_size, random_state=42
+    )
+    # Keep centipawn-space targets aligned with the same split for
+    # metrics that need the original scale (e.g. faithfulness).
+    _, _, y_train_cp, y_test_cp = train_test_split(
+        X_mat, y_arr_cp, test_size=test_size, random_state=42
     )
 
     # For testing, we need to split boards separately
@@ -341,14 +383,31 @@ def audit_feature_set(
         """Gradient-boosted tree surrogate with distilled linear explanations.
 
         Wraps HistGradientBoostingRegressor for prediction and distils
-        its predictions into a sparse Lasso whose coefficients drive the
-        sparsity, coverage, and top-feature metrics.
+        its predictions into a sparse ElasticNet whose coefficients drive
+        the sparsity, coverage, and top-feature metrics.
+
+        Improvements over plain Lasso distillation:
+        - **ElasticNet (L1+L2)** handles correlated features more stably
+          than pure L1, keeping groups of related features rather than
+          arbitrarily picking one.
+        - **Mixed distillation target** blends the GBT's predictions with
+          the raw Stockfish targets so the linear model stays grounded
+          in the real evaluation while still benefiting from the GBT's
+          learned decision boundary.
         """
 
+        #: Fraction of the raw Stockfish target blended into the
+        #: distillation target.  0.0 = pure GBT predictions (original
+        #: behaviour), 1.0 = ignore GBT entirely.
+        DISTILL_MIX: float = 0.3
+
         def __init__(self, n_samples: int = 100, distill_top_k: int = 10):
-            # Adapt GBT complexity to dataset size: use early stopping
-            # only when there are enough samples for a reliable validation
-            # split; otherwise use a fixed, conservative iteration count.
+            """Build a GBT surrogate sized for *n_samples* training rows.
+
+            Uses early stopping when the dataset is large enough for a
+            reliable validation split; otherwise a conservative fixed
+            iteration count avoids overfitting on small datasets.
+            """
             use_early = n_samples >= 400
             gbt_kwargs = {
                 "max_depth": 4,
@@ -366,21 +425,32 @@ def audit_feature_set(
             else:
                 gbt_kwargs["early_stopping"] = False
             self.gbt = HistGradientBoostingRegressor(**gbt_kwargs)
-            self._lasso_alpha: float = 1.0
+            self._distill_alpha: float = 1.0
+            self._distill_l1_ratio: float = 0.5
             self._distill_top_k = distill_top_k
             self.feature_importances: np.ndarray = np.zeros(0)
             self.distilled_coef: np.ndarray = np.zeros(0)
             self.top_k_idx: np.ndarray = np.zeros(0, dtype=int)
 
-        def fit(self, X, y):
-            """Fit the GBT and distil into a sparse Lasso.
+        def fit(self, X, y, y_raw=None):
+            """Fit the GBT and distil into a sparse ElasticNet.
 
-            The distilled Lasso is trained on the GBT's *predictions*
-            (not raw Stockfish targets), giving a sparse linear
-            approximation of the learned decision boundary.  Its
-            coefficients drive the sparsity, coverage, and top-feature
-            metrics.  Feature pre-selection uses the GBT's built-in
-            split-gain importances to keep only the top-K features.
+            The distilled ElasticNet is trained on a *mixed* target that
+            blends the GBT's predictions with the raw Stockfish targets
+            (controlled by ``DISTILL_MIX``).  This keeps the sparse
+            linear approximation grounded in the real evaluation while
+            still benefiting from the GBT's smoothed decision boundary.
+
+            Feature pre-selection uses the GBT's built-in split-gain
+            importances to keep only the top-K features.
+
+            Args:
+                X: Feature matrix (n_samples, n_features), scaled.
+                y: Training targets (win-rate deltas).
+                y_raw: Optional raw targets (same space as *y* when no
+                    win-rate scaling, or the original cp deltas).  When
+                    provided the mixed distillation target blends GBT
+                    predictions with *y_raw*; otherwise *y* is used.
             """
             self.gbt.fit(X, y)
             # feature_importances_ may be unavailable when all targets
@@ -391,11 +461,13 @@ def audit_feature_set(
                 np.ones(X.shape[1]) / X.shape[1],
             )
 
-            # Distill GBT into a sparse linear model for crisp explanations.
-            # Restrict the Lasso to the top-K important features so that
-            # the resulting coefficients are concentrated on the features the
-            # GBT actually relies on, yielding sparsity in the 3-5 range.
-            y_distill = self.gbt.predict(X)
+            # Distill GBT into a sparse linear model for crisp
+            # explanations.  The mixed target keeps the Lasso grounded.
+            y_gbt = self.gbt.predict(X)
+            y_ground = y_raw if y_raw is not None else y
+            mix = self.DISTILL_MIX
+            y_distill = (1.0 - mix) * y_gbt + mix * y_ground
+
             n_features = X.shape[1]
             k = min(self._distill_top_k, n_features)
             self.top_k_idx = np.argsort(self.feature_importances)[-k:]
@@ -408,42 +480,57 @@ def audit_feature_set(
                 if n_samples >= 10
                 else [1.0, 10.0, 100.0]
             )
+            # ElasticNet's L1/L2 blend handles correlated features
+            # (e.g. mobility_us and safe_mobility_us) more stably
+            # than pure L1, keeping related features in the model
+            # rather than arbitrarily zeroing one of them.
+            l1_ratios = [0.3, 0.5, 0.7, 0.9, 1.0]
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", module="sklearn")
-                distill_lasso = LassoCV(
+                distill_model = ElasticNetCV(
                     cv=cv_folds,
                     alphas=alphas,
+                    l1_ratio=l1_ratios,
                     random_state=42,
                     max_iter=10000,
                 )
-                distill_lasso.fit(X_distill, y_distill)
+                distill_model.fit(X_distill, y_distill)
 
             # Expand back to full-length coefficient vector (zeros for
             # features excluded by the importance pre-selection).
             full_coef = np.zeros(n_features)
-            full_coef[self.top_k_idx] = distill_lasso.coef_
+            full_coef[self.top_k_idx] = distill_model.coef_
             self.distilled_coef = full_coef
-            self._lasso_alpha = float(distill_lasso.alpha_)
+            self._distill_alpha = float(distill_model.alpha_)
+            self._distill_l1_ratio = float(distill_model.l1_ratio_)
 
         def predict(self, X):
-            """Predict eval deltas."""
+            """Predict eval deltas (in win-rate space)."""
             if len(X.shape) == 1:
                 return self.gbt.predict(X.reshape(1, -1))
             return self.gbt.predict(X)
 
         @property
         def alpha_(self):
-            """Lasso alpha from the distilled fit, used by stability selection."""
-            return self._lasso_alpha
+            """ElasticNet alpha from the distilled fit, used by stability selection."""
+            return self._distill_alpha
+
+        @property
+        def l1_ratio_(self):
+            """ElasticNet l1_ratio from the distilled fit."""
+            return self._distill_l1_ratio
 
     model = TreeSurrogate(n_samples=X_train_scaled.shape[0])
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
-        model.fit(X_train_scaled, y_train)
+        model.fit(X_train_scaled, y_train, y_raw=y_train)
 
     print(f"GBT iterations: {model.gbt.n_iter_}")
-    print(f"Distilled Lasso alpha: {model.alpha_:.4f}")
+    print(
+        f"Distilled ElasticNet alpha: {model.alpha_:.4f}, "
+        f"l1_ratio: {model.l1_ratio_:.2f}"
+    )
 
     # Fidelity
     y_pred = model.predict(X_test_scaled)
@@ -647,10 +734,10 @@ def audit_feature_set(
         else 0.0
     )
 
-    # 5) Stability selection (L1 bootstraps): how often is a feature chosen (non-zero)
-    #    Bootstrap Lassos run on the same top-K feature subset used for
-    #    distillation, so the alpha is calibrated correctly and only
-    #    features the GBT actually uses can be selected.
+    # 5) Stability selection (ElasticNet bootstraps): how often is a
+    #    feature chosen (non-zero coefficient) across bootstrap
+    #    resamples.  Uses the same alpha/l1_ratio as the distilled
+    #    model for consistency.
     if X_train.shape[0] >= 20:
         print("Running stability selection...")
         top_k = model.top_k_idx
@@ -663,8 +750,9 @@ def audit_feature_set(
             )
             Xb = X_train_topk[idx]
             yb = y_gbt_train[idx]
-            m = Lasso(
+            m = ElasticNet(
                 alpha=model.alpha_,
+                l1_ratio=model.l1_ratio_,
                 fit_intercept=True,
                 random_state=42 + b,
                 max_iter=10000,

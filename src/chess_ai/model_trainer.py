@@ -1,7 +1,7 @@
 """Model training utilities for explainable chess engine."""
 
 import warnings
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import chess
 import numpy as np
@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 try:
     from sklearn.exceptions import ConvergenceWarning
-    from sklearn.linear_model import LassoCV
+    from sklearn.linear_model import ElasticNetCV
     from sklearn.preprocessing import StandardScaler
 
     warnings.filterwarnings("ignore", category=ConvergenceWarning, module="sklearn")
@@ -31,13 +31,31 @@ except Exception as e:
 
 
 class PhaseEnsemble:
-    """Phase-aware Lasso regression ensemble for chess evaluation.
+    """Phase-aware ElasticNet regression ensemble for chess evaluation.
 
-    Trains separate models for opening, middlegame, and endgame phases.
-    Falls back to global model if insufficient data for a phase.
+    Trains separate models for opening, middlegame, and endgame phases
+    using ElasticNet (L1+L2 regularisation) instead of pure Lasso.
+    ElasticNet handles correlated chess features (e.g. mobility_us and
+    safe_mobility_us) more stably, keeping groups of related features
+    rather than arbitrarily zeroing one.  Falls back to a global model
+    if insufficient data for a phase.
     """
 
+    #: L1 ratio values explored during cross-validation.
+    #: Includes 1.0 (pure Lasso) so the CV can recover the old
+    #: behaviour when appropriate.
+    L1_RATIOS = [0.3, 0.5, 0.7, 0.9, 1.0]
+
     def __init__(self, feature_names, alphas, cv_folds, max_iter):
+        """Initialise the ensemble with hyper-parameter search grids.
+
+        Args:
+            feature_names: Ordered list of feature names matching
+                the columns of the training matrix.
+            alphas: Regularisation strengths to try during CV.
+            cv_folds: Number of cross-validation folds.
+            max_iter: Maximum coordinate-descent iterations.
+        """
         self.feature_names = feature_names
         self.phase_idx = (
             feature_names.index("phase") if "phase" in feature_names else -1
@@ -50,7 +68,7 @@ class PhaseEnsemble:
         self.scaler = None
 
     def get_phase(self, x):
-        """Get phase for a feature vector."""
+        """Get game phase for a feature vector."""
         if self.phase_idx == -1:
             return "middlegame"
         p = x[self.phase_idx]
@@ -60,15 +78,29 @@ class PhaseEnsemble:
             return "middlegame"
         return "endgame"
 
-    def fit(self, X, y):
-        """Train phase-specific models."""
-        # Train global model backup
-        self.global_model = LassoCV(
+    def _make_model(self):
+        """Create a fresh ElasticNetCV with the ensemble's search grid.
+
+        Factored out so that both the global and per-phase models are
+        constructed consistently.
+        """
+        return ElasticNetCV(
             cv=self.cv_folds,
             random_state=42,
             max_iter=self.max_iter,
             alphas=self.alphas,
+            l1_ratio=self.L1_RATIOS,
         )
+
+    def fit(self, X, y):
+        """Train phase-specific models.
+
+        A global model is always trained as a fallback.  Per-phase
+        models are only trained when the phase has enough samples
+        for reliable cross-validation.
+        """
+        # Train global model backup
+        self.global_model = self._make_model()
         self.global_model.fit(X, y)
 
         # Train phase-specific models
@@ -76,12 +108,7 @@ class PhaseEnsemble:
         for p_name in ["opening", "middlegame", "endgame"]:
             idx = [i for i, p in enumerate(phases) if p == p_name]
             if len(idx) > self.cv_folds * 2:
-                m = LassoCV(
-                    cv=self.cv_folds,
-                    random_state=42,
-                    max_iter=self.max_iter,
-                    alphas=self.alphas,
-                )
+                m = self._make_model()
                 m.fit(X[idx], y[idx])
                 self.models[p_name] = m
             else:
@@ -156,7 +183,10 @@ def train_surrogate_model(
         Tuple of (PhaseEnsemble model, StandardScaler, feature_names)
     """
     print("Collecting move deltas for training...")
-    feature_names = None
+    # Use a canonical (union) feature set so that features appearing
+    # in only some positions are kept rather than silently dropped.
+    # Missing values are filled with 0.0 during matrix construction.
+    _seen_features: Dict[str, None] = {}
     X = []
     y: List[float] = []
 
@@ -220,11 +250,9 @@ def train_surrogate_model(
                 except Exception:
                     pass
 
-                # Collect feature names from first sample
-                if feature_names is None:
-                    feature_names = list(after_reply_feats.keys())
-                else:
-                    feature_names = [k for k in feature_names if k in after_reply_feats]
+                for k in after_reply_feats:
+                    if k not in _seen_features:
+                        _seen_features[k] = None
 
                 X.append(after_reply_feats)
                 y.append(delta_eval)
@@ -233,7 +261,7 @@ def train_surrogate_model(
             b.pop()
 
     # Prepare data
-    feature_names = feature_names or []
+    feature_names: List[str] = list(_seen_features.keys())
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )

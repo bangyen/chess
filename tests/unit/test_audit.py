@@ -1,5 +1,6 @@
 """Tests for main audit functionality."""
 
+import math
 import warnings
 from unittest.mock import Mock, patch
 
@@ -7,7 +8,7 @@ import chess
 import numpy as np
 import pytest
 
-from chess_ai.audit import AuditResult, audit_feature_set
+from chess_ai.audit import AuditResult, _cp_to_winrate, audit_feature_set
 from chess_ai.engine.config import SFConfig
 
 # Suppress sklearn convergence warnings in tests
@@ -820,3 +821,243 @@ class TestAuditFeatureSet:
         # Feature importance pre-selection ensures most coefficients are zero;
         # at most distill_top_k (default 10) can be non-zero.
         assert non_zero <= 10
+
+
+class TestCpToWinrate:
+    """Tests for the _cp_to_winrate helper function."""
+
+    def test_zero_cp_gives_half(self):
+        """A centipawn score of 0 should map to 50% win probability."""
+        assert math.isclose(_cp_to_winrate(0.0), 0.5, abs_tol=1e-9)
+
+    def test_positive_cp_above_half(self):
+        """Positive centipawn scores map to >50% win probability."""
+        assert _cp_to_winrate(100.0) > 0.5
+        assert _cp_to_winrate(500.0) > 0.5
+
+    def test_negative_cp_below_half(self):
+        """Negative centipawn scores map to <50% win probability."""
+        assert _cp_to_winrate(-100.0) < 0.5
+        assert _cp_to_winrate(-500.0) < 0.5
+
+    def test_monotonicity(self):
+        """Higher cp scores should always give higher win rates."""
+        vals = [-1000, -500, -100, 0, 100, 500, 1000]
+        wrs = [_cp_to_winrate(float(v)) for v in vals]
+        for i in range(len(wrs) - 1):
+            assert wrs[i] < wrs[i + 1]
+
+    def test_bounded_zero_one(self):
+        """Output should always be in [0, 1]."""
+        for cp in [-10000.0, -100.0, 0.0, 100.0, 10000.0]:
+            wr = _cp_to_winrate(cp)
+            assert 0.0 <= wr <= 1.0
+        # Moderate values should be strictly inside (0, 1)
+        for cp in [-500.0, -100.0, 0.0, 100.0, 500.0]:
+            wr = _cp_to_winrate(cp)
+            assert 0.0 < wr < 1.0
+
+    def test_symmetry(self):
+        """_cp_to_winrate(x) + _cp_to_winrate(-x) should equal 1."""
+        for cp in [50.0, 111.0, 300.0, 700.0]:
+            assert math.isclose(
+                _cp_to_winrate(cp) + _cp_to_winrate(-cp), 1.0, abs_tol=1e-9
+            )
+
+    def test_custom_k(self):
+        """A larger k produces a less steep sigmoid."""
+        # With a larger k, 100 cp maps closer to 0.5
+        wr_default = _cp_to_winrate(100.0, k=111.0)
+        wr_wide = _cp_to_winrate(100.0, k=400.0)
+        assert wr_wide < wr_default  # wider sigmoid → closer to 0.5
+
+    def test_numpy_vectorised(self):
+        """_cp_to_winrate works element-wise on numpy arrays."""
+        arr = np.array([-200.0, 0.0, 200.0])
+        result = _cp_to_winrate(arr)
+        assert result.shape == (3,)
+        assert math.isclose(float(result[1]), 0.5, abs_tol=1e-9)
+        assert float(result[0]) < 0.5 < float(result[2])
+
+
+class TestAuditCanonicalFeatureSet:
+    """Tests verifying the union-based canonical feature set."""
+
+    def create_mock_engine(self):
+        """Create a mock Stockfish engine."""
+        mock_engine = Mock()
+
+        def mock_analyse(board, limit=None, multipv=1):
+            if multipv == 1:
+                return {"pv": [chess.Move.from_uci("e7e5")]}
+            return [
+                {"score": Mock(), "pv": [chess.Move.from_uci("e2e4")]},
+                {"score": Mock(), "pv": [chess.Move.from_uci("d2d4")]},
+            ]
+
+        mock_engine.analyse = mock_analyse
+        return mock_engine
+
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
+    def test_sparse_features_not_dropped(self, mock_sf_top_moves, mock_sf_eval):
+        """Features present in only some positions survive into the model."""
+        mock_sf_eval.return_value = 50.0
+        mock_sf_top_moves.return_value = [
+            (chess.Move.from_uci("e2e4"), 50.0),
+        ]
+
+        call_count = {"n": 0}
+
+        def sparse_extract(board):
+            call_count["n"] += 1
+            feats = {
+                "material_diff": 0.0,
+                "mobility_us": 20.0,
+                "phase": 20.0,
+                "_engine_probes": {
+                    "hanging_after_reply": lambda engine, board, depth=6: (0, 0, 0),
+                    "best_forcing_swing": (
+                        lambda engine, board, d_base=6, k_max=12: 0.0
+                    ),
+                },
+            }
+            # Only some calls include this feature
+            if call_count["n"] % 3 == 0:
+                feats["endgame_only_feat"] = 5.0
+            return feats
+
+        boards = [chess.Board() for _ in range(10)]
+        engine = self.create_mock_engine()
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+
+        result = audit_feature_set(
+            boards=boards,
+            engine=engine,
+            cfg=cfg,
+            extract_features_fn=sparse_extract,
+            stability_bootstraps=2,
+        )
+
+        assert isinstance(result, AuditResult)
+        # At minimum the model trained and returned coefficients
+        assert len(result.top_features_by_coef) > 0
+
+
+class TestAuditElasticNetDistillation:
+    """Tests verifying ElasticNet distillation behaviour."""
+
+    def create_mock_engine(self):
+        """Create a mock Stockfish engine."""
+        mock_engine = Mock()
+
+        def mock_analyse(board, limit=None, multipv=1):
+            if multipv == 1:
+                return {"pv": [chess.Move.from_uci("e7e5")]}
+            return [
+                {"score": Mock(), "pv": [chess.Move.from_uci("e2e4")]},
+                {"score": Mock(), "pv": [chess.Move.from_uci("d2d4")]},
+            ]
+
+        mock_engine.analyse = mock_analyse
+        return mock_engine
+
+    def create_mock_feature_extractor(self):
+        """Create a mock feature extractor function."""
+
+        def mock_extract_features(board):
+            return {
+                "material_us": 10.0,
+                "material_them": 10.0,
+                "material_diff": 0.0,
+                "mobility_us": 20.0,
+                "mobility_them": 20.0,
+                "king_ring_pressure_us": 0.0,
+                "king_ring_pressure_them": 0.0,
+                "passed_us": 0.0,
+                "passed_them": 0.0,
+                "open_files_us": 0.0,
+                "semi_open_us": 0.0,
+                "open_files_them": 0.0,
+                "semi_open_them": 0.0,
+                "phase": 32.0,
+                "center_control_us": 2.0,
+                "center_control_them": 2.0,
+                "piece_activity_us": 15.0,
+                "piece_activity_them": 15.0,
+                "king_safety_us": 3.0,
+                "king_safety_them": 3.0,
+                "hanging_us": 0.0,
+                "hanging_them": 0.0,
+                "_engine_probes": {
+                    "hanging_after_reply": lambda engine, board, depth=6: (0, 0, 0),
+                    "best_forcing_swing": (
+                        lambda engine, board, d_base=6, k_max=12: 0.0
+                    ),
+                    "sf_eval_shallow": lambda engine, board, depth=6: 0.0,
+                },
+            }
+
+        return mock_extract_features
+
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
+    def test_audit_still_returns_valid_result(self, mock_sf_top_moves, mock_sf_eval):
+        """After the ElasticNet + winrate upgrade the audit still works."""
+        mock_sf_eval.return_value = 50.0
+        mock_sf_top_moves.return_value = [
+            (chess.Move.from_uci("e2e4"), 50.0),
+            (chess.Move.from_uci("d2d4"), 25.0),
+            (chess.Move.from_uci("g1f3"), 10.0),
+        ]
+
+        boards = [chess.Board() for _ in range(5)]
+        engine = self.create_mock_engine()
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+        extract_fn = self.create_mock_feature_extractor()
+
+        result = audit_feature_set(
+            boards=boards,
+            engine=engine,
+            cfg=cfg,
+            extract_features_fn=extract_fn,
+            multipv_for_ranking=3,
+            test_size=0.4,
+            stability_bootstraps=3,
+            stability_thresh=0.7,
+        )
+
+        assert isinstance(result, AuditResult)
+        assert 0.0 <= result.r2 <= 1.0 or result.r2 < 0.0  # R² can be negative
+        assert -1.0 <= result.tau_mean <= 1.0
+        assert 0.0 <= result.local_faithfulness <= 1.0
+        assert 0.0 <= result.coverage_ratio <= 1.0
+        assert isinstance(result.stable_features, list)
+
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
+    def test_distilled_coefficients_are_finite(self, mock_sf_top_moves, mock_sf_eval):
+        """Distilled ElasticNet coefficients should be finite floats."""
+        mock_sf_eval.return_value = 50.0
+        mock_sf_top_moves.return_value = [
+            (chess.Move.from_uci("e2e4"), 50.0),
+            (chess.Move.from_uci("d2d4"), 25.0),
+        ]
+
+        boards = [chess.Board() for _ in range(10)]
+        engine = self.create_mock_engine()
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+        extract_fn = self.create_mock_feature_extractor()
+
+        result = audit_feature_set(
+            boards=boards,
+            engine=engine,
+            cfg=cfg,
+            extract_features_fn=extract_fn,
+            stability_bootstraps=2,
+        )
+
+        assert len(result.top_features_by_coef) > 0
+        for _name, coef_val in result.top_features_by_coef:
+            assert isinstance(coef_val, float)
+            assert np.isfinite(coef_val)

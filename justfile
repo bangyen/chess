@@ -38,6 +38,10 @@ web:
     echo "Starting chess AI web dashboard..."
     {{PYTHON}} -m chess_ai.web.app
 
+# build the Rust extension module via maturin (dev mode)
+build:
+    {{PYTHON}} -m maturin develop --release
+
 # run all checks (fmt, lint, type, test)
 all: fmt lint type test
     echo "All checks completed!"

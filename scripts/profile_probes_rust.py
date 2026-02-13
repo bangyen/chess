@@ -29,6 +29,13 @@ def profile_rust_vs_python():
     rust_time_4 = (time.time() - start) / 20
     print(f"Rust find_best_reply (depth 4): {rust_time_4*1000:.3f} ms")
 
+    start = time.time()
+    for _ in range(5):
+        # Depth 6 with ID + move ordering
+        find_best_reply(board.fen(), 6)
+    rust_time_6 = (time.time() - start) / 5
+    print(f"Rust find_best_reply (depth 6): {rust_time_6*1000:.3f} ms")
+
     # 2. Profile Stockfish Overhead (Simulated)
     # We can't easily profile internal baseline function without modifying it,
     # but we can profile a raw engine call.

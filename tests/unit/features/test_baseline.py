@@ -215,9 +215,7 @@ class TestBaselineFeatures:
         assert math.isclose(features["see_advantage_us"], 0.0, abs_tol=1e-6)
         assert math.isclose(features["see_advantage_them"], 0.0, abs_tol=1e-6)
         assert math.isclose(features["see_vulnerability_us"], 0.0, abs_tol=1e-6)
-        assert math.isclose(
-            features["see_vulnerability_them"], 0.0, abs_tol=1e-6
-        )
+        assert math.isclose(features["see_vulnerability_them"], 0.0, abs_tol=1e-6)
 
     def test_see_undefended_piece(self):
         """An undefended knight should give the opponent positive SEE
@@ -230,13 +228,13 @@ class TestBaselineFeatures:
         features = baseline_extract_features(board)
 
         # White (us) can profitably capture the knight.
-        assert features["see_advantage_us"] > 0, (
-            "White should have positive SEE advantage (can capture knight)"
-        )
+        assert (
+            features["see_advantage_us"] > 0
+        ), "White should have positive SEE advantage (can capture knight)"
         # Black's knight is vulnerable.
-        assert features["see_vulnerability_them"] >= 1.0, (
-            "Black should have at least 1 vulnerable piece"
-        )
+        assert (
+            features["see_vulnerability_them"] >= 1.0
+        ), "Black should have at least 1 vulnerable piece"
 
     def test_see_defended_piece_no_advantage(self):
         """A pawn-defended knight should yield no SEE advantage for
@@ -284,9 +282,9 @@ class TestBaselineFeatures:
         feats_corner = baseline_extract_features(board_corner)
 
         # In endgame PST, a centralized king scores higher
-        assert feats_central["pst_us"] > feats_corner["pst_us"], (
-            "Centralized king should have higher PST than corner king in endgame"
-        )
+        assert (
+            feats_central["pst_us"] > feats_corner["pst_us"]
+        ), "Centralized king should have higher PST than corner king in endgame"
 
     # ── Pawn structure cache consistency tests ───────────────────────
 
@@ -311,6 +309,6 @@ class TestBaselineFeatures:
             "pawn_chain_them",
         ]
         for key in pawn_keys:
-            assert math.isclose(f1[key], f2[key], abs_tol=1e-6), (
-                f"{key} changed between calls: {f1[key]} vs {f2[key]}"
-            )
+            assert math.isclose(
+                f1[key], f2[key], abs_tol=1e-6
+            ), f"{key} changed between calls: {f1[key]} vs {f2[key]}"

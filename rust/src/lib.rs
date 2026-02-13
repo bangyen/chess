@@ -42,6 +42,7 @@ fn evaluate(pos: &Chess) -> i32 {
 }
 
 // Simple alpha-beta search
+// Simple alpha-beta search
 fn alpha_beta(pos: &Chess, mut alpha: i32, beta: i32, depth: u8) -> i32 {
     if depth == 0 || pos.is_game_over() {
         return evaluate(pos);
@@ -56,8 +57,25 @@ fn alpha_beta(pos: &Chess, mut alpha: i32, beta: i32, depth: u8) -> i32 {
         }
     }
 
-    // Move ordering would go here, but omitted for simplicity
-    for m in moves {
+    // Move ordering: MVV-LVA for captures, Promotions high priority
+    let mut move_scores: Vec<(i32, Move)> = moves.into_iter().map(|m| {
+        let mut score = 0;
+        if m.is_capture() {
+            let board = pos.board();
+            let victim = board.piece_at(m.to()).map(|p| p.role).unwrap_or(Role::Pawn);
+            let attacker = board.piece_at(m.from().unwrap()).map(|p| p.role).unwrap_or(Role::Pawn);
+            score = 10000 + piece_value(victim) - piece_value(attacker);
+        }
+        if m.is_promotion() {
+            score += 20000;
+        }
+        (score, m)
+    }).collect();
+
+    // Sort descending by score
+    move_scores.sort_by(|a, b| b.0.cmp(&a.0));
+
+    for (_, m) in move_scores {
         let mut new_pos = pos.clone();
         new_pos.play_unchecked(m.clone());
         
@@ -83,25 +101,68 @@ fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
         return Ok(None);
     }
 
-    let mut best_move: Option<String> = None;
-    let mut best_score = -50000;
-    let mut alpha = -50000;
-    let beta = 50000;
+    // Initial move ordering (captures/promotions)
+    let mut root_moves: Vec<(i32, Move)> = moves.into_iter().map(|m| {
+        let mut score = 0;
+        if m.is_capture() {
+            let board = pos.board();
+            let victim = board.piece_at(m.to()).map(|p| p.role).unwrap_or(Role::Pawn);
+            let attacker = board.piece_at(m.from().unwrap()).map(|p| p.role).unwrap_or(Role::Pawn);
+            score = 10000 + piece_value(victim) - piece_value(attacker);
+        }
+        if m.is_promotion() {
+            score += 20000;
+        }
+        (score, m)
+    }).collect();
 
-    for m in moves {
-        let mut new_pos = pos.clone();
-        new_pos.play_unchecked(m.clone());
+    // Sort descending
+    root_moves.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let mut best_move: Option<String> = None;
+    
+    // Iterative Deepening
+    // For depth 1 to requested_depth
+    for d in 1..=depth {
+        let mut alpha = -50000;
+        let beta = 50000;
+        let mut best_score_at_depth = -50000;
         
-        let score = -alpha_beta(&new_pos, -beta, -alpha, depth - 1);
+        // We will re-sort root_moves based on scores from this iteration
+        // to improve ordering for the next hydration.
+        // Actually, preventing re-allocation is better, but for simplicity we'll just update scores.
         
-        if score > best_score {
-            best_score = score;
-            // Convert to UCI string
-            best_move = Some(m.to_uci(CastlingMode::Standard).to_string());
+        for (score_ref, m) in root_moves.iter_mut() {
+            let mut new_pos = pos.clone();
+            new_pos.play_unchecked(m.clone());
+            
+            let score = -alpha_beta(&new_pos, -beta, -alpha, d - 1);
+            
+            // Update the score associated with this move (for sorting next iteration)
+            *score_ref = score;
+            
+            if score > best_score_at_depth {
+                best_score_at_depth = score;
+                if d == depth {
+                    best_move = Some(m.to_uci(CastlingMode::Standard).to_string());
+                }
+            }
+            if score > alpha {
+                alpha = score;
+            }
         }
-        if score > alpha {
-            alpha = score;
-        }
+        
+        // Sort for next iteration (best moves first)
+        root_moves.sort_by(|a, b| b.0.cmp(&a.0));
+    }
+    
+    // If we didn't complete the loop (unlikely with this logic unless depth=0), best_move might be None if depth=0.
+    // But legal_moves is not empty.
+    // If depth passed is 0, we return None or just any move? 
+    // The loop 1..=0 is empty.
+    // Let's handle depth 0 or just ensure we return the first move if loop doesn't run.
+    if best_move.is_none() && !root_moves.is_empty() {
+        best_move = Some(root_moves[0].1.to_uci(CastlingMode::Standard).to_string());
     }
 
     Ok(best_move)

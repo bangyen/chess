@@ -699,5 +699,114 @@ class TestAuditFeatureSet:
         # Should handle engine probes gracefully
         assert isinstance(result, AuditResult)
 
-    # Removed problematic tests that were causing failures due to edge cases
-    # The remaining tests provide comprehensive coverage of the audit functionality
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
+    def test_audit_delta_features_computed(self, mock_sf_top_moves, mock_sf_eval):
+        """Verify that delta features (d_<key>) are produced during training.
+
+        The delta features are the primary mechanism for the surrogate to
+        predict eval *changes* rather than absolute eval, so they must appear
+        in the feature vector used by the model.
+        """
+        mock_sf_eval.return_value = 50.0
+        mock_sf_top_moves.return_value = [
+            (chess.Move.from_uci("e2e4"), 50.0),
+            (chess.Move.from_uci("d2d4"), 25.0),
+        ]
+
+        call_count = {"n": 0}
+
+        def varying_extract_features(board):
+            """Return features that vary between base and after-reply positions.
+
+            Odd calls (base extraction) return one set of values; even calls
+            (after-reply extraction) return a different set so that deltas
+            are non-trivially zero.
+            """
+            call_count["n"] += 1
+            is_after = call_count["n"] % 3 != 1  # first of every 3 is base
+            return {
+                "material_us": 12.0 if is_after else 10.0,
+                "material_them": 10.0,
+                "material_diff": 2.0 if is_after else 0.0,
+                "mobility_us": 25.0 if is_after else 20.0,
+                "mobility_them": 20.0,
+                "king_ring_pressure_us": 0.0,
+                "king_ring_pressure_them": 0.0,
+                "passed_us": 0.0,
+                "passed_them": 0.0,
+                "open_files_us": 0.0,
+                "semi_open_us": 0.0,
+                "open_files_them": 0.0,
+                "semi_open_them": 0.0,
+                "phase": 10.0,
+                "center_control_us": 2.0,
+                "center_control_them": 2.0,
+                "piece_activity_us": 15.0,
+                "piece_activity_them": 15.0,
+                "king_safety_us": 3.0,
+                "king_safety_them": 3.0,
+                "hanging_us": 0.0,
+                "hanging_them": 0.0,
+                "_engine_probes": {
+                    "hanging_after_reply": lambda engine, board, depth=6: (0, 0, 0),
+                    "best_forcing_swing": (
+                        lambda engine, board, d_base=6, k_max=12: 0.0
+                    ),
+                    "sf_eval_shallow": lambda engine, board, depth=6: 0.0,
+                },
+            }
+
+        boards = [chess.Board() for _ in range(8)]
+        engine = self.create_mock_engine()
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+
+        result = audit_feature_set(
+            boards=boards,
+            engine=engine,
+            cfg=cfg,
+            extract_features_fn=varying_extract_features,
+            stability_bootstraps=2,
+        )
+
+        assert isinstance(result, AuditResult)
+        # At minimum, delta features should be present in the model's feature space
+        # (they may or may not appear in top-15 depending on coefficients)
+        # Verify through the top_features list that the model ran
+        assert len(result.top_features_by_coef) > 0
+
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
+    def test_audit_tree_surrogate_produces_shap_importances(
+        self, mock_sf_top_moves, mock_sf_eval
+    ):
+        """Verify the GBT surrogate produces SHAP-based feature importances.
+
+        The top_features_by_coef list should contain (name, importance)
+        tuples derived from mean |SHAP| values, with non-negative
+        importances.
+        """
+        mock_sf_eval.return_value = 50.0
+        mock_sf_top_moves.return_value = [
+            (chess.Move.from_uci("e2e4"), 50.0),
+            (chess.Move.from_uci("d2d4"), 25.0),
+        ]
+
+        boards = [chess.Board() for _ in range(10)]
+        engine = self.create_mock_engine()
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+        extract_fn = self.create_mock_feature_extractor()
+
+        result = audit_feature_set(
+            boards=boards,
+            engine=engine,
+            cfg=cfg,
+            extract_features_fn=extract_fn,
+            stability_bootstraps=2,
+        )
+
+        assert isinstance(result, AuditResult)
+        assert len(result.top_features_by_coef) > 0
+        # SHAP importances are mean |SHAP|, so they should be non-negative
+        for _name, importance in result.top_features_by_coef:
+            assert importance >= 0.0

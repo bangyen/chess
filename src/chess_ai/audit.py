@@ -21,6 +21,7 @@ from .metrics.positional import (
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 try:
+    from sklearn.ensemble import HistGradientBoostingRegressor
     from sklearn.exceptions import ConvergenceWarning
     from sklearn.linear_model import Lasso, LassoCV
     from sklearn.metrics import r2_score
@@ -34,6 +35,16 @@ try:
 except Exception:
     print(
         "scikit-learn is required. Install with: pip install scikit-learn",
+        file=sys.stderr,
+    )
+    raise
+
+try:
+    import shap
+except Exception:
+    print(
+        "shap is required for SHAP-based explanations. "
+        "Install with: pip install shap",
         file=sys.stderr,
     )
     raise
@@ -108,6 +119,14 @@ def audit_feature_set(
         # Store base board for delta computation
         base_board = b.copy()
 
+        # Extract base features once per position for delta computation
+        base_feats_raw = extract_features_fn(base_board)
+        base_feats_raw.pop("_engine_probes", None)
+        base_feats_raw = {
+            k: (1.0 if isinstance(v, bool) and v else float(v))
+            for k, v in base_feats_raw.items()
+        }
+
         # Get top moves from Stockfish
         top_moves = sf_top_moves(engine, b, cfg)
 
@@ -176,6 +195,13 @@ def audit_feature_set(
                 conf_delta = confinement_delta(base_board, b)
                 after_reply_feats.update(conf_delta)
 
+                # Compute delta features: d_<key> = after - base
+                for k in base_feats_raw:
+                    if k in after_reply_feats:
+                        after_reply_feats[f"d_{k}"] = (
+                            after_reply_feats[k] - base_feats_raw[k]
+                        )
+
                 # Calculate delta features
                 if feature_names is None:
                     feature_names = list(after_reply_feats.keys())
@@ -183,8 +209,9 @@ def audit_feature_set(
                     # keep common keys only
                     feature_names = [k for k in feature_names if k in after_reply_feats]
 
-                # For delta training, we use the after-reply features directly
-                # (they represent the change from the base state)
+                # Features include both a handful of absolute values (phase,
+                # material) and d_<key> deltas that capture the positional
+                # change caused by the move+reply sequence.
                 X.append(after_reply_feats)
                 y.append(delta_eval)
 
@@ -211,6 +238,12 @@ def audit_feature_set(
         ("king_tropism_us", "phase"),
         ("space_us", "phase"),
         ("doubled_pawns_us", "phase"),
+        # Delta-based interactions
+        ("d_material_diff", "phase"),
+        ("d_threats_us", "phase"),
+        ("d_mobility_us", "phase"),
+        ("d_hanging_them", "phase"),
+        ("d_space_us", "phase"),
     ]
 
     def apply_interactions(feats):
@@ -230,6 +263,21 @@ def audit_feature_set(
             if combined_name not in feature_names:
                 feature_names.append(combined_name)
 
+    # Remove redundant absolute features that have delta counterparts.
+    # Keep a small set of useful absolute features (phase for context,
+    # material_us/them for scale) and all features without delta versions
+    # (engine probes, interaction terms, etc.).
+    _keep_absolute = {"phase", "material_us", "material_them"}
+    _delta_originals = {k[2:] for k in feature_names if k.startswith("d_")}
+    feature_names = [
+        k
+        for k in feature_names
+        if k.startswith("d_")  # keep all delta features
+        or "_x_" in k  # keep all interaction terms
+        or k in _keep_absolute  # keep selected absolute features
+        or k not in _delta_originals  # keep features without a delta counterpart
+    ]
+
     X_mat = np.array(
         [[float(x.get(k, 0.0)) for k in feature_names] for x in X], dtype=float
     )
@@ -245,125 +293,108 @@ def audit_feature_set(
     n_test_boards = max(1, int(len(boards) * test_size))
     B_test = boards[:n_test_boards]
 
-    # 2) Fit linear L1 surrogate (signs are easier to read; you can swap models if you wish)
-    # Normalize features to prevent extreme coefficients
+    # 2) Fit nonlinear surrogate (GBT) with SHAP explanations
+    # Normalize features (GBT is invariant but SHAP baselines and
+    # the side LassoCV for stability selection still benefit).
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Phase-specific model training
-    class PhaseEnsemble:
-        def __init__(self, feature_names, alphas, cv_folds, max_iter):
-            self.feature_names = feature_names
-            self.phase_idx = (
-                feature_names.index("phase") if "phase" in feature_names else -1
-            )
-            self.alphas = alphas
-            self.cv_folds = cv_folds
-            self.max_iter = max_iter
-            self.models = {}  # "opening", "middlegame", "endgame"
-            self.global_model = None
+    class TreeSurrogate:
+        """Gradient-boosted tree surrogate with SHAP-based attributions.
 
-        def get_phase(self, x):
-            if self.phase_idx == -1:
-                return "middlegame"
-            p = x[self.phase_idx]
-            if p > 24:
-                return "opening"
-            if p > 12:
-                return "middlegame"
-            return "endgame"
+        Wraps HistGradientBoostingRegressor for prediction and
+        shap.TreeExplainer for per-sample feature attributions used by
+        the sparsity, coverage, and faithfulness metrics.
+        """
+
+        def __init__(self, n_samples: int = 100):
+            # Adapt GBT complexity to dataset size: use early stopping
+            # only when there are enough samples for a reliable validation
+            # split; otherwise use a fixed, conservative iteration count.
+            use_early = n_samples >= 400
+            gbt_kwargs = {
+                "max_depth": 3,
+                "learning_rate": 0.1,
+                "max_iter": 300 if use_early else 200,
+                "min_samples_leaf": max(5, n_samples // 50),
+                "random_state": 42,
+            }
+            if use_early:
+                gbt_kwargs.update(
+                    early_stopping=True,
+                    validation_fraction=0.15,
+                    n_iter_no_change=20,
+                )
+            else:
+                gbt_kwargs["early_stopping"] = False
+            self.gbt = HistGradientBoostingRegressor(**gbt_kwargs)
+            self._explainer = None
+            self._lasso_alpha: float = 1.0
+            self.mean_abs_shap: np.ndarray = np.zeros(0)
 
         def fit(self, X, y):
-            # Train global model backup
-            self.global_model = LassoCV(
-                cv=self.cv_folds,
-                random_state=42,
-                max_iter=self.max_iter,
-                alphas=self.alphas,
-            )
-            self.global_model.fit(X, y)
+            """Fit the GBT model and build a SHAP explainer."""
+            self.gbt.fit(X, y)
+            self._explainer = shap.TreeExplainer(self.gbt)
 
-            # Train phase-specific models
-            phases = [self.get_phase(x) for x in X]
-            for p_name in ["opening", "middlegame", "endgame"]:
-                idx = [i for i, p in enumerate(phases) if p == p_name]
-                if len(idx) > self.cv_folds * 2:
-                    m = LassoCV(
-                        cv=self.cv_folds,
-                        random_state=42,
-                        max_iter=self.max_iter,
-                        alphas=self.alphas,
-                    )
-                    m.fit(X[idx], y[idx])
-                    self.models[p_name] = m
-                else:
-                    self.models[p_name] = self.global_model
+            # Compute mean |SHAP| over training data for global importance
+            train_shap = self._explainer.shap_values(X)
+            self.mean_abs_shap = np.mean(np.abs(train_shap), axis=0)
+
+            # Side LassoCV fit for stability selection alpha
+            n_samples = X.shape[0]
+            cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
+            alphas = (
+                np.logspace(-4, 2, 30).tolist()
+                if n_samples >= 10
+                else [1.0, 10.0, 100.0]
+            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", module="sklearn")
+                side_lasso = LassoCV(
+                    cv=cv_folds,
+                    alphas=alphas,
+                    random_state=42,
+                    max_iter=10000,
+                )
+                side_lasso.fit(X, y)
+            self._lasso_alpha = float(side_lasso.alpha_)
 
         def predict(self, X):
+            """Predict eval deltas."""
             if len(X.shape) == 1:
-                p_name = self.get_phase(X)
-                return self.models.get(p_name, self.global_model).predict(
-                    X.reshape(1, -1)
-                )
+                return self.gbt.predict(X.reshape(1, -1))
+            return self.gbt.predict(X)
 
-            preds = np.zeros(X.shape[0])
-            for i, x in enumerate(X):
-                p_name = self.get_phase(x)
-                preds[i] = self.models.get(p_name, self.global_model).predict(
-                    x.reshape(1, -1)
-                )[0]
-            return preds
+        def shap_values(self, X):
+            """Compute SHAP values for one or more samples.
 
-        @property
-        def coef_(self):
-            # For simplicity in audit metrics, use middlegame coefficients as primary representative
-            return self.models.get("middlegame", self.global_model).coef_
-
-        def get_contributions(self, features_normalized: np.ndarray) -> np.ndarray:
-            """Get per-feature contributions in centipawns.
-
-            Args:
-                features_normalized: Normalized feature vector
-
-            Returns:
-                Array where contribution[i] = coef[i] × feature_normalized[i]
+            Returns an ndarray of shape (n_features,) for a single sample
+            or (n_samples, n_features) for multiple samples.
             """
-            if len(features_normalized.shape) == 1:
-                phase_name = self.get_phase(features_normalized)
-                model = self.models.get(phase_name, self.global_model)
-                result: np.ndarray = model.coef_ * features_normalized  # type: ignore
-                return result
-            # Multiple vectors
-            contributions: np.ndarray = np.zeros_like(features_normalized)
-            for i, feat_vec in enumerate(features_normalized):
-                phase_name = self.get_phase(feat_vec)
-                model = self.models.get(phase_name, self.global_model)
-                contributions[i] = model.coef_ * feat_vec  # type: ignore
-            return contributions
+            if self._explainer is None:
+                raise RuntimeError("Call fit() before shap_values()")
+            if len(X.shape) == 1:
+                X = X.reshape(1, -1)
+            vals = self._explainer.shap_values(X)
+            if vals.ndim == 2 and vals.shape[0] == 1:
+                return vals[0]
+            return vals
 
         @property
         def alpha_(self):
-            return self.global_model.alpha_
+            """Lasso alpha from the side fit, used by stability selection."""
+            return self._lasso_alpha
 
-    # Use cross-validation with a balanced alpha range
-    n_samples, n_features = X_train.shape
-    if n_samples < 10:
-        alphas = [1.0, 10.0, 100.0]
-        cv_folds = 2
-        max_iter = 1000
-    else:
-        alphas = np.logspace(-2, 2, 20).tolist()
-        cv_folds = max(2, min(5, n_samples // 10))
-        max_iter = 10000
-
-    model = PhaseEnsemble(feature_names, alphas, cv_folds, max_iter)
+    model = TreeSurrogate(n_samples=X_train_scaled.shape[0])
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
         model.fit(X_train_scaled, y_train)
 
-    print(f"Selected global alpha: {model.alpha_:.4f}")
+    print(f"GBT iterations: {model.gbt.n_iter_}")
+    print(f"Side Lasso alpha: {model.alpha_:.4f}")
 
     # Fidelity
     y_pred = model.predict(X_test_scaled)
@@ -395,6 +426,14 @@ def audit_feature_set(
 
         # Store base board for delta computation
         base_board = b.copy()
+
+        # Extract base features once per position for delta computation
+        base_feats_raw = extract_features_fn(base_board)
+        base_feats_raw.pop("_engine_probes", None)
+        base_feats_raw = {
+            k: (1.0 if isinstance(v, bool) and v else float(v))
+            for k, v in base_feats_raw.items()
+        }
 
         for mv, _ in cand:
             # Push the move
@@ -459,6 +498,13 @@ def audit_feature_set(
                 conf_delta = confinement_delta(base_board, b)
                 feats_after_reply.update(conf_delta)
 
+                # Compute delta features: d_<key> = after - base
+                for k in base_feats_raw:
+                    if k in feats_after_reply:
+                        feats_after_reply[f"d_{k}"] = (
+                            feats_after_reply[k] - base_feats_raw[k]
+                        )
+
                 # Add interactions
                 apply_interactions(feats_after_reply)
 
@@ -502,11 +548,10 @@ def audit_feature_set(
     coverage_hits = 0
     coverage_total = 0
 
-    coef = model.coef_
-    abs_coef = np.abs(coef)
+    mean_shap = model.mean_abs_shap
     # define a minimal weight to count a feature toward coverage
     weight_threshold = (
-        np.percentile(abs_coef[abs_coef > 0], 50) if np.any(abs_coef > 0) else 0.0
+        np.percentile(mean_shap[mean_shap > 0], 50) if np.any(mean_shap > 0) else 0.0
     )
 
     for b in tqdm(B_test, desc="Faithfulness analysis"):
@@ -524,6 +569,14 @@ def audit_feature_set(
 
         # Store base board for delta computation
         base_board = b.copy()
+
+        # Extract base features once per position for delta computation
+        base_feats_raw = extract_features_fn(base_board)
+        base_feats_raw.pop("_engine_probes", None)
+        base_feats_raw = {
+            k: (1.0 if isinstance(v, bool) and v else float(v))
+            for k, v in base_feats_raw.items()
+        }
 
         # Evaluate best move → best reply
         b.push(best_mv)
@@ -575,6 +628,11 @@ def audit_feature_set(
 
             conf_delta = confinement_delta(base_board, b)
             f_best.update(conf_delta)
+
+            # Compute delta features: d_<key> = after - base
+            for k in base_feats_raw:
+                if k in f_best:
+                    f_best[f"d_{k}"] = f_best[k] - base_feats_raw[k]
 
             # Add interactions
             apply_interactions(f_best)
@@ -639,6 +697,11 @@ def audit_feature_set(
             conf_delta = confinement_delta(base_board, b)
             f_second.update(conf_delta)
 
+            # Compute delta features: d_<key> = after - base
+            for k in base_feats_raw:
+                if k in f_second:
+                    f_second[f"d_{k}"] = f_second[k] - base_feats_raw[k]
+
             # Add interactions
             apply_interactions(f_second)
 
@@ -651,20 +714,14 @@ def audit_feature_set(
             vec_second = np.zeros(len(feature_names))
         b.pop()
 
-        # Use linear model on after-reply features (delta training)
+        # Predict with GBT and get SHAP attributions
         vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
         vec_second_scaled = scaler.transform(vec_second.reshape(1, -1))
         sur_best = float(model.predict(vec_best_scaled)[0])
         sur_second = float(model.predict(vec_second_scaled)[0])
 
-        # Calculate decisive gap
-        decisive_gap = abs(delta_sf_best - delta_sf_second)
-        # is_decisive = decisive_gap >= 80.0  # Unused for now
-
-        # Signed attribution for faithfulness
-        # Use the best move's features for attribution
-        contrib_best = coef * vec_best  # signed contributions
-        contrib_second = coef * vec_second  # signed contributions
+        # SHAP-based per-sample contributions (additive, sum to prediction)
+        contrib_best = model.shap_values(vec_best_scaled)
 
         # sparsity: count top contributors above a small fraction of total
         def sparsity(contrib):
@@ -685,17 +742,18 @@ def audit_feature_set(
         if sp > 0:
             sparsity_counts.append(sp)
 
-        # coverage: at least 2 features with meaningful weight
+        # coverage: at least 2 features with meaningful global SHAP and
+        # non-zero local SHAP contribution
         strong_feats: int = int(
-            np.sum((np.abs(coef) >= weight_threshold) & (np.abs(contrib_best) > 0))
+            np.sum((mean_shap >= weight_threshold) & (np.abs(contrib_best) > 0))
         )
         coverage_total += 1
         if strong_feats >= 2:
             coverage_hits += 1
 
-        # faithfulness: do the top features (by signed contribution) align with eval direction?
-        # Compare direction of (coef*delta) sum with SF eval diff sign
-        dir_sur = float(np.sum(contrib_best) - np.sum(contrib_second))
+        # faithfulness: does the surrogate rank best > second in the same
+        # direction as Stockfish?  Use prediction difference directly.
+        dir_sur = sur_best - sur_second
         dir_sf = float(delta_sf_best - delta_sf_second)
         if dir_sur * dir_sf > 0:
             faithful_hits += 1
@@ -708,7 +766,7 @@ def audit_feature_set(
     # Calculate decisive faithfulness (gap ≥ 80 cp)
     faithful_decisive_hits = 0
     faithful_decisive_total = 0
-    for b in B_test:
+    for b in tqdm(B_test, desc="Decisive faithfulness"):
         cand = sf_top_moves(engine, b, cfg)
         if len(cand) < 2:
             continue
@@ -825,7 +883,7 @@ def audit_feature_set(
 
     stable_features = [feature_names[i] for i in stable_idx]
     top_features = sorted(
-        [(feature_names[i], float(coef[i])) for i in range(len(feature_names))],
+        [(feature_names[i], float(mean_shap[i])) for i in range(len(feature_names))],
         key=lambda x: -abs(x[1]),
     )[:15]
 

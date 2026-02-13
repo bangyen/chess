@@ -1282,19 +1282,15 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     ]
 
     def pst_value(side):
-        score = 0.0
-        # Phase (0=opening, 1=endgame)
-        # We already have 'phase' feature but need it normalized 0..1?
-        # feats['phase'] is sum of piece counts (~40 max?).
-        # Let's say phase < 15 is endgame.
+        """Phase-interpolated PST score.
 
-        # Current phase feature: sum of Q(9), R(5), B(3), N(3).
-        # Max ~ 9+10+6+6 = 31 * 2 = 62?
-        # feats["phase"] (L164) is count of pieces, not values?
-        # Ah wait, L164: len(pieces)... just counts.
-        # Max pieces = 16 (excluding K, P).
-        # Let's use simple check: if no queens or few pieces => endgame.
-        is_endgame = feats["phase"] < 10  # heuristic
+        Uses a continuous phase factor (0.0 = endgame, 1.0 = opening)
+        to smoothly blend middlegame and endgame king tables, giving
+        more accurate positional scores in transitional positions.
+        """
+        score = 0.0
+        # Continuous phase factor: 14 non-pawn/king pieces = 1.0 (opening).
+        pf = min(feats["phase"] / 14.0, 1.0)
 
         for pt, table in [
             (chess.PAWN, PST_PAWN),
@@ -1306,66 +1302,15 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             if table is None:
                 continue
             for sq in board.pieces(pt, side):
-                # Access table (which is rank-flattened: 0-7 is rank 1)
-                # chess.SQUARES: a1=0, b1=1...
-                # Verify orientation: a1 is index 0.
-                # Table above: Top-left is a8? No, usually a1 is bottom-left.
-                # Standard Python-chess: square 0 is a1.
-                # If valid for White: a1 should be row 7 (index 56)?
-                # Or row 0 (index 0).
-                # Usually printed tables are Rank 8 top.
-                # Let's assume standard array order: index 0 is first element.
-                # If I wrote:
-                # 0, 0...
-                # means the first row of array.
-                # If I map index 0 -> a1.
-                # Then first row of array corresponds to Rank 1.
-                # My tables above:
-                # PAWN: Row 1 (index 0-7) is 0s. (Rank 1). Correct.
-                # Row 2 (index 8-15) is 50s. (Rank 2). This incentivizes start?
-                # Usually Pawns on Rank 2 are 0?
-                # Ah, advanced pawns should be higher.
-                # If 50s are at index 8-15 (Rank 2), that means staying at home is good?
-                # NO. Row 2 in array = Rank 2 on board (if mapped directly).
-                # Wait, usually Rank 7 (promotion) is high.
-                # In my table: Row 7 (index 48-55) is... 5, 10, 10...
-                # Row 8 (index 56-63) is 0.
-                # This seems flipped?
-                # Let's assume the table is VISUAL (rank 8 a top).
-                # Then index 0-7 is Rank 8.
-                # If so, Pawn table row 0 (Rank 8) is 0s (promoted? usually handled by material).
-                # Row 7 (Rank 2) would be the second to last row.
-                # Let's standardize: Visual table (Rank 8 at top).
-                # To map square `sq` (0-63, a1-h8) to visual table index:
-                # Rank 8 is indices 0-7. Rank 1 is 56-63.
-                # sq_rank 7 -> table row 0.
-                # row = 7 - chess.square_rank(sq).
-                # col = chess.square_file(sq).
-                # index = row * 8 + col.
-
-                # For Black: flip rank. sq_rank 7 (Black home) -> table row 7 (visual bottom)?
-                # No, table is "Relative to side".
-                # So for White: Rank 1 is bottom. For Black: Rank 8 is bottom.
-                # If table is Visual (Top=Far, Bottom=Home):
-                # White Home (Rank 1) -> Bottom (Row 7).
-                # Black Home (Rank 8) -> Bottom (Row 7).
-                # So:
-                # visual_row = 7 - relative_rank.
-                # relative_rank = rank if White else 7 - rank.
-                # visual_row = 7 - (rank) [White]
-                # visual_row = 7 - (7 - rank) = rank [Black]
-
                 vis_r = (
                     7 - chess.square_rank(sq)
                     if side == chess.WHITE
                     else chess.square_rank(sq)
                 )
                 vis_c = chess.square_file(sq)
-
                 score += table[vis_r * 8 + vis_c]
 
-        # King
-        table = PST_KING_EG if is_endgame else PST_KING_MG
+        # King: smoothly interpolate between MG and EG tables.
         for sq in board.pieces(chess.KING, side):
             vis_r = (
                 7 - chess.square_rank(sq)
@@ -1373,7 +1318,10 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 else chess.square_rank(sq)
             )
             vis_c = chess.square_file(sq)
-            score += table[vis_r * 8 + vis_c]
+            idx = vis_r * 8 + vis_c
+            mg = PST_KING_MG[idx]
+            eg = PST_KING_EG[idx]
+            score += pf * mg + (1.0 - pf) * eg
 
         return float(score) / 100.0  # Standardize scale
 
@@ -1521,6 +1469,156 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
 
     feats["pawn_chain_us"] = pawn_chain_count(board.turn)
     feats["pawn_chain_them"] = pawn_chain_count(not board.turn)
+
+    # ── SEE (Static Exchange Evaluation) features ─────────────────
+    #
+    # Simulates capture sequences on a target square to determine
+    # net material gain/loss, giving far more accurate tactical
+    # assessment than the binary "attacked and undefended" check.
+
+    _see_piece_values = {
+        chess.PAWN: 100,
+        chess.KNIGHT: 320,
+        chess.BISHOP: 330,
+        chess.ROOK: 500,
+        chess.QUEEN: 900,
+        chess.KING: 20000,
+    }
+
+    # Piece types ordered by ascending value for least-valuable-attacker.
+    _PIECE_ORDER = [
+        chess.PAWN,
+        chess.KNIGHT,
+        chess.BISHOP,
+        chess.ROOK,
+        chess.QUEEN,
+        chess.KING,
+    ]
+
+    def _least_valuable_attacker(sq: int, side: bool) -> Optional[int]:
+        """Return the square of the least-valuable attacker of *sq*
+        belonging to *side*, or ``None`` if there is no attacker.
+
+        Iterates piece types in ascending value order so the first
+        hit is always the cheapest attacker — the standard SEE
+        convention.
+        """
+        for pt in _PIECE_ORDER:
+            attackers = board.attackers(side, sq)
+            for a_sq in attackers:
+                if board.piece_type_at(a_sq) == pt:
+                    return a_sq
+        return None
+
+    def _see(target: int, attacker_sq: int) -> int:
+        """Static Exchange Evaluation for a capture on *target*
+        initiated from *attacker_sq*.
+
+        Simulates alternating least-valuable recaptures and returns
+        the net material gain (positive = winning, negative = losing)
+        from the initial attacker's perspective.
+        """
+        attacker_pt = board.piece_type_at(attacker_sq)
+        victim_pt = board.piece_type_at(target)
+        if attacker_pt is None or victim_pt is None:
+            return 0
+
+        gain = [0] * 33
+        depth = 0
+        gain[0] = _see_piece_values.get(victim_pt, 0)
+        current_val = _see_piece_values.get(attacker_pt, 0)
+        side = board.color_at(attacker_sq)
+        if side is None:
+            return 0
+
+        # Temporarily remove pieces to reveal x-ray attacks.
+        removed: list = [attacker_sq]
+        board.remove_piece_at(attacker_sq)
+        board.set_piece_at(target, chess.Piece(attacker_pt, side))
+
+        while True:
+            depth += 1
+            side = not side
+            gain[depth] = current_val - gain[depth - 1]
+
+            if max(-gain[depth - 1], gain[depth]) < 0:
+                break
+
+            a_sq = _least_valuable_attacker(target, side)
+            if a_sq is None:
+                break
+
+            pt = board.piece_type_at(a_sq)
+            if pt is None:
+                break
+            current_val = _see_piece_values.get(pt, 0)
+            removed.append((a_sq, board.piece_at(a_sq)))
+            board.remove_piece_at(a_sq)
+            board.set_piece_at(target, chess.Piece(pt, side))
+
+        # NOTE: Board state is restored by _see_safe() via board.copy().
+
+        # Propagate backwards
+        while depth > 1:
+            depth -= 1
+            gain[depth - 1] = -(max(-gain[depth - 1], gain[depth]))
+
+        return gain[0]
+
+    def _see_safe(target: int, attacker_sq: int) -> int:
+        """Copy-safe wrapper around SEE that preserves board state."""
+        saved = board.copy()
+        result = _see(target, attacker_sq)
+        # Restore by copying back (board is local to the function).
+        for sq in chess.SQUARES:
+            p = saved.piece_at(sq)
+            if p != board.piece_at(sq):
+                if p is None:
+                    board.remove_piece_at(sq)
+                else:
+                    board.set_piece_at(sq, p)
+        return result
+
+    def see_features(side: bool):
+        """Compute SEE advantage and vulnerability for *side*.
+
+        Returns ``(advantage, vulnerability)`` where advantage is the
+        sum of positive SEE scores (in pawns) for captures our side
+        can initiate, and vulnerability is the count of our pieces
+        that the opponent can profitably capture.
+        """
+        them = not side
+        advantage = 0.0
+        vulnerability = 0.0
+
+        # Advantage: positive-SEE captures we can make.
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if piece and piece.color == them and piece.piece_type != chess.KING:
+                a_sq = _least_valuable_attacker(sq, side)
+                if a_sq is not None:
+                    val = _see_safe(sq, a_sq)
+                    if val > 0:
+                        advantage += val / 100.0
+
+        # Vulnerability: our pieces the opponent can profitably capture.
+        for sq in chess.SQUARES:
+            piece = board.piece_at(sq)
+            if piece and piece.color == side and piece.piece_type != chess.KING:
+                a_sq = _least_valuable_attacker(sq, them)
+                if a_sq is not None:
+                    val = _see_safe(sq, a_sq)
+                    if val > 0:
+                        vulnerability += 1.0
+
+        return advantage, vulnerability
+
+    see_adv_us, see_vuln_us = see_features(board.turn)
+    see_adv_them, see_vuln_them = see_features(not board.turn)
+    feats["see_advantage_us"] = see_adv_us
+    feats["see_advantage_them"] = see_adv_them
+    feats["see_vulnerability_us"] = see_vuln_us
+    feats["see_vulnerability_them"] = see_vuln_them
 
     # Add engine probes (callables)
     feats["_engine_probes"] = {

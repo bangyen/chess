@@ -1,3 +1,10 @@
+"""Benchmark Python-side feature extraction and engine probes.
+
+Measures the wall-clock cost of ``baseline_extract_features`` plus the
+``hanging_after_reply`` and ``best_forcing_swing`` Stockfish probes so
+developers can spot regressions in the extraction pipeline.
+"""
+
 import time
 
 import chess
@@ -6,7 +13,8 @@ import chess.engine
 from chess_ai.features.baseline import baseline_extract_features
 
 
-def profile_probes():
+def profile_probes() -> None:
+    """Run repeated extraction + probe cycles and print timing stats."""
     board = chess.Board()
 
     try:

@@ -42,6 +42,27 @@ web:
 build:
     {{PYTHON}} -m maturin develop --release
 
+# run explainability audit against Stockfish (default: 400 positions, depth 16)
+audit *ARGS:
+    {{PYTHON}} -m chess_ai.cli.audit --engine "$(command -v stockfish)" --baseline_features {{ARGS}}
+
+# compare audit metrics between two commits (pass --positions/--depth/--threads to override)
+benchmark OLD NEW *ARGS:
+    {{PYTHON}} scripts/benchmark_commits.py {{OLD}} {{NEW}} {{ARGS}}
+
+# profile Rust and Python feature-extraction probes
+profile:
+    {{PYTHON}} scripts/profile_probes_rust.py
+    {{PYTHON}} scripts/benchmark_python_probes.py
+
+# download Syzygy 3/4/5-piece tablebase files
+fetch-syzygy:
+    {{PYTHON}} scripts/fetch_syzygy.py
+
+# verify Syzygy tablebase integration on known endgames
+verify-syzygy:
+    {{PYTHON}} scripts/verify_syzygy_endgames.py
+
 # run all checks (fmt, lint, type, test)
 all: fmt lint type test
     echo "All checks completed!"

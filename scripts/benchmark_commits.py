@@ -1,9 +1,9 @@
 """Compare explainability-audit metrics across two git commits.
 
 Automates: checkout → build Rust extension → run audit → parse metrics → restore.
-The dominant cost is Stockfish analysis (~4,500 depth-16 calls per audit).
-Use ``--quick`` for a fast smoke-test (≈3 min) or tune ``--depth`` / ``--threads``
-to trade accuracy for speed.
+The dominant cost is Stockfish analysis, so the defaults (100 positions, depth 12,
+multi-threaded) are tuned for fast iteration (~3 min).  Override with
+``--positions``, ``--depth``, or ``--threads`` when you need higher fidelity.
 """
 
 import argparse
@@ -51,8 +51,10 @@ def run_audit(
     Streams stderr (tqdm progress bars) to the terminal in real time
     while capturing stdout for metric parsing.
     """
-    print(f"  Running audit on {commit[:8]}  "
-          f"(positions={positions}, depth={depth}, threads={threads})")
+    print(
+        f"  Running audit on {commit[:8]}  "
+        f"(positions={positions}, depth={depth}, threads={threads})"
+    )
     cmd = (
         f"uv run python -m chess_ai.cli.audit "
         f"--engine {engine} "
@@ -118,22 +120,31 @@ def main():
     parser.add_argument("old_commit", help="Baseline commit hash/ref")
     parser.add_argument("new_commit", help="Candidate commit hash/ref")
 
-    # Tuning knobs ----------------------------------------------------------
+    cpu_count = os.cpu_count() or 2
+
     parser.add_argument(
-        "--positions", type=int, default=None,
-        help="Number of positions to test (default: 400, or 100 with --quick)",
+        "--positions",
+        type=int,
+        default=100,
+        help="Number of positions to test (default: 100)",
     )
     parser.add_argument(
-        "--seed", type=int, default=42,
+        "--seed",
+        type=int,
+        default=42,
         help="Random seed for reproducibility",
     )
     parser.add_argument(
-        "--depth", type=int, default=None,
-        help="Stockfish search depth (default: 16, or 12 with --quick)",
+        "--depth",
+        type=int,
+        default=12,
+        help="Stockfish search depth (default: 12)",
     )
     parser.add_argument(
-        "--threads", type=int, default=None,
-        help="Stockfish threads (default: 1, or half your CPUs with --quick)",
+        "--threads",
+        type=int,
+        default=max(1, cpu_count // 2),
+        help=f"Stockfish threads (default: {max(1, cpu_count // 2)})",
     )
     parser.add_argument(
         "--engine",
@@ -141,23 +152,12 @@ def main():
         or "/opt/homebrew/bin/stockfish",
         help="Path to Stockfish engine",
     )
-    parser.add_argument(
-        "--quick", action="store_true",
-        help="Fast smoke-test preset: 100 positions, depth 12, multi-threaded",
-    )
 
     args = parser.parse_args()
 
-    # Apply --quick defaults, then let explicit flags override ---------------
-    cpu_count = os.cpu_count() or 2
-    if args.quick:
-        positions = args.positions if args.positions is not None else 100
-        depth = args.depth if args.depth is not None else 12
-        threads = args.threads if args.threads is not None else max(1, cpu_count // 2)
-    else:
-        positions = args.positions if args.positions is not None else 400
-        depth = args.depth if args.depth is not None else 16
-        threads = args.threads if args.threads is not None else 1
+    positions = args.positions
+    depth = args.depth
+    threads = args.threads
 
     check_clean_state()
 
@@ -165,9 +165,9 @@ def main():
     original_commit = get_current_commit()
 
     print(f"Starting benchmark: {args.old_commit} vs {args.new_commit}")
-    print(f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}")
-    if args.quick:
-        print("  (--quick mode)")
+    print(
+        f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}"
+    )
     print()
 
     wall_start = time.monotonic()
@@ -180,7 +180,12 @@ def main():
         run_command("uv run maturin develop --release", check=False)
         t0 = time.monotonic()
         new_output = run_audit(
-            args.new_commit, positions, args.seed, args.engine, depth, threads,
+            args.new_commit,
+            positions,
+            args.seed,
+            args.engine,
+            depth,
+            threads,
         )
         new_elapsed = time.monotonic() - t0
         new_metrics = parse_metrics(new_output)
@@ -193,7 +198,12 @@ def main():
         run_command("uv run maturin develop --release", check=False)
         t0 = time.monotonic()
         old_output = run_audit(
-            args.old_commit, positions, args.seed, args.engine, depth, threads,
+            args.old_commit,
+            positions,
+            args.seed,
+            args.engine,
+            depth,
+            threads,
         )
         old_elapsed = time.monotonic() - t0
         old_metrics = parse_metrics(old_output)
@@ -214,7 +224,9 @@ def main():
     # Print comparison -------------------------------------------------------
     wall_total = time.monotonic() - wall_start
     print(f"\n=== Benchmark Comparison  (total {fmt_elapsed(wall_total)}) ===")
-    print(f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}")
+    print(
+        f"  positions={positions}  depth={depth}  threads={threads}  seed={args.seed}"
+    )
     print(f"{'Metric':<30} | {'Old':<10} | {'New':<10} | {'Delta':<10}")
     print("-" * 70)
 

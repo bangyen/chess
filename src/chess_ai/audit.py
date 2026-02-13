@@ -353,6 +353,7 @@ def audit_feature_set(
             self._distill_top_k = distill_top_k
             self.feature_importances: np.ndarray = np.zeros(0)
             self.distilled_coef: np.ndarray = np.zeros(0)
+            self.top_k_idx: np.ndarray = np.zeros(0, dtype=int)
 
         def fit(self, X, y):
             """Fit the GBT and distil into a sparse Lasso.
@@ -380,8 +381,8 @@ def audit_feature_set(
             y_distill = self.gbt.predict(X)
             n_features = X.shape[1]
             k = min(self._distill_top_k, n_features)
-            top_k_idx = np.argsort(self.feature_importances)[-k:]
-            X_distill = X[:, top_k_idx]
+            self.top_k_idx = np.argsort(self.feature_importances)[-k:]
+            X_distill = X[:, self.top_k_idx]
 
             n_samples = X.shape[0]
             cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
@@ -403,7 +404,7 @@ def audit_feature_set(
             # Expand back to full-length coefficient vector (zeros for
             # features excluded by the importance pre-selection).
             full_coef = np.zeros(n_features)
-            full_coef[top_k_idx] = distill_lasso.coef_
+            full_coef[self.top_k_idx] = distill_lasso.coef_
             self.distilled_coef = full_coef
             self._lasso_alpha = float(distill_lasso.alpha_)
 
@@ -630,18 +631,20 @@ def audit_feature_set(
     )
 
     # 5) Stability selection (L1 bootstraps): how often is a feature chosen (non-zero)
-    #    Bootstrap Lassos are trained on the GBT's predictions (not raw
-    #    Stockfish targets) so they measure which features the sparse
-    #    approximation consistently selects.
+    #    Bootstrap Lassos run on the same top-K feature subset used for
+    #    distillation, so the alpha is calibrated correctly and only
+    #    features the GBT actually uses can be selected.
     if X_train.shape[0] >= 20:
         print("Running stability selection...")
+        top_k = model.top_k_idx
+        X_train_topk = X_train_scaled[:, top_k]
         y_gbt_train = model.predict(X_train_scaled)
-        picks = np.zeros(len(feature_names), dtype=int)
+        picks_topk = np.zeros(len(top_k), dtype=int)
         for b in tqdm(range(stability_bootstraps), desc="Stability selection"):
             idx = np.random.choice(
                 X_train.shape[0], size=X_train.shape[0], replace=True
             )
-            Xb = X_train_scaled[idx]
+            Xb = X_train_topk[idx]
             yb = y_gbt_train[idx]
             m = Lasso(
                 alpha=model.alpha_,
@@ -650,11 +653,12 @@ def audit_feature_set(
                 max_iter=10000,
             )
             m.fit(Xb, yb)
-            picks += m.coef_ != 0.0
-        pick_freq = picks / stability_bootstraps
-        stable_idx = np.where(pick_freq >= stability_thresh)[0].tolist()
+            picks_topk += m.coef_ != 0.0
+        pick_freq_topk = picks_topk / stability_bootstraps
+        stable_topk = np.where(pick_freq_topk >= stability_thresh)[0]
+        # Map back to full feature indices
+        stable_idx = [int(top_k[i]) for i in stable_topk]
     else:
-        pick_freq = np.zeros(len(feature_names))
         stable_idx = []
 
     stable_features = [feature_names[i] for i in stable_idx]

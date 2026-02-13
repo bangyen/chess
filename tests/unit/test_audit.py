@@ -4,6 +4,7 @@ import warnings
 from unittest.mock import Mock, patch
 
 import chess
+import numpy as np
 import pytest
 
 from chess_ai.audit import AuditResult, audit_feature_set
@@ -777,14 +778,14 @@ class TestAuditFeatureSet:
 
     @patch("chess_ai.audit.sf_eval")
     @patch("chess_ai.audit.sf_top_moves")
-    def test_audit_tree_surrogate_produces_shap_importances(
+    def test_audit_distilled_lasso_produces_signed_coefficients(
         self, mock_sf_top_moves, mock_sf_eval
     ):
-        """Verify the GBT surrogate produces SHAP-based feature importances.
+        """Verify the distilled Lasso produces signed feature coefficients.
 
-        The top_features_by_coef list should contain (name, importance)
-        tuples derived from mean |SHAP| values, with non-negative
-        importances.
+        The top_features_by_coef list should contain (name, coef)
+        tuples derived from the Lasso distilled on GBT predictions,
+        with finite float coefficients (which may be negative).
         """
         mock_sf_eval.return_value = 50.0
         mock_sf_top_moves.return_value = [
@@ -807,6 +808,7 @@ class TestAuditFeatureSet:
 
         assert isinstance(result, AuditResult)
         assert len(result.top_features_by_coef) > 0
-        # SHAP importances are mean |SHAP|, so they should be non-negative
-        for _name, importance in result.top_features_by_coef:
-            assert importance >= 0.0
+        # Distilled Lasso coefficients are signed; verify they are finite floats
+        for _name, coef_val in result.top_features_by_coef:
+            assert isinstance(coef_val, float)
+            assert np.isfinite(coef_val)

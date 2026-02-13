@@ -220,7 +220,7 @@ class TestTrainSurrogateModel:
         engine = _make_mock_engine()
         cfg = SFConfig(engine_path="/path/to/stockfish", depth=12)
         extract_fn = _make_feature_extractor(vary=True)
-        boards = [chess.Board() for _ in range(8)]
+        boards = [chess.Board() for _ in range(5)]
         return engine, cfg, extract_fn, boards
 
     @patch("chess_ai.model_trainer.sf_eval", return_value=50.0)

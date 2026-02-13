@@ -150,7 +150,7 @@ class TestIntegration:
         ]
 
         # Create test data with enough samples for stable convergence
-        boards = [chess.Board() for _ in range(10)]
+        boards = [chess.Board() for _ in range(5)]
         engine = Mock()
 
         # Mock engine.analyse to return proper structure

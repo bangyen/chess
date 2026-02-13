@@ -5,10 +5,10 @@ from unittest.mock import patch
 
 import pytest
 
-from src.chess_ai.cli import main
+from chess_ai.cli import main
 
 # Get the actual module object (not the function exported from __init__.py)
-main_module = sys.modules["src.chess_ai.cli.main"]
+main_module = sys.modules["chess_ai.cli.main"]
 
 
 class TestMain:

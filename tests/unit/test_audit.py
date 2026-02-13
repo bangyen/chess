@@ -6,8 +6,8 @@ from unittest.mock import Mock, patch
 import chess
 import pytest
 
-from src.chess_ai.audit import AuditResult, audit_feature_set
-from src.chess_ai.engine.config import SFConfig
+from chess_ai.audit import AuditResult, audit_feature_set
+from chess_ai.engine.config import SFConfig
 
 # Suppress sklearn convergence warnings in tests
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -132,8 +132,8 @@ class TestAuditFeatureSet:
 
         return mock_extract_features
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_basic(self, mock_sf_top_moves, mock_sf_eval):
         """Test basic audit functionality."""
         # Setup mocks
@@ -190,8 +190,8 @@ class TestAuditFeatureSet:
         assert isinstance(result.stable_features, list)
         assert isinstance(result.top_features_by_coef, list)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_small_dataset(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit with very small dataset."""
         # Setup mocks
@@ -224,8 +224,8 @@ class TestAuditFeatureSet:
         assert isinstance(result, AuditResult)
         assert result.n_tau >= 0
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_different_parameters(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -276,8 +276,8 @@ class TestAuditFeatureSet:
                 boards=boards, engine=engine, cfg=cfg, extract_features_fn=extract_fn
             )
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_engine_errors(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit when engine returns errors."""
         # Setup mocks to simulate engine errors
@@ -295,8 +295,8 @@ class TestAuditFeatureSet:
                 boards=boards, engine=engine, cfg=cfg, extract_features_fn=extract_fn
             )
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_feature_extraction_errors(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -322,8 +322,8 @@ class TestAuditFeatureSet:
                 extract_features_fn=failing_extract_features,
             )
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_stability_selection(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -381,8 +381,8 @@ class TestAuditFeatureSet:
                 test_size=-0.1,  # Invalid: < 0.0
             )
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_small_dataset_edge_case(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -414,8 +414,8 @@ class TestAuditFeatureSet:
         assert isinstance(result, AuditResult)
         assert result.n_tau >= 0
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_list_reply_info(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit when engine returns list for reply info."""
         # Setup mocks
@@ -452,8 +452,8 @@ class TestAuditFeatureSet:
         # Should handle list reply info gracefully
         assert isinstance(result, AuditResult)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_insufficient_candidates(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -482,8 +482,8 @@ class TestAuditFeatureSet:
         assert isinstance(result, AuditResult)
         assert result.n_tau >= 0
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_ambiguous_positions(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -512,8 +512,8 @@ class TestAuditFeatureSet:
         # Should handle ambiguous positions gracefully
         assert isinstance(result, AuditResult)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_stability_selection_small_dataset(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -544,8 +544,8 @@ class TestAuditFeatureSet:
         assert isinstance(result.stable_features, list)
         assert isinstance(result.top_features_by_coef, list)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_zero_coefficients(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit when model has zero coefficients."""
         # Setup mocks
@@ -571,8 +571,8 @@ class TestAuditFeatureSet:
         assert isinstance(result, AuditResult)
         assert result.coverage_ratio >= 0.0
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_decisive_gap_calculation(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -601,8 +601,8 @@ class TestAuditFeatureSet:
         assert isinstance(result, AuditResult)
         assert result.local_faithfulness_decisive >= 0.0
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_empty_feature_names(
         self, mock_sf_top_moves, mock_sf_eval
     ):
@@ -631,8 +631,8 @@ class TestAuditFeatureSet:
         # Should handle empty feature names gracefully
         assert isinstance(result, AuditResult)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_boolean_features(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit with boolean features."""
         # Setup mocks
@@ -663,8 +663,8 @@ class TestAuditFeatureSet:
         # Should handle boolean features gracefully
         assert isinstance(result, AuditResult)
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_audit_feature_set_engine_probes(self, mock_sf_top_moves, mock_sf_eval):
         """Test audit with engine probes."""
         # Setup mocks

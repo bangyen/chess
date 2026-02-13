@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 import chess
 import pytest
 
-from src.chess_ai.features.baseline import baseline_extract_features
+from chess_ai.features.baseline import baseline_extract_features
 
 # Try importing Rust utilities — tests that require them are skipped otherwise.
 try:
@@ -214,13 +214,13 @@ class TestProbeGapFix:
     features (hang_cnt, forcing_swing, etc.) must be populated, not
     left as 0.0."""
 
-    @patch("src.chess_ai.audit.sf_eval")
-    @patch("src.chess_ai.audit.sf_top_moves")
+    @patch("chess_ai.audit.sf_eval")
+    @patch("chess_ai.audit.sf_top_moves")
     def test_probes_populated_during_ranking(self, mock_sf_top_moves, mock_sf_eval):
         """Engine-probe features should be non-zero at inference when the
         probe functions return non-zero values."""
-        from src.chess_ai.audit import audit_feature_set
-        from src.chess_ai.engine.config import SFConfig
+        from chess_ai.audit import audit_feature_set
+        from chess_ai.engine.config import SFConfig
 
         mock_sf_eval.return_value = 50.0
         mock_sf_top_moves.return_value = [

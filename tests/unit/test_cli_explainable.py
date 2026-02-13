@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.chess_ai.cli.explainable import find_stockfish, main
+from chess_ai.cli.explainable import find_stockfish, main
 
 
 class TestFindStockfish:
@@ -67,8 +67,8 @@ class TestFindStockfish:
 class TestMain:
     """Test main CLI function."""
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_default_args(self, mock_engine_class, mock_find_stockfish):
         """Test main with default arguments."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -84,8 +84,8 @@ class TestMain:
         mock_engine_class.assert_called_once_with("/path/to/stockfish", 16, "beginner")
         mock_engine.play_interactive_game.assert_called_once()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_custom_args(self, mock_engine_class, mock_find_stockfish):
         """Test main with custom arguments."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -110,7 +110,7 @@ class TestMain:
 
         mock_engine_class.assert_called_once_with("/custom/stockfish", 20, "expert")
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.find_stockfish")
     def test_main_stockfish_not_found(self, mock_find_stockfish):
         """Test main when Stockfish is not found."""
         mock_find_stockfish.side_effect = FileNotFoundError("Stockfish not found")
@@ -120,8 +120,8 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_engine_error(self, mock_engine_class, mock_find_stockfish):
         """Test main when engine raises error."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -132,8 +132,8 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_keyboard_interrupt(self, mock_engine_class, mock_find_stockfish):
         """Test main with keyboard interrupt."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -147,8 +147,8 @@ class TestMain:
             # Should not raise SystemExit for KeyboardInterrupt
             main()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_general_exception(self, mock_engine_class, mock_find_stockfish):
         """Test main with general exception."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -183,8 +183,8 @@ class TestMain:
             with pytest.raises(SystemExit):
                 main()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_all_strength_levels(self, mock_engine_class, mock_find_stockfish):
         """Test main with all strength levels."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -202,8 +202,8 @@ class TestMain:
             mock_engine_class.assert_called_with("/path/to/stockfish", 16, strength)
             mock_engine_class.reset_mock()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_different_depths(self, mock_engine_class, mock_find_stockfish):
         """Test main with different depth values."""
         mock_find_stockfish.return_value = "/path/to/stockfish"
@@ -223,8 +223,8 @@ class TestMain:
             )
             mock_engine_class.reset_mock()
 
-    @patch("src.chess_ai.cli.explainable.find_stockfish")
-    @patch("src.chess_ai.cli.explainable.ExplainableChessEngine")
+    @patch("chess_ai.cli.explainable.find_stockfish")
+    @patch("chess_ai.cli.explainable.ExplainableChessEngine")
     def test_main_combined_args(self, mock_engine_class, mock_find_stockfish):
         """Test main with combined custom arguments."""
         mock_find_stockfish.return_value = "/path/to/stockfish"

@@ -1,6 +1,6 @@
 """Tests for engine configuration."""
 
-from src.chess_ai.engine.config import SFConfig
+from chess_ai.engine.config import SFConfig
 
 
 class TestSFConfig:

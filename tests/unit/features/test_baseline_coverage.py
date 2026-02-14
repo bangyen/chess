@@ -11,6 +11,7 @@ Covers:
 from unittest.mock import Mock, patch
 
 import chess
+import pytest
 
 from chess_ai.features.baseline import RUST_AVAILABLE, baseline_extract_features
 
@@ -402,3 +403,135 @@ class TestSyzygyFeatures:
         feats = baseline_extract_features(board)
         # Should not crash even with bad path
         assert isinstance(feats, dict)
+
+    @patch.dict("os.environ", {"SYZYGY_PATH": "/fake/path"})
+    def test_rust_path_syzygy_few_pieces(self):
+        """Rust path with SYZYGY_PATH + few pieces attempts probe (lines 62-68)."""
+        if not RUST_AVAILABLE:
+            return
+        # KPK endgame — 3 pieces
+        board = chess.Board("8/8/8/8/8/4K3/4P3/4k3 w - - 0 1")
+        feats = baseline_extract_features(board)
+        # Syzygy init may fail (bad path) but features still returned
+        assert isinstance(feats, dict)
+
+    @patch(
+        "chess_ai.features.baseline.extract_features_rust",
+        side_effect=RuntimeError("rust fail"),
+    )
+    @patch.dict("os.environ", {"SYZYGY_PATH": "/fake/path"})
+    def test_python_fallback_with_syzygy_env_rust_available(self, _mock):
+        """When Rust feature extraction fails, Python fallback runs.
+
+        With RUST_AVAILABLE=True but extraction failing, falls through
+        to Python path where `if syzygy_path and RUST_AVAILABLE:` (line 425)
+        is True, covering lines 426-442.
+        """
+        if not RUST_AVAILABLE:
+            return
+        board = chess.Board("8/8/8/8/8/4K3/4P3/4k3 w - - 0 1")
+        feats = baseline_extract_features(board)
+        assert isinstance(feats, dict)
+
+    @patch.dict("os.environ", {"SYZYGY_PATH": "/fake/path"})
+    def test_python_fallback_syzygy_probes_success(self, _mock_extract=None):
+        """Cover Syzygy probe success path (lines 432-440).
+
+        Mock SyzygyTablebase to return valid WDL/DTZ probes so that
+        the feats["syzygy_wdl"] and feats["syzygy_dtz"] assignments execute.
+        """
+        if not RUST_AVAILABLE:
+            return
+
+        mock_tb = Mock()
+        mock_tb.probe_wdl.return_value = 2
+        mock_tb.probe_dtz.return_value = 15
+
+        with patch(
+            "chess_ai.features.baseline.extract_features_rust",
+            side_effect=RuntimeError("force python"),
+        ), patch("chess_ai.features.baseline._SYZYGY_TB", mock_tb):
+            # Use a board with <= 7 pieces
+            board = chess.Board("8/8/8/8/8/4K3/4P3/4k3 w - - 0 1")
+            feats = baseline_extract_features(board)
+
+        assert isinstance(feats, dict)
+        # Syzygy features should now be present
+        assert "syzygy_wdl" in feats
+        assert "syzygy_dtz" in feats
+
+
+# -----------------------------------------------------------------------
+# Rust success path in Python fallback hanging/forcing closures
+# -----------------------------------------------------------------------
+
+
+class TestRustSuccessInPythonFallback:
+    """Cover lines 463-471 and 519-524: Rust find_best_reply and
+    calculate_forcing_swing success within the Python fallback path.
+
+    When extract_features_rust fails but RUST_AVAILABLE=True, the Python
+    fallback defines closures that try the Rust helpers first.
+    """
+
+    def _get_python_fallback_probes(self, board=None):
+        """Get engine probes when Rust extraction fails but helpers succeed."""
+        if not RUST_AVAILABLE:
+            pytest.skip("Rust not available")
+
+        if board is None:
+            board = chess.Board()
+
+        with patch(
+            "chess_ai.features.baseline.extract_features_rust",
+            side_effect=RuntimeError("force python"),
+        ):
+            feats = baseline_extract_features(board)
+        return feats.get("_engine_probes", {})
+
+    def test_hanging_after_reply_rust_success(self):
+        """find_best_reply succeeds in Python fallback (lines 463-468)."""
+        if not RUST_AVAILABLE:
+            pytest.skip("Rust not available")
+
+        # Position where there's a clear best reply
+        board = chess.Board(
+            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+        )
+
+        with patch(
+            "chess_ai.features.baseline.extract_features_rust",
+            side_effect=RuntimeError("force python"),
+        ):
+            feats = baseline_extract_features(board)
+
+        probes = feats.get("_engine_probes", {})
+        assert "hanging_after_reply" in probes
+
+        # Exercise the probe function — find_best_reply should succeed
+        mock_engine = Mock()
+        fn = probes["hanging_after_reply"]
+        result = fn(mock_engine, board, depth=4)
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+
+    def test_forcing_swing_rust_success(self):
+        """calculate_forcing_swing succeeds in Python fallback (lines 519-522)."""
+        if not RUST_AVAILABLE:
+            pytest.skip("Rust not available")
+
+        board = chess.Board()
+
+        with patch(
+            "chess_ai.features.baseline.extract_features_rust",
+            side_effect=RuntimeError("force python"),
+        ):
+            feats = baseline_extract_features(board)
+
+        probes = feats.get("_engine_probes", {})
+        assert "best_forcing_swing" in probes
+
+        mock_engine = Mock()
+        fn = probes["best_forcing_swing"]
+        result = fn(mock_engine, board, d_base=4)
+        assert isinstance(result, (int, float))

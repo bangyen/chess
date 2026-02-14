@@ -270,7 +270,7 @@ def extract_features(board):
             load_feature_module("/nonexistent/path/features.py")
 
         # Test invalid rankings for Kendall tau
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError, match="equal length"):  # noqa: PT012
             from chess_ai.metrics import kendall_tau
 
             kendall_tau([1, 2, 3], [1, 2])  # Different lengths

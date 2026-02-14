@@ -1,9 +1,10 @@
 """Utility functions for feature module loading."""
 
 import importlib.util
+import types
 
 
-def load_feature_module(path: str):
+def load_feature_module(path: str) -> types.ModuleType:
     """Load a feature module from a file path.
 
     Args:

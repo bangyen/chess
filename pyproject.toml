@@ -73,19 +73,36 @@ extend-exclude = ["mutants"]
 
 [tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "C90",  # mccabe complexity
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit (security)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+    "PT",   # flake8-pytest-style
+    "PIE",  # flake8-pie
+    "PERF", # perflint (performance)
+    "T20",  # flake8-print
 ]
 ignore = [
     "E501",  # line too long, handled by black
     "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
 ]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+"src/chess_ai/cli/*" = ["T20"]
+"src/chess_ai/explainable_engine.py" = ["T20"]
+"scripts/*" = ["T20"]
+"*.ipynb" = ["T20"]
+"tests/*" = ["S101", "PT019"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["chess_ai"]
@@ -94,7 +111,11 @@ known-first-party = ["chess_ai"]
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = false
+disallow_untyped_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unreachable = true
+warn_redundant_casts = true
 ignore_missing_imports = true
 exclude = [
     "^build/",
@@ -103,6 +124,8 @@ exclude = [
     "^\\.eggs/",
     "^dist/",
     "^mutants/",
+    "^tests/",
+    "^scripts/",
 ]
 
 [tool.pytest.ini_options]

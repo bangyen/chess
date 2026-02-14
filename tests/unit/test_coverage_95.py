@@ -34,9 +34,8 @@ class TestLoadFeatureModule:
         with patch(
             "chess_ai.features.utils.importlib.util.spec_from_file_location",
             return_value=None,
-        ):
-            with pytest.raises(RuntimeError, match="Cannot load features module"):
-                load_feature_module("/any/path.py")
+        ), pytest.raises(RuntimeError, match="Cannot load features module"):
+            load_feature_module("/any/path.py")
 
     def test_load_module_missing_function(self, tmp_path):
         """Loading a module without extract_features raises RuntimeError."""
@@ -184,7 +183,9 @@ class TestSyzygyInitSuccess:
             from chess_ai.rust_utils import SyzygyTablebase
 
             eng.syzygy = SyzygyTablebase(eng.syzygy_path)
-            print(f"\u2705 Syzygy tablebases initialized from {eng.syzygy_path}")
+            print(  # noqa: T201
+                f"\u2705 Syzygy tablebases initialized from {eng.syzygy_path}"
+            )
 
         captured = capsys.readouterr()
         assert "Syzygy tablebases initialized" in captured.out
@@ -285,7 +286,7 @@ class TestMoveReasonsWithBoardEdges:
         eng.syzygy = mock_syzygy
 
         board = chess.Board("8/8/8/8/8/4K3/4P3/4k3 w - - 0 1")
-        move = list(board.legal_moves)[0]
+        move = next(iter(board.legal_moves))
 
         reasons = eng._generate_move_reasons_with_board(move, board, 50.0, 30.0)
         assert isinstance(reasons, list)

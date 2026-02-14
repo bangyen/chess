@@ -6,6 +6,7 @@ path, and quiescence-search accuracy in forcing_swing.
 """
 
 import math
+from typing import ClassVar
 from unittest.mock import Mock, patch
 
 import chess
@@ -154,7 +155,7 @@ class TestPawnChainFeature:
 class TestRustNewFeatures:
     """Ensure extract_features_rust includes the five new feature keys."""
 
-    NEW_KEYS = [
+    NEW_KEYS: ClassVar[list[str]] = [
         "threats_us",
         "threats_them",
         "doubled_pawns_us",

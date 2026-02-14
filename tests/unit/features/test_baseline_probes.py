@@ -101,7 +101,7 @@ class TestEngineProbeClosures:
 
     def test_best_forcing_swing_no_forcing(self):
         """best_forcing_swing returns 0.0 when no forcing moves exist."""
-        probes, _ = self._get_probes()
+        _probes, _ = self._get_probes()
         mock_engine = Mock()
         mock_score = Mock()
         mock_score.pov.return_value.score.return_value = 0
@@ -156,7 +156,7 @@ class TestPythonFallbackProbeClosures:
         reply = chess.Move.from_uci("e7e5")
         mock_engine.analyse.return_value = {"pv": [reply]}
 
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        cnt, _v_max, _near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(cnt, int)

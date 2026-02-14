@@ -14,10 +14,10 @@ from .features import baseline_extract_features, load_feature_module
 
 __all__ = [
     "AuditResult",
+    "SFConfig",
     "audit_feature_set",
     "baseline_extract_features",
     "load_feature_module",
-    "SFConfig",
     "sf_eval",
     "sf_open",
     "sf_top_moves",

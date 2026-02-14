@@ -4,8 +4,12 @@ Explainable Chess Engine
 An interactive chess engine that analyzes your moves and explains what you should have done instead.
 """
 
+from __future__ import annotations
+
+import contextlib
+import types
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import chess
 import chess.engine
@@ -14,6 +18,9 @@ import chess.pgn
 from .features import baseline_extract_features
 from .utils.sampling import sample_stratified_positions
 
+if TYPE_CHECKING:
+    from .surrogate_explainer import SurrogateExplainer
+
 
 @dataclass
 class MoveExplanation:
@@ -21,7 +28,7 @@ class MoveExplanation:
 
     move: chess.Move
     score: float
-    reasons: List[Tuple[str, int, str]]  # (feature_name, contribution, explanation)
+    reasons: list[tuple[str, float, str]]  # (feature_name, contribution, explanation)
     overall_explanation: str
 
 
@@ -31,12 +38,12 @@ class ExplainableChessEngine:
     def __init__(
         self,
         stockfish_path: str,
-        syzygy_path: Optional[str] = None,
+        syzygy_path: str | None = None,
         depth: int = 16,
         opponent_strength: str = "beginner",
         enable_model_explanations: bool = True,
         model_training_positions: int = 200,
-    ):
+    ) -> None:
         """Initialize the explainable chess engine."""
         self.stockfish_path = stockfish_path
         self.syzygy_path = syzygy_path
@@ -44,14 +51,14 @@ class ExplainableChessEngine:
         self.opponent_strength = opponent_strength
         self.enable_model_explanations = enable_model_explanations
         self.model_training_positions = model_training_positions
-        self.engine = None
-        self.syzygy = None
+        self.engine: chess.engine.SimpleEngine | None = None
+        self.syzygy: Any = None
         self.board = chess.Board()
-        self.move_history: List[chess.Move] = []
-        self.surrogate_explainer = None
+        self.move_history: list[chess.Move] = []
+        self.surrogate_explainer: SurrogateExplainer | None = None
 
         # Stockfish strength settings
-        self.strength_settings = {
+        self.strength_settings: dict[str, dict[str, Any]] = {
             "beginner": {"Skill Level": 0, "UCI_LimitStrength": True, "UCI_Elo": 800},
             "novice": {"Skill Level": 3, "UCI_LimitStrength": True, "UCI_Elo": 1000},
             "intermediate": {
@@ -63,7 +70,7 @@ class ExplainableChessEngine:
             "expert": {"Skill Level": 20, "UCI_LimitStrength": False},  # Full strength
         }
 
-    def __enter__(self):
+    def __enter__(self) -> ExplainableChessEngine:
         """Context manager entry."""
         if not self.stockfish_path or not self.stockfish_path.strip():
             raise RuntimeError(
@@ -79,7 +86,7 @@ class ExplainableChessEngine:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
 
             # Configure Stockfish strength and Syzygy
-            options = {}
+            options: dict[str, Any] = {}
             if self.opponent_strength in self.strength_settings:
                 options.update(self.strength_settings[self.opponent_strength])
 
@@ -114,14 +121,20 @@ class ExplainableChessEngine:
             raise RuntimeError(
                 f"Failed to start Stockfish at {self.stockfish_path}: {e}\n"
                 "Please ensure Stockfish is properly installed and accessible."
-            ) from e
+            ) from e  # type: ignore[unreachable]
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+    ) -> bool | None:
         """Context manager exit."""
         if self.engine:
             self.engine.quit()
+        return None
 
-    def _initialize_model(self):
+    def _initialize_model(self) -> None:
         """Train and cache surrogate model for explanations."""
         try:
             from .engine import SFConfig
@@ -158,7 +171,7 @@ class ExplainableChessEngine:
             print("Falling back to rule-based explanations.")
             self.surrogate_explainer = None
 
-    def reset_game(self):
+    def reset_game(self) -> None:
         """Reset to starting position."""
         self.board = chess.Board()
         self.move_history = []
@@ -179,7 +192,7 @@ class ExplainableChessEngine:
             print(f"❌ Invalid move format: {move_str}")
             return False
 
-    def get_best_move(self) -> Optional[chess.Move]:
+    def get_best_move(self) -> chess.Move | None:
         """Get the best move from Stockfish."""
         if not self.engine:
             return None
@@ -187,14 +200,14 @@ class ExplainableChessEngine:
         try:
             # Use a simpler approach to get the best move
             info = self.engine.analyse(self.board, chess.engine.Limit(depth=self.depth))
-            if "pv" in info and info["pv"]:
+            if info.get("pv"):
                 return info["pv"][0]
             return None
         except Exception as e:
             print(f"❌ Error getting best move: {e}")
             return None
 
-    def _get_syzygy_data(self, board: chess.Board) -> Dict:
+    def _get_syzygy_data(self, board: chess.Board) -> dict:
         """Get Syzygy tablebase data for the position."""
         if not self.syzygy:
             return {}
@@ -217,11 +230,14 @@ class ExplainableChessEngine:
         except Exception:
             return {}
 
-    def analyze_position(self) -> Dict:
+    def analyze_position(self) -> dict:
         """Analyze the current position using our explainable features and Syzygy."""
         from .engine import SFConfig, sf_eval, sf_top_moves
 
         try:
+            engine = self.engine
+            if engine is None:
+                return {"error": "Engine not available"}
             # Extract features for current position
             features = baseline_extract_features(self.board)
 
@@ -231,8 +247,8 @@ class ExplainableChessEngine:
                 depth=self.depth,
                 multipv=3,
             )
-            stockfish_score = sf_eval(self.engine, self.board, cfg)
-            top_moves = sf_top_moves(self.engine, self.board, cfg)
+            stockfish_score = sf_eval(engine, self.board, cfg)
+            top_moves = sf_top_moves(engine, self.board, cfg)
 
             # Get Syzygy data
             syzygy_data = self._get_syzygy_data(self.board)
@@ -326,11 +342,9 @@ class ExplainableChessEngine:
         except Exception as e:
             return MoveExplanation(move, 0, [], f"Error analyzing move: {e}")
 
-        return reasons
-
     def _get_syzygy_reason(
         self, board_before: chess.Board, board_after: chess.Board
-    ) -> Optional[Tuple[str, float, str]]:
+    ) -> tuple[str, float, str] | None:
         """Generate a reason based on Syzygy tablebase changes."""
         data_before = self._get_syzygy_data(board_before)
         if not data_before:
@@ -372,7 +386,7 @@ class ExplainableChessEngine:
 
     def _generate_move_reasons(
         self, move: chess.Move, score: float, best_score: float
-    ) -> List[Tuple[str, float, str]]:
+    ) -> list[tuple[str, float, str]]:
         """Generate specific reasons why a move is good or bad using surrogate model."""
         reasons = []
 
@@ -437,21 +451,21 @@ class ExplainableChessEngine:
 
         return reasons
 
-    def _generate_hardcoded_reasons(
-        self, feats_before: Dict, feats_after: Dict
-    ) -> List[Tuple[str, float, str]]:
+    def _generate_hardcoded_reasons(  # noqa: C901
+        self, feats_before: dict, feats_after: dict
+    ) -> list[tuple[str, float, str]]:
         """Generate threshold-based reasons (fallback when model unavailable)."""
         reasons = []
 
-        def get_delta(feature_name):
+        def get_delta(feature_name: str) -> float:
             val_before = feats_before.get(f"{feature_name}_us", 0.0)
             val_after = feats_after.get(f"{feature_name}_them", 0.0)
-            return val_after - val_before
+            return float(val_after - val_before)
 
-        def get_opp_delta(feature_name):
+        def get_opp_delta(feature_name: str) -> float:
             val_before = feats_before.get(f"{feature_name}_them", 0.0)
             val_after = feats_after.get(f"{feature_name}_us", 0.0)
-            return val_after - val_before
+            return float(val_after - val_before)
 
         # Batteries
         delta = get_delta("batteries")
@@ -557,24 +571,22 @@ class ExplainableChessEngine:
 
     def _generate_move_reasons_with_board(
         self, move: chess.Move, board: chess.Board, score: float, best_score: float
-    ) -> List[Tuple[str, int, str]]:
+    ) -> list[tuple[str, float, str]]:
         """Generate specific reasons why a move is good or bad using a specific board state."""
-        reasons = []
+        reasons: list[tuple[str, float, str]] = []
 
         # Syzygy Check
         temp_board = board.copy()
         temp_board.push(move)
         syzygy_reason = self._get_syzygy_reason(board, temp_board)
         if syzygy_reason:
-            reasons.append((syzygy_reason[0], int(syzygy_reason[1]), syzygy_reason[2]))
+            reasons.append((syzygy_reason[0], syzygy_reason[1], syzygy_reason[2]))
 
         try:
             # Analyze the move's characteristics
             # Get move string for analysis
-            try:
+            with contextlib.suppress(Exception):
                 board.san(move)
-            except Exception:
-                pass
 
             # Check if it's a capture
             if board.is_capture(move):
@@ -586,58 +598,56 @@ class ExplainableChessEngine:
                     reasons.append(
                         (
                             "capture",
-                            piece_value,
+                            float(piece_value),
                             f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
                         )
                     )
 
             # Check if it gives check
             if board.gives_check(move):
-                reasons.append(("check", 2, "Gives check to opponent's king"))
+                reasons.append(("check", 2.0, "Gives check to opponent's king"))
 
             # Check if it's a tactical move
             if board.is_capture(move) or board.gives_check(move):
-                reasons.append(("tactical", 1, "Tactical move (capture or check)"))
+                reasons.append(("tactical", 1.0, "Tactical move (capture or check)"))
 
             # Check piece development
             piece = board.piece_at(move.from_square)
-            if piece and piece.piece_type == chess.PAWN:
-                # Pawn moves
-                if (
-                    move.from_square < 16 or move.from_square > 47
-                ):  # From starting ranks
-                    reasons.append(
-                        ("development", 1, "Develops pawn from starting position")
+            if (
+                piece
+                and piece.piece_type == chess.PAWN
+                and (move.from_square < 16 or move.from_square > 47)
+            ):  # From starting ranks - pawn moves
+                reasons.append(
+                    ("development", 1.0, "Develops pawn from starting position")
+                )
+            elif (
+                piece
+                and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
+                and (move.from_square < 16 or move.from_square > 47)
+            ):  # From starting ranks - minor piece development
+                reasons.append(
+                    (
+                        "development",
+                        2.0,
+                        "Develops minor piece from starting position",
                     )
-            elif piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-                # Minor piece development
-                if (
-                    move.from_square < 16 or move.from_square > 47
-                ):  # From starting ranks
-                    reasons.append(
-                        (
-                            "development",
-                            2,
-                            "Develops minor piece from starting position",
-                        )
-                    )
+                )
 
             # Check center control
             center_squares = [chess.E4, chess.E5, chess.D4, chess.D5]
             if move.to_square in center_squares:
-                reasons.append(("center_control", 1, "Controls central squares"))
+                reasons.append(("center_control", 1.0, "Controls central squares"))
 
             # Check king safety
-            if piece and piece.piece_type == chess.KING:
-                # King moves in opening/middlegame
-                if len(self.move_history) < 20:
-                    reasons.append(
-                        (
-                            "king_safety",
-                            -1,
-                            "Moves king in opening (reduces castling options)",
-                        )
+            if piece and piece.piece_type == chess.KING and len(self.move_history) < 20:
+                reasons.append(
+                    (
+                        "king_safety",
+                        -1,
+                        "Moves king in opening (reduces castling options)",
                     )
+                )
 
             # Check for castling
             if board.is_castling(move):
@@ -647,7 +657,7 @@ class ExplainableChessEngine:
             if board.is_en_passant(move):
                 reasons.append(("en_passant", 1, "En passant capture"))
 
-        except Exception:
+        except Exception:  # noqa: S110
             # If there's an error, just return basic reasons
             pass
 
@@ -657,7 +667,7 @@ class ExplainableChessEngine:
         self,
         move: chess.Move,
         move_quality: float,
-        reasons: List[Tuple[str, float, str]],
+        reasons: list[tuple[str, float, str]],
     ) -> str:
         """Generate an overall explanation for the move with centipawn quality."""
         try:
@@ -692,7 +702,7 @@ class ExplainableChessEngine:
         move: chess.Move,
         board: chess.Board,
         move_quality: float,
-        reasons: List[Tuple[str, float, str]],
+        reasons: list[tuple[str, float, str]],
     ) -> str:
         """Generate an overall explanation for the move using a specific board state."""
         try:
@@ -716,15 +726,13 @@ class ExplainableChessEngine:
             return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)"
 
         # Convert to bullet points with tab indentation
-        bullet_points = []
-        for reason in reasons[:5]:  # Limit to top 5 reasons
-            bullet_points.append(f"  - {reason[2]}")
+        bullet_points = [f"  - {reason[2]}" for reason in reasons[:5]]
 
         return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)\n" + "\n".join(
             bullet_points
         )
 
-    def get_move_recommendation(self) -> Optional[MoveExplanation]:
+    def get_move_recommendation(self) -> MoveExplanation | None:  # noqa: C901
         """Get the best move recommendation with explanation."""
         try:
             # Get legal moves for the current position
@@ -737,11 +745,11 @@ class ExplainableChessEngine:
                 try:
                     # Get Stockfish's best move
                     info = self.engine.analyse(self.board, chess.engine.Limit(depth=10))
-                    if "pv" in info and info["pv"]:
+                    if info.get("pv"):
                         best_move = info["pv"][0]
                         if best_move in legal_moves:
                             return self.explain_move(best_move)
-                except Exception:
+                except Exception:  # noqa: S110
                     # If Stockfish fails, fall back to simple logic
                     pass
 
@@ -749,16 +757,16 @@ class ExplainableChessEngine:
             if len(self.move_history) == 0:
                 # First move - suggest e4 or d4
                 for move in legal_moves:
-                    if move.from_square == chess.E2 and move.to_square == chess.E4:
-                        return self.explain_move(move)
-                    elif move.from_square == chess.D2 and move.to_square == chess.D4:
+                    if (
+                        move.from_square == chess.E2 and move.to_square == chess.E4
+                    ) or (move.from_square == chess.D2 and move.to_square == chess.D4):
                         return self.explain_move(move)
             elif len(self.move_history) == 1:
                 # Second move - suggest Nf3 or Nc3
                 for move in legal_moves:
-                    if move.from_square == chess.G1 and move.to_square == chess.F3:
-                        return self.explain_move(move)
-                    elif move.from_square == chess.B1 and move.to_square == chess.C3:
+                    if (
+                        move.from_square == chess.G1 and move.to_square == chess.F3
+                    ) or (move.from_square == chess.B1 and move.to_square == chess.C3):
                         return self.explain_move(move)
 
             # For other moves, pick a reasonable move (not just the first one)
@@ -772,11 +780,12 @@ class ExplainableChessEngine:
                     center_moves.append(move)
                 # Check for piece development
                 piece = self.board.piece_at(move.from_square)
-                if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-                    if (
-                        move.from_square < 16 or move.from_square > 47
-                    ):  # From starting ranks
-                        development_moves.append(move)
+                if (
+                    piece
+                    and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
+                    and (move.from_square < 16 or move.from_square > 47)
+                ):  # From starting ranks
+                    development_moves.append(move)
 
             # Prefer center moves, then development moves
             if center_moves:
@@ -790,7 +799,7 @@ class ExplainableChessEngine:
             print(f"❌ Error getting move recommendation: {e}")
             return None
 
-    def get_best_move_for_player(self) -> Optional[MoveExplanation]:
+    def get_best_move_for_player(self) -> MoveExplanation | None:  # noqa: C901
         """Get the best move that the player who just moved should have played."""
         try:
             # Create a temporary board to analyze what the player should have done
@@ -807,7 +816,7 @@ class ExplainableChessEngine:
                 try:
                     # Get Stockfish's best move for the previous position
                     info = self.engine.analyse(temp_board, chess.engine.Limit(depth=10))
-                    if "pv" in info and info["pv"]:
+                    if info.get("pv"):
                         best_move = info["pv"][0]
                         if best_move in legal_moves:
                             # Check if this is the same move that was just played
@@ -816,7 +825,7 @@ class ExplainableChessEngine:
                                 return self.explain_move_with_board(
                                     best_move, temp_board
                                 )
-                except Exception:
+                except Exception:  # noqa: S110
                     # If Stockfish fails, fall back to simple logic
                     pass
 
@@ -829,9 +838,7 @@ class ExplainableChessEngine:
                         move.from_square == chess.E2
                         and move.to_square == chess.E4
                         and move != last_move
-                    ):
-                        return self.explain_move_with_board(move, temp_board)
-                    elif (
+                    ) or (
                         move.from_square == chess.D2
                         and move.to_square == chess.D4
                         and move != last_move
@@ -840,9 +847,9 @@ class ExplainableChessEngine:
             elif len(self.move_history) == 2:  # After second move
                 # Second move - suggest Nf3 or Nc3
                 for move in legal_moves:
-                    if move.from_square == chess.G1 and move.to_square == chess.F3:
-                        return self.explain_move_with_board(move, temp_board)
-                    elif move.from_square == chess.B1 and move.to_square == chess.C3:
+                    if (
+                        move.from_square == chess.G1 and move.to_square == chess.F3
+                    ) or (move.from_square == chess.B1 and move.to_square == chess.C3):
                         return self.explain_move_with_board(move, temp_board)
 
             # For other moves, pick a reasonable move (not just the first one)
@@ -856,11 +863,12 @@ class ExplainableChessEngine:
                     center_moves.append(move)
                 # Check for piece development
                 piece = temp_board.piece_at(move.from_square)
-                if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-                    if (
-                        move.from_square < 16 or move.from_square > 47
-                    ):  # From starting ranks
-                        development_moves.append(move)
+                if (
+                    piece
+                    and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
+                    and (move.from_square < 16 or move.from_square > 47)
+                ):  # From starting ranks
+                    development_moves.append(move)
 
             # Prefer center moves, then development moves
             if center_moves:
@@ -874,7 +882,7 @@ class ExplainableChessEngine:
             print(f"❌ Error getting best move for player: {e}")
             return None
 
-    def get_stockfish_move(self) -> Optional[chess.Move]:
+    def get_stockfish_move(self) -> chess.Move | None:
         """Get Stockfish's move for the current position."""
         if not self.engine:
             return None
@@ -889,20 +897,20 @@ class ExplainableChessEngine:
         except Exception:
             return None
 
-    def print_board(self):
+    def print_board(self) -> None:
         """Print the current board position."""
         print("\n" + "=" * 50)
         print(self.board)
         print("=" * 50)
 
-    def print_legal_moves(self):
+    def print_legal_moves(self) -> None:
         """Print all legal moves."""
         legal_moves = [self.board.san(move) for move in self.board.legal_moves]
         print(
             f"Legal moves: {', '.join(legal_moves[:10])}{'...' if len(legal_moves) > 10 else ''}"
         )
 
-    def play_interactive_game(self):
+    def play_interactive_game(self) -> None:  # noqa: C901
         """Play an interactive chess game against Stockfish with explanations."""
 
         while not self.board.is_game_over():
@@ -984,7 +992,7 @@ class ExplainableChessEngine:
                     print("🤝 Draw!")
                 break
 
-    def _print_help(self):
+    def _print_help(self) -> None:
         """Print help information."""
         print("\n📖 Available commands:")
         print("  • Make moves: e4, Nf3, O-O, etc.")
@@ -993,7 +1001,7 @@ class ExplainableChessEngine:
         print("  • 'help' - Show this help")
         print("  • 'quit' - Exit the game")
 
-    def _show_best_move(self):
+    def _show_best_move(self) -> None:
         """Show the best move recommendation."""
         recommendation = self.get_move_recommendation()
         if recommendation:

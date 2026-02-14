@@ -50,7 +50,7 @@ def _parse_phase_weights(raw: str) -> dict:
     return weights
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     ap = argparse.ArgumentParser(
         description="Audit explainability of a chess feature set against Stockfish."
@@ -247,7 +247,7 @@ def main():
     print(
         " - Local faithfulness ≥ 80% on decisive positions shows explanations track preferences."
     )
-    print(" - Sparsity around 3–5 suggests crisp, narratable reasons.")
+    print(" - Sparsity around 3-5 suggests crisp, narratable reasons.")
     print(
         " - Coverage ≥ 70% with ≥2 strong reasons means you can explain most positions.\n"
     )

@@ -15,7 +15,10 @@ def kendall_tau(rank_a: list[int], rank_b: list[int]) -> float:
     Returns:
         Kendall tau correlation coefficient
     """
-    assert len(rank_a) == len(rank_b)
+    if len(rank_a) != len(rank_b):
+        raise ValueError(
+            f"Rankings must have equal length, got {len(rank_a)} and {len(rank_b)}"
+        )
     n = len(rank_a)
     concordant = 0
     discordant = 0

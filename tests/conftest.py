@@ -4,6 +4,7 @@ Pytest configuration and shared fixtures.
 Provides shared fixtures and compatibility patches for mutmut mutation testing.
 """
 
+import contextlib
 import multiprocessing
 
 import pytest
@@ -15,17 +16,14 @@ _orig_set_start_method = multiprocessing.set_start_method
 
 
 def _patched_set_start_method(method, force=False):
-    try:
+    with contextlib.suppress(RuntimeError):
         _orig_set_start_method(method, force=force)
-    except RuntimeError:
-        # If it's already set, we just ignore it
-        pass
 
 
 multiprocessing.set_start_method = _patched_set_start_method
 
 # ---------------------------------------------------------------------------
-# mutmut 3.x trampoline patch – strip 'src.' prefix from module names
+# mutmut 3.x trampoline patch - strip 'src.' prefix from module names
 # ---------------------------------------------------------------------------
 try:
     import mutmut.__main__

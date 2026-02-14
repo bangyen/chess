@@ -1,10 +1,13 @@
 """Surrogate model-based explanations for chess moves."""
 
-from typing import Dict, List, Tuple
+import logging
+from typing import Any, ClassVar, Dict, List, Tuple
 
 import numpy as np
 
 from .model_trainer import PhaseEnsemble
+
+logger = logging.getLogger(__name__)
 
 
 class SurrogateExplainer:
@@ -15,7 +18,7 @@ class SurrogateExplainer:
     """
 
     # Feature name to explanation template mapping
-    FEATURE_TEMPLATES = {
+    FEATURE_TEMPLATES: ClassVar[dict[str, str]] = {
         "material_diff": "Material advantage ({:+.0f} cp)",
         "mobility_us": "Piece activity ({:+.0f} cp)",
         "mobility_them": "Restricts opponent activity ({:+.0f} cp)",
@@ -45,9 +48,9 @@ class SurrogateExplainer:
     def __init__(
         self,
         model: PhaseEnsemble,
-        scaler,
+        scaler: Any,
         feature_names: List[str],
-    ):
+    ) -> None:
         """Initialize explainer with trained model.
 
         Args:
@@ -122,9 +125,9 @@ class SurrogateExplainer:
 
                 reasons.append((fname, cp_value, explanation))
 
-        except Exception as e:
+        except Exception:
             # Gracefully handle errors and return empty list
-            print(f"Warning: Failed to calculate contributions: {e}")
+            logger.warning("Failed to calculate contributions", exc_info=True)
             return []
 
         return reasons

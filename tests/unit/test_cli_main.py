@@ -90,9 +90,8 @@ class TestMain:
 
     def test_main_unknown_command(self, capsys):
         """Test main with unknown command."""
-        with patch("sys.argv", ["chess-ai", "unknown"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["chess-ai", "unknown"]), pytest.raises(SystemExit):
+            main()
 
         captured = capsys.readouterr()
         assert "Unknown command: unknown" in captured.out
@@ -127,18 +126,20 @@ class TestMain:
         """Test that exceptions in audit command are properly handled."""
         mock_audit_main.side_effect = Exception("Audit error")
 
-        with patch("sys.argv", ["chess-ai", "audit"]):
-            with pytest.raises(Exception, match="Audit error"):
-                main()
+        with patch("sys.argv", ["chess-ai", "audit"]), pytest.raises(
+            Exception, match="Audit error"
+        ):
+            main()
 
     @patch.object(main_module, "explainable_main")
     def test_main_play_command_exception_handling(self, mock_explainable_main):
         """Test that exceptions in play command are properly handled."""
         mock_explainable_main.side_effect = Exception("Play error")
 
-        with patch("sys.argv", ["chess-ai", "play"]):
-            with pytest.raises(Exception, match="Play error"):
-                main()
+        with patch("sys.argv", ["chess-ai", "play"]), pytest.raises(
+            Exception, match="Play error"
+        ):
+            main()
 
     def test_main_with_args_parameter(self):
         """Test main with explicit args parameter."""
@@ -225,18 +226,16 @@ class TestMain:
 
     def test_main_command_case_sensitivity(self, capsys):
         """Test that commands are case sensitive."""
-        with patch("sys.argv", ["chess-ai", "AUDIT"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["chess-ai", "AUDIT"]), pytest.raises(SystemExit):
+            main()
 
         captured = capsys.readouterr()
         assert "Unknown command: AUDIT" in captured.out
 
     def test_main_command_case_sensitivity_play(self, capsys):
         """Test that play command is case sensitive."""
-        with patch("sys.argv", ["chess-ai", "PLAY"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["chess-ai", "PLAY"]), pytest.raises(SystemExit):
+            main()
 
         captured = capsys.readouterr()
         assert "Unknown command: PLAY" in captured.out

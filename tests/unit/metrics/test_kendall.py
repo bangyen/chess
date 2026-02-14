@@ -94,7 +94,7 @@ class TestKendallTau:
         rank_a = [1, 2, 3]
         rank_b = [1, 2, 3, 4]
 
-        with pytest.raises(AssertionError):
+        with pytest.raises(ValueError, match="equal length"):
             kendall_tau(rank_a, rank_b)
 
     def test_empty_rankings(self):

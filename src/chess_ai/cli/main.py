@@ -44,7 +44,7 @@ Examples:
     if command == "audit":
         # Set sys.argv for the audit command
         original_argv = sys.argv
-        sys.argv = ["chess-ai-audit"] + remaining_args
+        sys.argv = ["chess-ai-audit", *remaining_args]
         try:
             audit_main()
         finally:
@@ -52,7 +52,7 @@ Examples:
     elif command == "play":
         # Set sys.argv for the explainable command
         original_argv = sys.argv
-        sys.argv = ["chess-ai-play"] + remaining_args
+        sys.argv = ["chess-ai-play", *remaining_args]
         try:
             explainable_main()
         finally:

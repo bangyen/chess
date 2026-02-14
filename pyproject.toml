@@ -69,6 +69,7 @@ target-version = ['py38']
 [tool.ruff]
 line-length = 88
 target-version = "py38"
+extend-exclude = ["mutants"]
 
 [tool.ruff.lint]
 select = [
@@ -101,6 +102,7 @@ exclude = [
     "^venv/",
     "^\\.eggs/",
     "^dist/",
+    "^mutants/",
 ]
 
 [tool.pytest.ini_options]
@@ -119,3 +121,17 @@ omit = [
     "*/tests/*",
     "*/test_*",
 ]
+
+[tool.mutmut]
+paths_to_mutate = [
+    "src/chess_ai/utils/math.py",
+    "src/chess_ai/metrics/kendall.py",
+    "src/chess_ai/metrics/positional.py",
+    "src/chess_ai/features/utils.py",
+    "src/chess_ai/engine/config.py",
+    "src/chess_ai/surrogate_explainer.py",
+]
+also_copy = ["src/"]
+backup = false
+runner = "python -m pytest tests/ -p no:cov"
+tests_dir = ["tests/"]

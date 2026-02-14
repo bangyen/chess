@@ -99,17 +99,15 @@ class TestExplainableChessEngine:
 
         engine = ExplainableChessEngine("/path/to/stockfish")
 
-        with pytest.raises(RuntimeError, match="Failed to start Stockfish"):
-            with engine:
-                pass
+        with pytest.raises(RuntimeError, match="Failed to start Stockfish"), engine:
+            pass
 
     def test_context_manager_empty_stockfish_path(self):
         """Test context manager with empty stockfish path."""
         engine = ExplainableChessEngine("")
 
-        with pytest.raises(RuntimeError, match="Stockfish not found"):
-            with engine:
-                pass
+        with pytest.raises(RuntimeError, match="Stockfish not found"), engine:
+            pass
 
     @patch("chess.engine.SimpleEngine.popen_uci")
     def test_context_manager_exit(self, mock_popen_uci):
@@ -246,7 +244,7 @@ class TestExplainableChessEngine:
 
         result = engine.analyze_position()
 
-        assert result == {}
+        assert "error" in result
 
     def test_explain_move_no_engine(self):
         """Test explaining move when engine is not available."""

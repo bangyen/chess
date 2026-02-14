@@ -19,7 +19,7 @@ def run_command(
     command: str, check: bool = True, capture_output: bool = True
 ) -> subprocess.CompletedProcess:
     """Run a shell command and return the completed process."""
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S602
         command, shell=True, check=check, capture_output=capture_output, text=True
     )
     return result
@@ -65,12 +65,12 @@ def run_audit(
         f"--threads {threads}"
     )
     # Capture stdout for parsing; let stderr (tqdm) flow to terminal
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S602
         cmd,
         shell=True,
         check=False,
         stdout=subprocess.PIPE,
-        stderr=None,  # inherit — tqdm progress is visible live
+        stderr=None,  # inherit - tqdm progress is visible live
         text=True,
     )
     if result.returncode != 0:

@@ -167,7 +167,7 @@ class TestPhaseEnsemble:
 class TestCanonicalFeatureSet:
     """Test that the union-based feature set works correctly."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def _sparse_extractor(self):
         """Feature extractor that returns different keys on different calls.
 
@@ -214,7 +214,7 @@ class TestCanonicalFeatureSet:
 class TestTrainSurrogateModel:
     """Integration tests for the full training pipeline."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def _mock_setup(self):
         """Common mock objects for training tests."""
         engine = _make_mock_engine()
@@ -235,7 +235,7 @@ class TestTrainSurrogateModel:
         """train_surrogate_model returns (PhaseEnsemble, scaler, names)."""
         engine, cfg, extract_fn, boards = _mock_setup
 
-        model, scaler, names = train_surrogate_model(boards, engine, cfg, extract_fn)
+        model, _scaler, names = train_surrogate_model(boards, engine, cfg, extract_fn)
 
         assert isinstance(model, PhaseEnsemble)
         assert isinstance(names, list)
@@ -315,7 +315,7 @@ class TestWinrateScaledTargets:
         extract_fn = _make_feature_extractor(vary=True)
 
         with patch("chess_ai.model_trainer.sf_eval", side_effect=varying_sf_eval):
-            model, scaler, names = train_surrogate_model(
+            model, _scaler, names = train_surrogate_model(
                 boards, engine, cfg, extract_fn
             )
 

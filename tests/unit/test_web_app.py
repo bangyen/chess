@@ -4,6 +4,7 @@ Covers all API endpoints, the GameState helper class, and edge cases
 like invalid moves, game-over states, and missing engine fallback.
 """
 
+import contextlib
 from unittest.mock import Mock, patch
 
 import chess
@@ -16,7 +17,7 @@ from chess_ai.web.app import GameState, app
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     """Create a Flask test client with fresh game state per test."""
     app.config["TESTING"] = True
@@ -36,10 +37,8 @@ def _reset_game_state():
     # Shut down any engine that might have been started at module import
     old_state = app_module.game_state
     if hasattr(old_state, "engine") and old_state.engine is not None:
-        try:
+        with contextlib.suppress(Exception):
             old_state.engine.quit()
-        except Exception:
-            pass
 
     app_module.game_state = GameState.__new__(GameState)
     app_module.game_state.board = chess.Board()
@@ -51,10 +50,8 @@ def _reset_game_state():
     # Cleanup after test
     state = app_module.game_state
     if hasattr(state, "engine") and state.engine is not None:
-        try:
+        with contextlib.suppress(Exception):
             state.engine.quit()
-        except Exception:
-            pass
         state.engine = None
 
 

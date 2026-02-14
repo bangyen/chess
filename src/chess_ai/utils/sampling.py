@@ -7,8 +7,8 @@ entry-points are :func:`sample_random_positions` (quick, uniform),
 :func:`sample_positions_from_pgn` (from real games).
 """
 
+import logging
 import random
-import sys
 from typing import Dict, List, Optional
 
 import chess
@@ -17,11 +17,9 @@ import chess.pgn
 try:
     from tqdm import tqdm
 except Exception:
-    print(
-        "tqdm is required for progress bars. Install with: pip install tqdm",
-        file=sys.stderr,
-    )
     raise
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -122,23 +120,21 @@ def sample_positions_from_pgn(
 
     # ── Uniform (legacy) path ──
     boards: List[chess.Board] = []
-    print(f"Sampling positions from PGN file: {path}")
+    logger.info("Sampling positions from PGN file: %s", path)
     with open(path, encoding="utf-8", errors="ignore") as f:
         while True:
             game = chess.pgn.read_game(f)
             if game is None:
                 break
             board = game.board()
-            plies = 0
-            for move in game.mainline_moves():
+            for plies, move in enumerate(game.mainline_moves(), start=1):
                 board.push(move)
-                plies += 1
                 if plies % ply_skip == 0 and not board.is_game_over():
                     boards.append(board.copy(stack=False))
                     if len(boards) >= max_positions:
-                        print(f"Sampled {len(boards)} positions from PGN")
+                        logger.info("Sampled %d positions from PGN", len(boards))
                         return boards
-    print(f"Sampled {len(boards)} positions from PGN")
+    logger.info("Sampled %d positions from PGN", len(boards))
     return boards[:max_positions]
 
 
@@ -163,7 +159,7 @@ def _sample_pgn_stratified(
     def _all_full() -> bool:
         return all(len(buckets[p]) >= targets[p] for p in targets)
 
-    print(f"Sampling stratified positions from PGN file: {path}")
+    logger.info("Sampling stratified positions from PGN file: %s", path)
     with open(path, encoding="utf-8", errors="ignore") as f:
         while not _all_full():
             game = chess.pgn.read_game(f)
@@ -184,7 +180,7 @@ def _sample_pgn_stratified(
     for phase in targets:
         result.extend(buckets[phase])
     random.shuffle(result)
-    print(f"Sampled {len(result)} stratified positions from PGN")
+    logger.info("Sampled %d stratified positions from PGN", len(result))
     return result[:max_positions]
 
 
@@ -203,21 +199,21 @@ def sample_random_positions(n: int, max_random_plies: int = 24) -> List["chess.B
         List of chess board positions.
     """
     boards: List[chess.Board] = []
-    print(f"Generating {n} random positions...")
+    logger.info("Generating %d random positions...", n)
     for _ in tqdm(range(n), desc="Generating positions"):
         b = chess.Board()
         # play random but legal moves to get middlegame-ish positions
-        plies = random.randint(10, max_random_plies)
+        plies = random.randint(10, max_random_plies)  # noqa: S311
         for __ in range(plies):
             if b.is_game_over():
                 break
             moves = list(b.legal_moves)
             if not moves:
                 break
-            b.push(random.choice(moves))
+            b.push(random.choice(moves))  # noqa: S311
         if not b.is_game_over():
             boards.append(b.copy(stack=False))
-    print(f"Generated {len(boards)} valid positions")
+    logger.info("Generated %d valid positions", len(boards))
     return boards
 
 
@@ -277,7 +273,7 @@ def sample_stratified_positions(
 
     buckets: Dict[str, List[chess.Board]] = {p: [] for p in targets}
 
-    print(f"Generating {n} stratified positions...")
+    logger.info("Generating %d stratified positions...", n)
     for phase, target in targets.items():
         lo, hi = _PHASE_PLY_RANGES[phase]
         generated = 0
@@ -299,7 +295,6 @@ def sample_stratified_positions(
     for phase in targets:
         result.extend(buckets[phase])
     random.shuffle(result)
-    print(f"Generated {len(result)} stratified positions")
     return result
 
 
@@ -338,7 +333,7 @@ def _generate_candidate(
     material is removed and a low piece-count is more likely.
     """
     b = chess.Board()
-    plies = random.randint(min_plies, max_plies)
+    plies = random.randint(min_plies, max_plies)  # noqa: S311
     bias_captures = phase == "endgame"
 
     for _ in range(plies):
@@ -350,11 +345,11 @@ def _generate_candidate(
 
         if bias_captures:
             captures = [m for m in moves if b.is_capture(m)]
-            if captures and random.random() < 0.6:
-                b.push(random.choice(captures))
+            if captures and random.random() < 0.6:  # noqa: S311
+                b.push(random.choice(captures))  # noqa: S311
                 continue
 
-        b.push(random.choice(moves))
+        b.push(random.choice(moves))  # noqa: S311
 
     if b.is_game_over():
         return None

@@ -52,7 +52,7 @@ class TestRustClosureFallback:
         reply = chess.Move.from_uci("e7e5")
         mock_engine.analyse.return_value = {"pv": [reply]}
 
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        cnt, v_max, _near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(cnt, int)
@@ -75,7 +75,7 @@ class TestRustClosureFallback:
         reply = chess.Move.from_uci("e7e5")
         mock_engine.analyse.return_value = [{"pv": [reply]}]
 
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        cnt, _v_max, _near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(cnt, int)
@@ -193,7 +193,7 @@ class TestHangingPiecePositions:
         mock_engine.analyse.return_value = {"pv": [reply]}
 
         board2.push(chess.Move.from_uci("h1h8"))  # White plays Rh8
-        cnt, v_max, near_king = probes2["hanging_after_reply"](
+        cnt, v_max, _near_king = probes2["hanging_after_reply"](
             mock_engine, board2, depth=6
         )
         # a8 rook might be hanging depending on position
@@ -215,7 +215,7 @@ class TestHangingPiecePositions:
         reply = chess.Move.from_uci("e8d7")  # King escapes
         mock_engine.analyse.return_value = {"pv": [reply]}
 
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        cnt, _v_max, _near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(cnt, int)
@@ -236,7 +236,7 @@ class TestHangingPiecePositions:
 
         # Push a move that creates attack on d7
         board.push(chess.Move.from_uci("d1d5"))
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        _cnt, _v_max, near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(near_king, int)
@@ -270,7 +270,7 @@ class TestHangingPiecePositions:
         reply = chess.Move.from_uci("e7e5")
         mock_engine.analyse.return_value = [{"pv": [reply]}]
 
-        cnt, v_max, near_king = probes["hanging_after_reply"](
+        cnt, _v_max, _near_king = probes["hanging_after_reply"](
             mock_engine, board, depth=6
         )
         assert isinstance(cnt, int)
@@ -434,7 +434,9 @@ class TestSyzygyFeatures:
         assert isinstance(feats, dict)
 
     @patch.dict("os.environ", {"SYZYGY_PATH": "/fake/path"})
-    def test_python_fallback_syzygy_probes_success(self, _mock_extract=None):
+    def test_python_fallback_syzygy_probes_success(
+        self, _mock_extract=None  # noqa: PT028
+    ):
         """Cover Syzygy probe success path (lines 432-440).
 
         Mock SyzygyTablebase to return valid WDL/DTZ probes so that

@@ -116,9 +116,8 @@ class TestMain:
         mock_find_stockfish.side_effect = FileNotFoundError("Stockfish not found")
 
         # Mock sys.argv
-        with patch("sys.argv", ["explainable"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable"]), pytest.raises(SystemExit):
+            main()
 
     @patch("chess_ai.cli.explainable.find_stockfish")
     @patch("chess_ai.cli.explainable.ExplainableChessEngine")
@@ -128,9 +127,8 @@ class TestMain:
         mock_engine_class.side_effect = FileNotFoundError("Engine not found")
 
         # Mock sys.argv
-        with patch("sys.argv", ["explainable"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable"]), pytest.raises(SystemExit):
+            main()
 
     @patch("chess_ai.cli.explainable.find_stockfish")
     @patch("chess_ai.cli.explainable.ExplainableChessEngine")
@@ -155,16 +153,14 @@ class TestMain:
         mock_engine_class.side_effect = Exception("General error")
 
         # Mock sys.argv
-        with patch("sys.argv", ["explainable"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable"]), pytest.raises(SystemExit):
+            main()
 
     def test_main_help(self, capsys):
         """Test main help output."""
         # Mock sys.argv with help
-        with patch("sys.argv", ["explainable", "--help"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable", "--help"]), pytest.raises(SystemExit):
+            main()
 
         # Note: argparse help is printed to stderr, so we can't easily test it here
         # But we can verify that SystemExit is raised (which is expected for --help)
@@ -172,16 +168,18 @@ class TestMain:
     def test_main_invalid_strength(self):
         """Test main with invalid strength argument."""
         # Mock sys.argv with invalid strength
-        with patch("sys.argv", ["explainable", "--strength", "invalid"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable", "--strength", "invalid"]), pytest.raises(
+            SystemExit
+        ):
+            main()
 
     def test_main_invalid_depth(self):
         """Test main with invalid depth argument."""
         # Mock sys.argv with invalid depth
-        with patch("sys.argv", ["explainable", "--depth", "invalid"]):
-            with pytest.raises(SystemExit):
-                main()
+        with patch("sys.argv", ["explainable", "--depth", "invalid"]), pytest.raises(
+            SystemExit
+        ):
+            main()
 
     @patch("chess_ai.cli.explainable.find_stockfish")
     @patch("chess_ai.cli.explainable.ExplainableChessEngine")

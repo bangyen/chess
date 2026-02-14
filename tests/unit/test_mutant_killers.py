@@ -661,7 +661,7 @@ class TestLoadFeatureModuleMutants:
 class TestCalculateContributionsMutants:
     """Kill mutants in SurrogateExplainer.calculate_contributions."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def setup(self):
         """Create a SurrogateExplainer with strong, deterministic signal.
 
@@ -858,14 +858,13 @@ class TestCalculateContributionsMutants:
             model=mock_model, scaler=mock_scaler, feature_names=names
         )
 
-        with patch("builtins.print") as mock_print:
+        with patch("chess_ai.surrogate_explainer.logger") as mock_logger:
             result = explainer.calculate_contributions(
                 {"material_diff": 0.0}, {"material_diff": 5.0}
             )
             assert result == []
-            # Verify the print was called with a string containing "Warning"
-            mock_print.assert_called_once()
-            printed_arg = mock_print.call_args[0][0]
-            assert isinstance(printed_arg, str)
-            assert "Warning" in printed_arg
-            assert "test error" in printed_arg
+            # Verify the warning was logged with exc_info
+            mock_logger.warning.assert_called_once()
+            logged_msg = mock_logger.warning.call_args[0][0]
+            assert isinstance(logged_msg, str)
+            assert "Failed to calculate contributions" in logged_msg

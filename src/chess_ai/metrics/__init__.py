@@ -10,10 +10,10 @@ from .positional import (
 )
 
 __all__ = [
-    "kendall_tau",
     "checkability_now",
     "confinement_count",
     "confinement_delta",
+    "kendall_tau",
     "passed_pawn_momentum_delta",
     "passed_pawn_momentum_snapshot",
 ]

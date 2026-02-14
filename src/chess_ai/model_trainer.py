@@ -1,7 +1,8 @@
 """Model training utilities for explainable chess engine."""
 
+import logging
 import warnings
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
 
 import chess
 import numpy as np
@@ -13,6 +14,8 @@ from .metrics.positional import (
     passed_pawn_momentum_delta,
 )
 from .utils.math import cp_to_winrate
+
+logger = logging.getLogger(__name__)
 
 # Suppress sklearn warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -45,9 +48,15 @@ class PhaseEnsemble:
     #: L1 ratio values explored during cross-validation.
     #: Includes 1.0 (pure Lasso) so the CV can recover the old
     #: behaviour when appropriate.
-    L1_RATIOS = [0.3, 0.5, 0.7, 0.9, 1.0]
+    L1_RATIOS: ClassVar[list[float]] = [0.3, 0.5, 0.7, 0.9, 1.0]
 
-    def __init__(self, feature_names, alphas, cv_folds, max_iter):
+    def __init__(
+        self,
+        feature_names: List[str],
+        alphas: Union[List[float], np.ndarray],
+        cv_folds: int,
+        max_iter: int,
+    ) -> None:
         """Initialise the ensemble with hyper-parameter search grids.
 
         Args:
@@ -64,22 +73,24 @@ class PhaseEnsemble:
         self.alphas = alphas
         self.cv_folds = cv_folds
         self.max_iter = max_iter
-        self.models = {}  # "opening", "middlegame", "endgame"
-        self.global_model = None
-        self.scaler = None
+        self.models: Dict[str, Optional[ElasticNetCV]] = (
+            {}
+        )  # "opening", "middlegame", "endgame"
+        self.global_model: Optional[ElasticNetCV] = None
+        self.scaler: Optional[StandardScaler] = None
 
-    def get_phase(self, x):
+    def get_phase(self, features_normalized: np.ndarray) -> str:
         """Get game phase for a feature vector."""
         if self.phase_idx == -1:
             return "middlegame"
-        p = x[self.phase_idx]
+        p = features_normalized[self.phase_idx]
         if p > 24:
             return "opening"
         if p > 12:
             return "middlegame"
         return "endgame"
 
-    def _make_model(self):
+    def _make_model(self) -> ElasticNetCV:
         """Create a fresh ElasticNetCV with the ensemble's search grid.
 
         Factored out so that both the global and per-phase models are
@@ -93,7 +104,12 @@ class PhaseEnsemble:
             l1_ratio=self.L1_RATIOS,
         )
 
-    def fit(self, X, y):
+    def fit(
+        self,
+        X_scaled: np.ndarray,
+        y_arr: np.ndarray,
+        y_raw: Optional[np.ndarray] = None,
+    ) -> None:
         """Train phase-specific models.
 
         A global model is always trained as a fallback.  Per-phase
@@ -102,32 +118,37 @@ class PhaseEnsemble:
         """
         # Train global model backup
         self.global_model = self._make_model()
-        self.global_model.fit(X, y)
+        self.global_model.fit(X_scaled, y_arr)
 
         # Train phase-specific models
-        phases = [self.get_phase(x) for x in X]
+        phases = [self.get_phase(x) for x in X_scaled]
         for p_name in ["opening", "middlegame", "endgame"]:
             idx = [i for i, p in enumerate(phases) if p == p_name]
             if len(idx) > self.cv_folds * 2:
                 m = self._make_model()
-                m.fit(X[idx], y[idx])
+                m.fit(X_scaled[idx], y_arr[idx])
                 self.models[p_name] = m
             else:
                 self.models[p_name] = self.global_model
 
-    def predict(self, X):
+    def predict(self, X_scaled: np.ndarray) -> np.ndarray:
         """Predict evaluation deltas."""
-        if len(X.shape) == 1:
-            p_name = self.get_phase(X)
-            return self.models.get(p_name, self.global_model).predict(X.reshape(1, -1))
+        if len(X_scaled.shape) == 1:
+            p_name = self.get_phase(X_scaled)
+            model = self.models.get(p_name, self.global_model) or self.global_model
+            if model is None:
+                raise RuntimeError("Model not fitted")
+            out: np.ndarray = model.predict(X_scaled.reshape(1, -1))
+            return out
 
-        preds = np.zeros(X.shape[0])
-        for i, x in enumerate(X):
+        preds = np.zeros(X_scaled.shape[0])
+        for i, x in enumerate(X_scaled):
             p_name = self.get_phase(x)
-            preds[i] = self.models.get(p_name, self.global_model).predict(
-                x.reshape(1, -1)
-            )[0]
-        return preds
+            m = self.models.get(p_name, self.global_model) or self.global_model
+            if m is None:
+                raise RuntimeError("Model not fitted")
+            preds[i] = m.predict(x.reshape(1, -1))[0]
+        return np.asarray(preds, dtype=float)
 
     def get_contributions(self, features_normalized: np.ndarray) -> np.ndarray:
         """Get per-feature contributions in centipawns.
@@ -136,37 +157,46 @@ class PhaseEnsemble:
             features_normalized: Normalized feature vector
 
         Returns:
-            Array where contribution[i] = coef[i] × feature_normalized[i]
+            Array where contribution[i] = coef[i] * feature_normalized[i]
         """
         if len(features_normalized.shape) == 1:
             phase_name = self.get_phase(features_normalized)
-            model = self.models.get(phase_name, self.global_model)
-            result: np.ndarray = model.coef_ * features_normalized  # type: ignore
+            model = self.models.get(phase_name, self.global_model) or self.global_model
+            if model is None:
+                raise RuntimeError("Model not fitted")
+            result: np.ndarray = model.coef_ * features_normalized
             return result
         # Multiple vectors
         contributions: np.ndarray = np.zeros_like(features_normalized)
         for i, feat_vec in enumerate(features_normalized):
             phase_name = self.get_phase(feat_vec)
-            model = self.models.get(phase_name, self.global_model)
-            contributions[i] = model.coef_ * feat_vec  # type: ignore
+            model = self.models.get(phase_name, self.global_model) or self.global_model
+            if model is None:
+                raise RuntimeError("Model not fitted")
+            contributions[i] = model.coef_ * feat_vec
         return contributions
 
     @property
-    def coef_(self):
+    def coef_(self) -> np.ndarray:
         """Get model coefficients (from middlegame or global)."""
-        return self.models.get("middlegame", self.global_model).coef_
+        model = self.models.get("middlegame", self.global_model) or self.global_model
+        if model is None:
+            raise RuntimeError("Model not fitted")
+        return np.asarray(model.coef_, dtype=float)
 
     @property
-    def alpha_(self):
+    def alpha_(self) -> float:
         """Get selected regularization parameter."""
-        return self.global_model.alpha_
+        if self.global_model is None:
+            raise RuntimeError("Model not fitted")
+        return float(self.global_model.alpha_)
 
 
 def train_surrogate_model(
     boards: List[chess.Board],
-    engine,
+    engine: Any,
     cfg: SFConfig,
-    extract_features_fn: Callable,
+    extract_features_fn: Callable[..., Dict[str, float]],
     test_size: float = 0.25,
     l1_alpha: float = 0.01,
 ) -> Tuple[PhaseEnsemble, StandardScaler, List[str]]:
@@ -183,7 +213,7 @@ def train_surrogate_model(
     Returns:
         Tuple of (PhaseEnsemble model, StandardScaler, feature_names)
     """
-    print("Collecting move deltas for training...")
+    logger.info("Collecting move deltas for training...")
     # Use a canonical (union) feature set so that features appearing
     # in only some positions are kept rather than silently dropped.
     # Missing values are filled with 0.0 during matrix construction.
@@ -230,7 +260,7 @@ def train_surrogate_model(
                 try:
                     pp_delta = passed_pawn_momentum_delta(base_board, b)
                     after_reply_feats.update(pp_delta)
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
 
                 try:
@@ -243,13 +273,13 @@ def train_surrogate_model(
                         - base_check["d_capture_checks"],
                     }
                     after_reply_feats.update(check_delta)
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
 
                 try:
                     conf_delta = confinement_delta(base_board, b)
                     after_reply_feats.update(conf_delta)
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
 
                 for k in after_reply_feats:
@@ -301,6 +331,6 @@ def train_surrogate_model(
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
         model.fit(X_scaled, y_arr)
 
-    print(f"Model trained with {n_samples} samples, alpha={model.alpha_:.4f}")
+    logger.info("Model trained with %d samples, alpha=%.4f", n_samples, model.alpha_)
 
     return model, scaler, feature_names

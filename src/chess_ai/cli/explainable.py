@@ -44,7 +44,7 @@ def find_stockfish() -> str:
     )
 
 
-def main():
+def main() -> None:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description="Explainable Chess Engine - Learn chess with AI explanations",

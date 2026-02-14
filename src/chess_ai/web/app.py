@@ -74,7 +74,7 @@ class GameState:
                         "explanation": explanation,
                         "features": {k: float(v) for k, v in feature_values.items()},
                     }
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         legal_moves = list(self.board.legal_moves)
@@ -124,9 +124,12 @@ class GameState:
             reasons.append("Controls center")
 
         piece = self.board.piece_at(move.from_square)
-        if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-            if self.board.fullmove_number <= 10:
-                reasons.append("Develops piece")
+        if (
+            piece
+            and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
+            and self.board.fullmove_number <= 10
+        ):
+            reasons.append("Develops piece")
 
         # Check for promotions
         if move.promotion:

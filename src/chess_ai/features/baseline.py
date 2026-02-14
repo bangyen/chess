@@ -1,8 +1,7 @@
 """Baseline feature extraction functions."""
 
 import os
-import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import chess
 import chess.engine
@@ -10,10 +9,6 @@ import chess.engine
 try:
     pass
 except Exception:
-    print(
-        "scikit-learn is required. Install with: pip install scikit-learn",
-        file=sys.stderr,
-    )
     raise
 
 
@@ -33,7 +28,7 @@ except ImportError:
 _SYZYGY_TB: Optional["SyzygyTablebase"] = None
 
 
-def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
+def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:  # noqa: C901
     """Small, fast, interpretable baseline feature set.
 
     This is intentionally compact; use your own richer set for best results.
@@ -66,12 +61,14 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                             feats["syzygy_wdl"] = float(wdl) / 2.0
                         if dtz is not None:
                             feats["syzygy_dtz"] = float(dtz) / 100.0
-                except Exception:
+                except Exception:  # noqa: S110
                     pass
 
             # Rust succeeded — define engine probes and return early,
             # skipping the slower Python feature recomputation.
-            def _sf_eval_shallow(engine, board, depth=6):
+            def _sf_eval_shallow(
+                engine: Any, board: chess.Board, depth: int = 6
+            ) -> float:
                 """Shallow engine evaluation with depth limit."""
                 try:
                     info = engine.analyse(
@@ -85,7 +82,9 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 except Exception:
                     return 0.0
 
-            def _hanging_after_reply(engine, board, depth=6):
+            def _hanging_after_reply(
+                engine: Any, board: chess.Board, depth: int = 6
+            ) -> Tuple[int, int, int]:
                 """Hanging-after-reply via Rust or Stockfish fallback."""
                 try:
                     reply = None
@@ -96,7 +95,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                             uci = find_best_reply(board.fen(), rust_depth)
                             if uci:
                                 reply = chess.Move.from_uci(uci)
-                        except Exception:
+                        except Exception:  # noqa: S110
                             pass
                     if reply is None:
                         info = engine.analyse(
@@ -139,14 +138,16 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 except Exception:
                     return 0, 0, 0
 
-            def _best_forcing_swing(engine, board, d_base=6, k_max=12):
+            def _best_forcing_swing(
+                engine: Any, board: chess.Board, d_base: int = 6, k_max: int = 12
+            ) -> float:
                 """Forcing swing via Rust or Stockfish fallback."""
                 if RUST_AVAILABLE:
                     try:
                         # Rust search uses TT + pruning; depth 8 is safe.
                         rust_depth = min(d_base, 8)
                         return float(calculate_forcing_swing(board.fen(), rust_depth))
-                    except Exception:
+                    except Exception:  # noqa: S110
                         pass
                 try:
                     base = _sf_eval_shallow(engine, board, d_base)
@@ -185,13 +186,13 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         chess.QUEEN: 9,
     }
 
-    def material(side):
+    def material(side: bool) -> float:
         val = 0.0
         for p, v in piece_values.items():
             val += len(board.pieces(p, side)) * v
         return val
 
-    def mobility(side):
+    def mobility(side: bool) -> int:
         # quick mobility: count legal moves, capped to reduce variance
         if board.turn != side:
             board.turn = side
@@ -201,7 +202,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             moves = sum(1 for _ in board.legal_moves)
         return min(moves, 40)
 
-    def king_ring_pressure(attacking_side):
+    def king_ring_pressure(attacking_side: bool) -> float:
         """Phase-normalized king-ring pressure"""
         ksq = board.king(not attacking_side)
         if ksq is None:
@@ -241,7 +242,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         )
         return s / max(6, phase)
 
-    def passed_pawns(side):
+    def passed_pawns(side: bool) -> float:
         count = 0
         # Simple passed pawn check: no enemy pawns in front on same or adjacent files
         for sq in board.pieces(chess.PAWN, side):
@@ -262,7 +263,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                             is_passed = False
                             break
                 else:  # Black pawns
-                    for check_rank in range(0, rank):
+                    for check_rank in range(rank):
                         check_sq = chess.square(check_file, check_rank)
                         piece = board.piece_type_at(check_sq)
                         if piece == chess.PAWN and board.color_at(check_sq) != side:
@@ -287,7 +288,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["passed_them"] = passed_pawns(not board.turn)
 
     # simple rook on open/semi-open file
-    def file_state(side):
+    def file_state(side: bool) -> Tuple[int, int]:
         open_files = 0
         semi_open = 0
         for file in range(8):
@@ -319,7 +320,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     )
 
     # Add more positional features
-    def center_control(side):
+    def center_control(side: bool) -> float:
         # Count pieces in center squares (d4, d5, e4, e5)
         center_squares = [chess.D4, chess.D5, chess.E4, chess.E5]
         count = 0
@@ -329,7 +330,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 count += 1
         return float(count)
 
-    def piece_activity(side):
+    def piece_activity(side: bool) -> float:
         # Count squares attacked by pieces of this side
         count = 0
         for sq in chess.SQUARES:
@@ -337,7 +338,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 count += 1
         return float(count)
 
-    def king_safety(side):
+    def king_safety(side: bool) -> float:
         # Simple king safety: count pieces around own king
         king_sq = board.king(side)
         if king_sq is None:
@@ -358,24 +359,26 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["king_safety_them"] = king_safety(not board.turn)
 
     # Add tactical features
-    def hanging_pieces(side):
+    def hanging_pieces(side: bool) -> float:
         # Count pieces that are attacked but not defended
         count = 0
         for sq in chess.SQUARES:
             piece = board.piece_at(sq)
-            if piece and piece.color == side:
-                if board.is_attacked_by(not side, sq) and not board.is_attacked_by(
-                    side, sq
-                ):
-                    count += 1
+            if (
+                piece
+                and piece.color == side
+                and board.is_attacked_by(not side, sq)
+                and not board.is_attacked_by(side, sq)
+            ):
+                count += 1
         return float(count)
 
-    def bishop_pair(side):
+    def bishop_pair(side: bool) -> float:
         # Check if side has both bishops
         bishops = board.pieces(chess.BISHOP, side)
         return 1.0 if len(bishops) >= 2 else 0.0
 
-    def rook_on_7th(side):
+    def rook_on_7th(side: bool) -> float:
         # Count rooks on the 7th rank (for white) or 2nd rank (for black)
         target_rank = 6 if side == chess.WHITE else 1
         count = 0
@@ -384,7 +387,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 count += 1
         return float(count)
 
-    def king_pawn_shield(side):
+    def king_pawn_shield(side: bool) -> float:
         # Count friendly pawns in front of the king (3 files around)
         ks = board.king(side)
         if ks is None:
@@ -438,11 +441,11 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 if dtz is not None:
                     # DTZ can be large; normalize or just cap
                     feats["syzygy_dtz"] = float(dtz) / 100.0
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     # Add engine-based dynamic probes for better move ranking
-    def sf_eval_shallow(engine, board, depth=6):
+    def sf_eval_shallow(engine: Any, board: chess.Board, depth: int = 6) -> float:
         """Shallow engine evaluation with depth limit"""
         try:
             info = engine.analyse(board, chess.engine.Limit(depth=depth), multipv=1)
@@ -455,7 +458,9 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         except Exception:
             return 0.0
 
-    def hanging_after_reply_real(engine, board, depth=6):
+    def hanging_after_reply_real(
+        engine: Any, board: chess.Board, depth: int = 6
+    ) -> Tuple[int, int, int]:
         """Real hanging-after-reply with engine analysis (or Rust optimization)"""
         try:
             reply = None
@@ -466,7 +471,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                     uci = find_best_reply(board.fen(), rust_depth)
                     if uci:
                         reply = chess.Move.from_uci(uci)
-                except Exception:
+                except Exception:  # noqa: S110
                     # Fallback on error
                     pass
 
@@ -513,14 +518,16 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         except Exception:
             return 0, 0, 0
 
-    def best_forcing_swing_real(engine, board, d_base=6, k_max=12):
+    def best_forcing_swing_real(
+        engine: Any, board: chess.Board, d_base: int = 6, k_max: int = 12
+    ) -> float:
         """Real forcing swing with eval differences (or Rust optimization)"""
         if RUST_AVAILABLE:
             try:
                 # Rust search uses TT + pruning; depth 8 is safe.
                 rust_depth = min(d_base, 8)
                 return float(calculate_forcing_swing(board.fen(), rust_depth))
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
         try:
@@ -541,7 +548,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             return 0.0
 
     # Add advanced positional features
-    def outposts(side):
+    def outposts(side: bool) -> float:
         # Knight on rank 4-6 (relative), supported by pawn, no enemy pawn can attack
         count = 0
         knights = board.pieces(chess.KNIGHT, side)
@@ -580,7 +587,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             count += 1
         return float(count)
 
-    def batteries(side):
+    def batteries(side: bool) -> float:  # noqa: C901
         # R-R, R-Q, Q-Q on same file/rank; B-Q on same diagonal
         count = 0
         # Files and Ranks
@@ -643,7 +650,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
 
         return float(count)
 
-    def pawn_structure(side):
+    def pawn_structure(side: bool) -> float:
         isolated = 0
 
         pawns = board.pieces(chess.PAWN, side)
@@ -677,7 +684,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
     feats["isolated_pawns_them"] = pawn_structure(not board.turn)
 
     # Phase 2 Features
-    def safe_mobility(side):
+    def safe_mobility(side: bool) -> float:
         # Count legal moves that don't land on squares attacked by enemy pawns
         if board.turn != side:
             board.turn = side
@@ -699,8 +706,8 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
 
         return min(float(safe_count), 40.0)
 
-    def rook_on_open_file(side):
-        count = 0
+    def rook_on_open_file(side: bool) -> float:
+        count: float = 0.0
         for sq in board.pieces(chess.ROOK, side):
             file = chess.square_file(sq)
             # Check if file is open (no pawns)
@@ -721,7 +728,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                 count += 0.5
         return float(count)
 
-    def backward_pawns(side):
+    def backward_pawns(side: bool) -> float:
         count = 0
         pawns = board.pieces(chess.PAWN, side)
         opp = not side
@@ -1281,7 +1288,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
         -50,
     ]
 
-    def pst_value(side):
+    def pst_value(side: bool) -> float:
         """Phase-interpolated PST score.
 
         Uses a continuous phase factor (0.0 = endgame, 1.0 = opening)
@@ -1300,7 +1307,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
             (chess.QUEEN, PST_QUEEN),
         ]:
             if table is None:
-                continue
+                continue  # type: ignore[unreachable]
             for sq in board.pieces(pt, side):
                 vis_r = (
                     7 - chess.square_rank(sq)
@@ -1325,14 +1332,13 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
 
         return float(score) / 100.0  # Standardize scale
 
-    def pinned_pieces(side):
+    def pinned_pieces(side: bool) -> float:
         # Count absolutely pinned pieces
         count = 0
         for sq in chess.SQUARES:
             p = board.piece_at(sq)
-            if p and p.color == side:
-                if board.is_pinned(side, sq):
-                    count += 1
+            if p and p.color == side and board.is_pinned(side, sq):
+                count += 1
         return float(count)
 
     feats["pst_us"] = pst_value(board.turn)
@@ -1579,7 +1585,7 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, float]:
                     board.set_piece_at(sq, p)
         return result
 
-    def see_features(side: bool):
+    def see_features(side: bool) -> Tuple[float, float]:
         """Compute SEE advantage and vulnerability for *side*.
 
         Returns ``(advantage, vulnerability)`` where advantage is the

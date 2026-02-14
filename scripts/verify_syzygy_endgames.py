@@ -5,8 +5,8 @@ ExplainableChessEngine properly queries Syzygy tablebases and
 surfaces tablebase-backed reasons in move explanations.
 
 Env vars:
-    SYZYGY_PATH    – directory containing .rtbw/.rtbz files (default ~/syzygy)
-    STOCKFISH_PATH – path to the Stockfish binary
+    SYZYGY_PATH    - directory containing .rtbw/.rtbz files (default ~/syzygy)
+    STOCKFISH_PATH - path to the Stockfish binary
 """
 
 import os
@@ -61,7 +61,7 @@ def verify_endgames() -> None:
 
                 best_move = engine.get_best_move()
                 if not best_move:
-                    print("  FAIL – no best move found")
+                    print("  FAIL - no best move found")
                     failures += 1
                     continue
 
@@ -76,7 +76,7 @@ def verify_endgames() -> None:
                         found_syzygy_reason = True
 
                 if not found_syzygy_reason:
-                    print("  WARN – no Syzygy reason in explanation")
+                    print("  WARN - no Syzygy reason in explanation")
                     failures += 1
 
                 print()
@@ -85,7 +85,7 @@ def verify_endgames() -> None:
         sys.exit(1)
 
     if failures:
-        print(f"\n{failures} position(s) had issues – see output above.")
+        print(f"\n{failures} position(s) had issues - see output above.")
         sys.exit(1)
 
     print("All positions verified successfully.")

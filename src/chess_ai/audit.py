@@ -1,9 +1,9 @@
 """Main audit functionality."""
 
-import sys
+import logging
 import warnings
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 import chess
 import numpy as np
@@ -17,6 +17,8 @@ from .metrics.positional import (
     passed_pawn_momentum_delta,
 )
 from .utils.math import cp_to_winrate
+
+logger = logging.getLogger(__name__)
 
 # Suppress sklearn convergence warnings for small datasets
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -34,19 +36,11 @@ try:
     warnings.filterwarnings("ignore", message=".*convergence.*", module="sklearn")
     warnings.filterwarnings("ignore", module="sklearn")
 except Exception:
-    print(
-        "scikit-learn is required. Install with: pip install scikit-learn",
-        file=sys.stderr,
-    )
     raise
 
 try:
     from tqdm import tqdm
 except Exception:
-    print(
-        "tqdm is required for progress bars. Install with: pip install tqdm",
-        file=sys.stderr,
-    )
     raise
 
 
@@ -70,11 +64,11 @@ class AuditResult:
     top_features_by_coef: List[Tuple[str, float]]
 
 
-def audit_feature_set(
+def audit_feature_set(  # noqa: C901
     boards: List["chess.Board"],
-    engine,
+    engine: Any,
     cfg: SFConfig,
-    extract_features_fn,
+    extract_features_fn: Callable[..., Dict[str, Any]],
     multipv_for_ranking: int = 3,
     test_size: float = 0.25,
     l1_alpha: float = 0.01,
@@ -108,7 +102,7 @@ def audit_feature_set(
     _hanging_cache: Dict[str, Tuple[int, float, int]] = {}
     _swing_cache: Dict[str, float] = {}
 
-    def cached_sf_eval(eng, board: chess.Board, c: SFConfig) -> float:
+    def cached_sf_eval(eng: Any, board: chess.Board, c: SFConfig) -> float:
         """Return sf_eval result, caching by FEN to skip repeat calls."""
         key = board.fen()
         if key not in _eval_cache:
@@ -116,7 +110,7 @@ def audit_feature_set(
         return _eval_cache[key]
 
     def cached_sf_top_moves(
-        eng, board: chess.Board, c: SFConfig
+        eng: Any, board: chess.Board, c: SFConfig
     ) -> List[Tuple[chess.Move, float]]:
         """Return sf_top_moves result, caching by FEN + multipv."""
         key = f"{board.fen()}|mpv{c.multipv}"
@@ -124,7 +118,9 @@ def audit_feature_set(
             _top_moves_cache[key] = sf_top_moves(eng, board, c)
         return _top_moves_cache[key]
 
-    def cached_best_reply(eng, board: chess.Board, depth: int):
+    def cached_best_reply(
+        eng: Any, board: chess.Board, depth: int
+    ) -> Optional[chess.Move]:
         """Find Stockfish's best reply, caching by FEN.
 
         Returns the best reply Move or None.
@@ -137,16 +133,16 @@ def audit_feature_set(
             reply_info = reply_info[0]
         reply_move = reply_info.get("pv", [None])[0]
         _analyse_cache[key] = reply_move
-        return reply_move
+        return cast(Optional[chess.Move], reply_move)
 
     # -- Helper to enrich features (avoids 4x copy-paste) --
     def _enrich_features(
         board: chess.Board,
         base_board: chess.Board,
         base_feats_raw: Dict[str, float],
-        extract_fn: Callable,
-        eng,
-        apply_inter: Callable,
+        extract_fn: Callable[..., Dict[str, Any]],
+        eng: Any,
+        apply_inter: Callable[[Dict[str, float]], None],
     ) -> Dict[str, float]:
         """Extract features and add probes, deltas, and interactions.
 
@@ -213,7 +209,7 @@ def audit_feature_set(
         return feats
 
     def _extract_base_feats(
-        extract_fn: Callable, board: chess.Board
+        extract_fn: Callable[..., Dict[str, Any]], board: chess.Board
     ) -> Dict[str, float]:
         """Extract and clean base features for delta computation."""
         raw = extract_fn(board)
@@ -246,14 +242,14 @@ def audit_feature_set(
         ("d_rook_open_file_us", "phase"),
     ]
 
-    def apply_interactions(feats):
+    def apply_interactions(feats: Dict[str, float]) -> None:
         """Add pairwise interaction features in-place."""
         for p1, p2 in interaction_pairs:
             if p1 in feats and p2 in feats:
                 feats[f"{p1}_x_{p2}"] = float(feats[p1]) * float(feats[p2])
 
     # 1) Collect dataset (X, y) for fidelity (move delta-level)
-    print("Collecting move deltas for training...")
+    logger.info("Collecting move deltas for training...")
     # Use a canonical (union) feature set so that features appearing
     # in only some positions are kept rather than silently dropped.
     # Missing values are filled with 0.0 during matrix construction.
@@ -343,7 +339,7 @@ def audit_feature_set(
     )
     # Keep centipawn-space targets aligned with the same split for
     # metrics that need the original scale (e.g. faithfulness).
-    _, _, y_train_cp, y_test_cp = train_test_split(
+    _, _, _y_train_cp, _y_test_cp = train_test_split(
         X_mat, y_arr_cp, test_size=test_size, random_state=42
     )
 
@@ -412,7 +408,12 @@ def audit_feature_set(
             self.distilled_coef: np.ndarray = np.zeros(0)
             self.top_k_idx: np.ndarray = np.zeros(0, dtype=int)
 
-        def fit(self, X, y, y_raw=None):
+        def fit(
+            self,
+            X: np.ndarray,
+            y: np.ndarray,
+            y_raw: Optional[np.ndarray] = None,
+        ) -> None:
             """Fit the GBT and distil into a sparse ElasticNet.
 
             The distilled ElasticNet is trained on a *mixed* target that
@@ -484,19 +485,19 @@ def audit_feature_set(
             self._distill_alpha = float(distill_model.alpha_)
             self._distill_l1_ratio = float(distill_model.l1_ratio_)
 
-        def predict(self, X):
+        def predict(self, X: np.ndarray) -> np.ndarray:
             """Predict eval deltas (in win-rate space)."""
             if len(X.shape) == 1:
-                return self.gbt.predict(X.reshape(1, -1))
-            return self.gbt.predict(X)
+                return np.asarray(self.gbt.predict(X.reshape(1, -1)), dtype=float)
+            return np.asarray(self.gbt.predict(X), dtype=float)
 
         @property
-        def alpha_(self):
+        def alpha_(self) -> float:
             """ElasticNet alpha from the distilled fit, used by stability selection."""
             return self._distill_alpha
 
         @property
-        def l1_ratio_(self):
+        def l1_ratio_(self) -> float:
             """ElasticNet l1_ratio from the distilled fit."""
             return self._distill_l1_ratio
 
@@ -506,10 +507,11 @@ def audit_feature_set(
         warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
         model.fit(X_train_scaled, y_train, y_raw=y_train)
 
-    print(f"GBT iterations: {model.gbt.n_iter_}")
-    print(
-        f"Distilled ElasticNet alpha: {model.alpha_:.4f}, "
-        f"l1_ratio: {model.l1_ratio_:.2f}"
+    logger.info("GBT iterations: %d", model.gbt.n_iter_)
+    logger.info(
+        "Distilled ElasticNet alpha: %.4f, l1_ratio: %.2f",
+        model.alpha_,
+        model.l1_ratio_,
     )
 
     # Fidelity
@@ -517,7 +519,7 @@ def audit_feature_set(
     r2 = r2_score(y_test, y_pred)
 
     # 3) Move-ranking agreement (Kendall tau over MultiPV)
-    print("Computing move ranking agreement...")
+    logger.info("Computing move ranking agreement...")
     taus = []
     covered = 0
     n_tau = 0
@@ -588,7 +590,7 @@ def audit_feature_set(
 
     # 4) Local faithfulness, sparsity, coverage, AND decisive faithfulness
     #    (merged into a single pass to avoid redundant Stockfish calls)
-    print("Computing local faithfulness and sparsity...")
+    logger.info("Computing local faithfulness and sparsity...")
     faithful_hits = 0
     faithful_total = 0
     faithful_decisive_hits = 0
@@ -603,7 +605,7 @@ def audit_feature_set(
         np.percentile(abs_coef[abs_coef > 0], 50) if np.any(abs_coef > 0) else 0.0
     )
 
-    def _sparsity(contrib):
+    def _sparsity(contrib: np.ndarray) -> int:
         """Count features needed to cover 80% of total |contribution|."""
         tot = np.sum(np.abs(contrib))
         if tot <= 1e-9:
@@ -618,7 +620,13 @@ def audit_feature_set(
                 break
         return k
 
-    def _eval_move_delta(b, mv, base_eval, base_board, base_feats_raw):
+    def _eval_move_delta(
+        b: chess.Board,
+        mv: chess.Move,
+        base_eval: float,
+        base_board: chess.Board,
+        base_feats_raw: Dict[str, float],
+    ) -> Tuple[float, np.ndarray]:
         """Evaluate a single move: push move+reply, get delta and features.
 
         Returns (delta_sf, vec) where vec is the feature vector or zeros.
@@ -719,7 +727,7 @@ def audit_feature_set(
     #    resamples.  Uses the same alpha/l1_ratio as the distilled
     #    model for consistency.
     if X_train.shape[0] >= 20:
-        print("Running stability selection...")
+        logger.info("Running stability selection...")
         top_k = model.top_k_idx
         X_train_topk = X_train_scaled[:, top_k]
         y_gbt_train = model.predict(X_train_scaled)

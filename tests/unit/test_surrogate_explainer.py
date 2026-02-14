@@ -81,7 +81,7 @@ class TestSurrogateExplainerInit:
 class TestCalculateContributions:
     """Test calculate_contributions with various scenarios."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def explainer(self):
         """Create a SurrogateExplainer with a small trained model."""
         names = ["material_diff", "mobility_us", "mobility_them", "phase"]
@@ -190,7 +190,7 @@ class TestCalculateContributions:
         result = explainer.calculate_contributions(before, after, top_k=5, min_cp=0.0)
 
         if result:
-            name, cp, text = result[0]
+            name, _cp, text = result[0]
             assert name == "material_diff"
             assert "Material advantage" in text
 
@@ -207,7 +207,7 @@ class TestCalculateContributions:
         result = explainer.calculate_contributions(before, after, top_k=5, min_cp=0.0)
 
         if result:
-            name, cp, text = result[0]
+            _name, _cp, text = result[0]
             assert "unknown_feature_xyz" in text
             assert "cp" in text
 
@@ -253,7 +253,7 @@ class TestFeatureTemplates:
             # Should be formattable with a float
             try:
                 tmpl.format(42.0)
-            except (KeyError, IndexError) as exc:
+            except (KeyError, IndexError) as exc:  # noqa: PERF203
                 pytest.fail(f"Template for '{key}' is not formattable: {exc}")
 
     def test_templates_cover_common_features(self):

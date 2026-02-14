@@ -1,5 +1,7 @@
 """Positional chess metrics and feature calculations."""
 
+from typing import Dict
+
 import chess
 
 # Passed-pawn momentum helpers
@@ -101,7 +103,7 @@ def _is_passed_pawn(board: chess.Board, sq: int, color: bool) -> bool:
     return True
 
 
-def passed_pawn_momentum_snapshot(board: chess.Board, color: bool):
+def passed_pawn_momentum_snapshot(board: chess.Board, color: bool) -> Dict[str, int]:
     """Compute momentum features for one side in the current position."""
     features = {
         "pp_count": 0,
@@ -125,15 +127,17 @@ def passed_pawn_momentum_snapshot(board: chess.Board, color: bool):
     return features
 
 
-def passed_pawn_momentum_delta(base: chess.Board, after_reply: chess.Board):
-    """Return Δ features (us – them, and sided deltas) suitable for Δ-training."""
+def passed_pawn_momentum_delta(
+    base: chess.Board, after_reply: chess.Board
+) -> Dict[str, int]:
+    """Return delta features (us - them, and sided deltas) suitable for delta-training."""
     us = base.turn
     base_us = passed_pawn_momentum_snapshot(base, us)
     base_them = passed_pawn_momentum_snapshot(base, not us)
     after_us = passed_pawn_momentum_snapshot(after_reply, us)
     after_them = passed_pawn_momentum_snapshot(after_reply, not us)
 
-    def d(key):
+    def d(key: str) -> int:
         return (after_us[key] - base_us[key]) - (
             after_them[key] - base_them[key]
         )  # favor our gain vs their gain
@@ -149,7 +153,7 @@ def passed_pawn_momentum_delta(base: chess.Board, after_reply: chess.Board):
     }
 
 
-def checkability_now(board: chess.Board):
+def checkability_now(board: chess.Board) -> Dict[str, int]:
     """Count available check moves."""
     quiet, capture = 0, 0
     for mv in board.legal_moves:
@@ -161,7 +165,7 @@ def checkability_now(board: chess.Board):
     return {"d_quiet_checks": quiet, "d_capture_checks": capture}
 
 
-def confinement_count(board: chess.Board, constrained_side: bool):
+def confinement_count(board: chess.Board, constrained_side: bool) -> int:
     """Count pieces with limited mobility."""
     c = 0
     for pt in (chess.KNIGHT, chess.BISHOP):
@@ -180,7 +184,7 @@ def confinement_count(board: chess.Board, constrained_side: bool):
     return c
 
 
-def confinement_delta(base: chess.Board, after_reply: chess.Board):
+def confinement_delta(base: chess.Board, after_reply: chess.Board) -> Dict[str, int]:
     """Calculate confinement delta between positions."""
     us = base.turn
     return {

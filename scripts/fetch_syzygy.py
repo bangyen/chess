@@ -11,7 +11,7 @@ DEFAULT_DEST = os.path.expanduser("~/syzygy")
 def fetch_file_list() -> List[str]:
     print(f"Fetching file list from {BASE_URL}...")
     try:
-        with urllib.request.urlopen(BASE_URL) as response:
+        with urllib.request.urlopen(BASE_URL) as response:  # noqa: S310
             html = response.read().decode("utf-8")
             # Extract links like KBBvK.rtbw
             files = re.findall(r'href="([^"?]+?\.(?:rtbw|rtbz))"', html)
@@ -40,7 +40,7 @@ def download_files(files: List[str], dest_dir: str):
 
         print(f"[{i+1}/{total}] Downloading {filename}...", end="\r")
         try:
-            urllib.request.urlretrieve(url, dest_path)
+            urllib.request.urlretrieve(url, dest_path)  # noqa: S310
         except Exception as e:
             print(f"\nError downloading {filename}: {e}")
 

@@ -1,6 +1,6 @@
 """Stockfish engine interface functions."""
 
-from typing import List, Tuple
+from typing import Any, List, Tuple
 
 import chess
 import chess.engine
@@ -8,7 +8,7 @@ import chess.engine
 from .config import SFConfig
 
 
-def sf_open(cfg: SFConfig):
+def sf_open(cfg: SFConfig) -> chess.engine.SimpleEngine:
     """Open a Stockfish engine with the given configuration.
 
     Args:
@@ -22,7 +22,9 @@ def sf_open(cfg: SFConfig):
     return engine
 
 
-def sf_eval(engine, board: "chess.Board", cfg: SFConfig) -> float:
+def sf_eval(
+    engine: chess.engine.SimpleEngine, board: "chess.Board", cfg: SFConfig
+) -> float:
     """Get Stockfish evaluation for a position.
 
     Args:
@@ -38,10 +40,9 @@ def sf_eval(engine, board: "chess.Board", cfg: SFConfig) -> float:
         if cfg.movetime == 0
         else chess.engine.Limit(time=cfg.movetime / 1000.0)
     )
-    info = engine.analyse(board, limit=limit, multipv=1)
+    raw: Any = engine.analyse(board, limit=limit, multipv=1)
     # engine.analyse returns a list when multipv > 1, but a dict when multipv=1
-    if isinstance(info, list):
-        info = info[0]
+    info = raw[0] if isinstance(raw, list) else raw
     score = info["score"].pov(board.turn)
     cp = score.score(mate_score=100000)
     # Clip mate scores to prevent instability
@@ -49,7 +50,9 @@ def sf_eval(engine, board: "chess.Board", cfg: SFConfig) -> float:
 
 
 def sf_top_moves(
-    engine, board: "chess.Board", cfg: SFConfig
+    engine: chess.engine.SimpleEngine,
+    board: "chess.Board",
+    cfg: SFConfig,
 ) -> List[Tuple[chess.Move, float]]:
     """Get top moves from Stockfish for a position.
 

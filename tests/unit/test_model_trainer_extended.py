@@ -27,7 +27,7 @@ except ImportError:
 class TestPhaseEnsembleProperties:
     """Cover coef_ and alpha_ property accessors."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def fitted_ensemble(self):
         """Return a PhaseEnsemble fitted on synthetic data."""
         np.random.seed(42)
@@ -90,7 +90,7 @@ class TestTrainSurrogateModelSmallSamples:
         def extract(board):
             return {"material_diff": 0.0, "mobility_us": 20.0, "phase": 10.0}
 
-        model, scaler, names = train_surrogate_model(boards, mock_engine, cfg, extract)
+        model, _scaler, names = train_surrogate_model(boards, mock_engine, cfg, extract)
 
         assert isinstance(model, PhaseEnsemble)
         assert len(names) > 0

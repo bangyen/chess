@@ -47,7 +47,9 @@ class TestTrainSurrogateModelReplyAsList:
         def extract(board):
             return {"material_diff": 0.0, "mobility_us": 20.0, "phase": 10.0}
 
-        model, scaler, names = train_surrogate_model(boards, mock_engine, cfg, extract)
+        model, _scaler, _names = train_surrogate_model(
+            boards, mock_engine, cfg, extract
+        )
 
         assert isinstance(model, PhaseEnsemble)
 

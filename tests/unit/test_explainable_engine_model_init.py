@@ -108,12 +108,11 @@ class TestEnterWithSyzygy:
         with patch(
             "chess_ai.explainable_engine.ExplainableChessEngine.__enter__",
             wraps=eng.__enter__,
-        ):
-            with eng:
-                # Syzygy init is attempted; it may fail because
-                # the rust_utils import might not have SyzygyTablebase
-                # but the engine should still work
-                assert eng.engine is mock_engine
+        ), eng:
+            # Syzygy init is attempted; it may fail because
+            # the rust_utils import might not have SyzygyTablebase
+            # but the engine should still work
+            assert eng.engine is mock_engine
 
     @patch("chess.engine.SimpleEngine.popen_uci")
     def test_enter_with_model_training(self, mock_popen):
@@ -127,9 +126,8 @@ class TestEnterWithSyzygy:
             model_training_positions=5,
         )
 
-        with patch.object(eng, "_initialize_model") as mock_init:
-            with eng:
-                mock_init.assert_called_once()
+        with patch.object(eng, "_initialize_model") as mock_init, eng:
+            mock_init.assert_called_once()
 
     @patch("chess.engine.SimpleEngine.popen_uci")
     def test_enter_with_syzygy_path_sets_option(self, mock_popen):

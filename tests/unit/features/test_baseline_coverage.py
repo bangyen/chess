@@ -35,7 +35,7 @@ class TestRustClosureFallback:
         return feats.get("_engine_probes", {}), board
 
     @patch(
-        "chess_ai.features.baseline.find_best_reply",
+        "chess_ai.features.engine_probes.find_best_reply",
         side_effect=RuntimeError("rust error"),
     )
     def test_hanging_after_reply_rust_fails_engine_fallback(self, _mock_rust):
@@ -59,7 +59,7 @@ class TestRustClosureFallback:
         assert isinstance(v_max, int)
 
     @patch(
-        "chess_ai.features.baseline.find_best_reply",
+        "chess_ai.features.engine_probes.find_best_reply",
         side_effect=RuntimeError("rust error"),
     )
     def test_hanging_after_reply_rust_fails_engine_list(self, _mock_rust):
@@ -81,7 +81,7 @@ class TestRustClosureFallback:
         assert isinstance(cnt, int)
 
     @patch(
-        "chess_ai.features.baseline.find_best_reply",
+        "chess_ai.features.engine_probes.find_best_reply",
         side_effect=RuntimeError("rust error"),
     )
     def test_hanging_after_reply_rust_fails_no_reply(self, _mock_rust):
@@ -100,7 +100,7 @@ class TestRustClosureFallback:
         assert result == (0, 0, 0)
 
     @patch(
-        "chess_ai.features.baseline.calculate_forcing_swing",
+        "chess_ai.features.engine_probes.calculate_forcing_swing",
         side_effect=RuntimeError("rust error"),
     )
     def test_forcing_swing_rust_fails_engine_fallback(self, _mock_rust):
@@ -120,7 +120,7 @@ class TestRustClosureFallback:
         assert isinstance(result, float)
 
     @patch(
-        "chess_ai.features.baseline.calculate_forcing_swing",
+        "chess_ai.features.engine_probes.calculate_forcing_swing",
         side_effect=RuntimeError("rust error"),
     )
     def test_forcing_swing_rust_fails_with_captures(self, _mock_rust):
@@ -167,7 +167,8 @@ class TestHangingPiecePositions:
         )
 
     @patch(
-        "chess_ai.features.baseline.find_best_reply", side_effect=RuntimeError("fail")
+        "chess_ai.features.engine_probes.find_best_reply",
+        side_effect=RuntimeError("fail"),
     )
     def test_hanging_detected_in_rust_path(self, _mock):
         """Rust-path closure detects hanging pieces after reply."""

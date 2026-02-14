@@ -6,9 +6,7 @@ An interactive chess engine that analyzes your moves and explains what you shoul
 
 from __future__ import annotations
 
-import contextlib
 import types
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import chess
@@ -16,20 +14,15 @@ import chess.engine
 import chess.pgn
 
 from .features import baseline_extract_features
+from .hardcoded_reasons import (
+    generate_hardcoded_reasons,
+    generate_move_reasons_with_board,
+)
+from .move_explanation import MoveExplanation
 from .utils.sampling import sample_stratified_positions
 
 if TYPE_CHECKING:
     from .surrogate_explainer import SurrogateExplainer
-
-
-@dataclass
-class MoveExplanation:
-    """Explanation for why a move is good or bad."""
-
-    move: chess.Move
-    score: float
-    reasons: list[tuple[str, float, str]]  # (feature_name, contribution, explanation)
-    overall_explanation: str
 
 
 class ExplainableChessEngine:
@@ -451,123 +444,11 @@ class ExplainableChessEngine:
 
         return reasons
 
-    def _generate_hardcoded_reasons(  # noqa: C901
+    def _generate_hardcoded_reasons(
         self, feats_before: dict, feats_after: dict
     ) -> list[tuple[str, float, str]]:
         """Generate threshold-based reasons (fallback when model unavailable)."""
-        reasons = []
-
-        def get_delta(feature_name: str) -> float:
-            val_before = feats_before.get(f"{feature_name}_us", 0.0)
-            val_after = feats_after.get(f"{feature_name}_them", 0.0)
-            return float(val_after - val_before)
-
-        def get_opp_delta(feature_name: str) -> float:
-            val_before = feats_before.get(f"{feature_name}_them", 0.0)
-            val_after = feats_after.get(f"{feature_name}_us", 0.0)
-            return float(val_after - val_before)
-
-        # Batteries
-        delta = get_delta("batteries")
-        if delta > 0.5:
-            reasons.append(
-                ("batteries_us", 20.0, "Forms a battery arrangement (+20 cp)")
-            )
-
-        # Outposts
-        delta = get_delta("outposts")
-        if delta > 0.5:
-            reasons.append(
-                ("outposts_us", 30.0, "Establishes a knight outpost (+30 cp)")
-            )
-
-        # King Ring Pressure
-        delta = get_delta("king_ring_pressure")
-        if delta > 0.5:
-            reasons.append(
-                ("king_pressure", 25.0, "Increases pressure on enemy king (+25 cp)")
-            )
-
-        # Bishop Pair
-        delta = get_delta("bishop_pair")
-        if delta > 0.5:
-            reasons.append(("bishop_pair", 20.0, "Secures the bishop pair (+20 cp)"))
-
-        # Passed Pawns
-        delta = get_delta("passed")
-        if delta > 0.5:
-            reasons.append(("passed_pawns", 30.0, "Creates a passed pawn (+30 cp)"))
-
-        # Isolated Pawns
-        delta_opp = get_opp_delta("isolated_pawns")
-        if delta_opp > 0.5:
-            reasons.append(
-                (
-                    "structure_damage",
-                    15.0,
-                    "Creates an isolated pawn for opponent (+15 cp)",
-                )
-            )
-
-        # Center Control
-        delta = get_delta("center_control")
-        if delta > 0.5:
-            reasons.append(
-                ("center_control", 15.0, "Improves central control (+15 cp)")
-            )
-
-        # Safe Mobility
-        delta = get_delta("safe_mobility")
-        if delta > 1.5:
-            reasons.append(
-                ("safe_mobility", 15.0, "Increases safe piece activity (+15 cp)")
-            )
-
-        # Rook on Open File
-        delta = get_delta("rook_open_file")
-        if delta > 0.4:
-            reasons.append(
-                (
-                    "rook_activity",
-                    25.0,
-                    "Places rook on an open or semi-open file (+25 cp)",
-                )
-            )
-
-        # Backward Pawns
-        delta_opp = get_opp_delta("backward_pawns")
-        if delta_opp > 0.5:
-            reasons.append(
-                (
-                    "structure_damage",
-                    15.0,
-                    "Creates a backward pawn weakness for opponent (+15 cp)",
-                )
-            )
-
-        delta = get_delta("backward_pawns")
-        if delta < -0.5:
-            reasons.append(
-                ("structure_repair", 15.0, "Fixes a backward pawn weakness (+15 cp)")
-            )
-
-        # PST Improvement
-        delta = get_delta("pst")
-        if delta > 0.4:
-            reasons.append(
-                ("piece_quality", 15.0, "Improves piece placement quality (+15 cp)")
-            )
-
-        # Pins
-        delta_opp = get_opp_delta("pinned")
-        if delta_opp > 0.5:
-            reasons.append(("pin_creation", 25.0, "Pins an opponent's piece (+25 cp)"))
-
-        delta = get_delta("pinned")
-        if delta < -0.5:
-            reasons.append(("pin_escape", 25.0, "Escapes a pin (+25 cp)"))
-
-        return reasons
+        return generate_hardcoded_reasons(feats_before, feats_after)
 
     def _generate_move_reasons_with_board(
         self, move: chess.Move, board: chess.Board, score: float, best_score: float
@@ -582,84 +463,7 @@ class ExplainableChessEngine:
         if syzygy_reason:
             reasons.append((syzygy_reason[0], syzygy_reason[1], syzygy_reason[2]))
 
-        try:
-            # Analyze the move's characteristics
-            # Get move string for analysis
-            with contextlib.suppress(Exception):
-                board.san(move)
-
-            # Check if it's a capture
-            if board.is_capture(move):
-                captured_piece = board.piece_at(move.to_square)
-                if captured_piece:
-                    piece_value = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9}.get(
-                        captured_piece.symbol().upper(), 0
-                    )
-                    reasons.append(
-                        (
-                            "capture",
-                            float(piece_value),
-                            f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
-                        )
-                    )
-
-            # Check if it gives check
-            if board.gives_check(move):
-                reasons.append(("check", 2.0, "Gives check to opponent's king"))
-
-            # Check if it's a tactical move
-            if board.is_capture(move) or board.gives_check(move):
-                reasons.append(("tactical", 1.0, "Tactical move (capture or check)"))
-
-            # Check piece development
-            piece = board.piece_at(move.from_square)
-            if (
-                piece
-                and piece.piece_type == chess.PAWN
-                and (move.from_square < 16 or move.from_square > 47)
-            ):  # From starting ranks - pawn moves
-                reasons.append(
-                    ("development", 1.0, "Develops pawn from starting position")
-                )
-            elif (
-                piece
-                and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
-                and (move.from_square < 16 or move.from_square > 47)
-            ):  # From starting ranks - minor piece development
-                reasons.append(
-                    (
-                        "development",
-                        2.0,
-                        "Develops minor piece from starting position",
-                    )
-                )
-
-            # Check center control
-            center_squares = [chess.E4, chess.E5, chess.D4, chess.D5]
-            if move.to_square in center_squares:
-                reasons.append(("center_control", 1.0, "Controls central squares"))
-
-            # Check king safety
-            if piece and piece.piece_type == chess.KING and len(self.move_history) < 20:
-                reasons.append(
-                    (
-                        "king_safety",
-                        -1,
-                        "Moves king in opening (reduces castling options)",
-                    )
-                )
-
-            # Check for castling
-            if board.is_castling(move):
-                reasons.append(("castling", 3, "Castles to improve king safety"))
-
-            # Check for en passant
-            if board.is_en_passant(move):
-                reasons.append(("en_passant", 1, "En passant capture"))
-
-        except Exception:  # noqa: S110
-            # If there's an error, just return basic reasons
-            pass
+        reasons.extend(generate_move_reasons_with_board(move, board, self.move_history))
 
         return reasons
 

@@ -9,13 +9,10 @@ import chess
 import numpy as np
 import numpy.typing as npt
 
+from .audit_enrichment import enrich_features, extract_base_feats
 from .engine import SFConfig, sf_eval, sf_top_moves
 from .metrics.kendall import kendall_tau
-from .metrics.positional import (
-    checkability_now,
-    confinement_delta,
-    passed_pawn_momentum_delta,
-)
+from .tree_surrogate import TreeSurrogate
 from .utils.math import cp_to_winrate
 
 logger = logging.getLogger(__name__)
@@ -24,14 +21,12 @@ logger = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
 try:
-    from sklearn.ensemble import HistGradientBoostingRegressor
     from sklearn.exceptions import ConvergenceWarning
-    from sklearn.linear_model import ElasticNet, ElasticNetCV
+    from sklearn.linear_model import ElasticNet
     from sklearn.metrics import r2_score
     from sklearn.model_selection import train_test_split
     from sklearn.preprocessing import StandardScaler
 
-    # Suppress sklearn convergence warnings for small datasets
     warnings.filterwarnings("ignore", category=ConvergenceWarning, module="sklearn")
     warnings.filterwarnings("ignore", message=".*convergence.*", module="sklearn")
     warnings.filterwarnings("ignore", module="sklearn")
@@ -62,6 +57,31 @@ class AuditResult:
     coverage_ratio: float
     stable_features: List[str]
     top_features_by_coef: List[Tuple[str, float]]
+
+
+# Interaction term definitions
+INTERACTION_PAIRS = [
+    ("material_diff", "phase"),
+    ("passed_us", "phase"),
+    ("mobility_us", "phase"),
+    ("batteries_us", "open_files_us"),
+    ("batteries_us", "semi_open_us"),
+    ("outposts_us", "phase"),
+    ("bishop_pair_us", "open_files_us"),
+    ("threats_us", "phase"),
+    ("king_tropism_us", "phase"),
+    ("space_us", "phase"),
+    ("doubled_pawns_us", "phase"),
+    # Delta-based interactions
+    ("d_material_diff", "phase"),
+    ("d_threats_us", "phase"),
+    ("d_mobility_us", "phase"),
+    ("d_hanging_them", "phase"),
+    ("d_space_us", "phase"),
+    ("d_king_ring_pressure_them", "phase"),
+    ("d_passed_us", "phase"),
+    ("d_rook_open_file_us", "phase"),
+]
 
 
 def audit_feature_set(  # noqa: C901
@@ -121,10 +141,7 @@ def audit_feature_set(  # noqa: C901
     def cached_best_reply(
         eng: Any, board: chess.Board, depth: int
     ) -> Optional[chess.Move]:
-        """Find Stockfish's best reply, caching by FEN.
-
-        Returns the best reply Move or None.
-        """
+        """Find Stockfish's best reply, caching by FEN."""
         key = board.fen()
         if key in _analyse_cache:
             return _analyse_cache[key]
@@ -135,124 +152,23 @@ def audit_feature_set(  # noqa: C901
         _analyse_cache[key] = reply_move
         return cast(Optional[chess.Move], reply_move)
 
-    # -- Helper to enrich features (avoids 4x copy-paste) --
-    def _enrich_features(
-        board: chess.Board,
-        base_board: chess.Board,
-        base_feats_raw: Dict[str, float],
-        extract_fn: Callable[..., Dict[str, Any]],
-        eng: Any,
-        apply_inter: Callable[[Dict[str, float]], None],
+    def _enrich(
+        board: chess.Board, base_board: chess.Board, base_feats_raw: Dict[str, float]
     ) -> Dict[str, float]:
-        """Extract features and add probes, deltas, and interactions.
-
-        Centralises the feature-enrichment pipeline that was previously
-        duplicated in every loop of the audit.
-        """
-        feats = extract_fn(board)
-        probes = feats.pop("_engine_probes", {})
-        feats = {
-            k: (1.0 if isinstance(v, bool) and v else float(v))
-            for k, v in feats.items()
-        }
-
-        # Engine-based probe features (cached by FEN to skip
-        # redundant Rust searches on repeated positions).
-        if probes:
-            fen_key = board.fen()
-            if fen_key in _hanging_cache:
-                hang_cnt, hang_max_val, hang_near_king = _hanging_cache[fen_key]
-            else:
-                hang_cnt, hang_max_val, hang_near_king = probes["hanging_after_reply"](
-                    eng, board, depth=6
-                )
-                _hanging_cache[fen_key] = (hang_cnt, hang_max_val, hang_near_king)
-            feats["hang_cnt"] = hang_cnt
-            feats["hang_max_val"] = hang_max_val
-            feats["hang_near_king"] = hang_near_king
-
-            if fen_key in _swing_cache:
-                forcing_swing = _swing_cache[fen_key]
-            else:
-                forcing_swing = probes["best_forcing_swing"](
-                    eng, board, d_base=6, k_max=12
-                )
-                _swing_cache[fen_key] = forcing_swing
-            feats["forcing_swing"] = forcing_swing
-
-        # Passed-pawn momentum delta
-        pp_delta = passed_pawn_momentum_delta(base_board, board)
-        feats.update(pp_delta)
-
-        # Checkability delta
-        base_check = checkability_now(base_board)
-        after_check = checkability_now(board)
-        check_delta = {
-            "d_quiet_checks": after_check["d_quiet_checks"]
-            - base_check["d_quiet_checks"],
-            "d_capture_checks": after_check["d_capture_checks"]
-            - base_check["d_capture_checks"],
-        }
-        feats.update(check_delta)
-
-        # Confinement delta
-        conf_delta = confinement_delta(base_board, board)
-        feats.update(conf_delta)
-
-        # Compute delta features: d_<key> = after - base
-        for k in base_feats_raw:
-            if k in feats:
-                feats[f"d_{k}"] = feats[k] - base_feats_raw[k]
-
-        # Interaction terms
-        apply_inter(feats)
-        return feats
-
-    def _extract_base_feats(
-        extract_fn: Callable[..., Dict[str, Any]], board: chess.Board
-    ) -> Dict[str, float]:
-        """Extract and clean base features for delta computation."""
-        raw = extract_fn(board)
-        raw.pop("_engine_probes", None)
-        return {
-            k: (1.0 if isinstance(v, bool) and v else float(v)) for k, v in raw.items()
-        }
-
-    # Interaction term definitions (needed by _enrich_features)
-    interaction_pairs = [
-        ("material_diff", "phase"),
-        ("passed_us", "phase"),
-        ("mobility_us", "phase"),
-        ("batteries_us", "open_files_us"),
-        ("batteries_us", "semi_open_us"),
-        ("outposts_us", "phase"),
-        ("bishop_pair_us", "open_files_us"),
-        ("threats_us", "phase"),
-        ("king_tropism_us", "phase"),
-        ("space_us", "phase"),
-        ("doubled_pawns_us", "phase"),
-        # Delta-based interactions
-        ("d_material_diff", "phase"),
-        ("d_threats_us", "phase"),
-        ("d_mobility_us", "phase"),
-        ("d_hanging_them", "phase"),
-        ("d_space_us", "phase"),
-        ("d_king_ring_pressure_them", "phase"),
-        ("d_passed_us", "phase"),
-        ("d_rook_open_file_us", "phase"),
-    ]
-
-    def apply_interactions(feats: Dict[str, float]) -> None:
-        """Add pairwise interaction features in-place."""
-        for p1, p2 in interaction_pairs:
-            if p1 in feats and p2 in feats:
-                feats[f"{p1}_x_{p2}"] = float(feats[p1]) * float(feats[p2])
+        """Shorthand for enrich_features with the audit's caches."""
+        return enrich_features(
+            board,
+            base_board,
+            base_feats_raw,
+            extract_features_fn,
+            engine,
+            INTERACTION_PAIRS,
+            _hanging_cache,
+            _swing_cache,
+        )
 
     # 1) Collect dataset (X, y) for fidelity (move delta-level)
     logger.info("Collecting move deltas for training...")
-    # Use a canonical (union) feature set so that features appearing
-    # in only some positions are kept rather than silently dropped.
-    # Missing values are filled with 0.0 during matrix construction.
     _seen_features: Dict[str, None] = {}
     X = []
     y: List[float] = []
@@ -261,7 +177,7 @@ def audit_feature_set(  # noqa: C901
     for b in tqdm(boards, desc="Move delta collection"):
         base_eval = cached_sf_eval(engine, b, cfg)
         base_board = b.copy()
-        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
+        base_feats_raw = extract_base_feats(extract_features_fn, base_board)
 
         top_moves = cached_sf_top_moves(engine, b, cfg)
 
@@ -274,14 +190,7 @@ def audit_feature_set(  # noqa: C901
                 after_reply_eval = cached_sf_eval(engine, b, cfg)
                 delta_eval = after_reply_eval - base_eval
 
-                after_reply_feats = _enrich_features(
-                    b,
-                    base_board,
-                    base_feats_raw,
-                    extract_features_fn,
-                    engine,
-                    apply_interactions,
-                )
+                after_reply_feats = _enrich(b, base_board, base_feats_raw)
 
                 for k in after_reply_feats:
                     if k not in _seen_features:
@@ -297,25 +206,22 @@ def audit_feature_set(  # noqa: C901
     feature_names: List[str] = list(_seen_features.keys())
 
     # Update feature_names to include interaction term names
-    for p1, p2 in interaction_pairs:
+    for p1, p2 in INTERACTION_PAIRS:
         if p1 in feature_names and p2 in feature_names:
             combined_name = f"{p1}_x_{p2}"
             if combined_name not in feature_names:
                 feature_names.append(combined_name)
 
     # Remove redundant absolute features that have delta counterparts.
-    # Keep a small set of useful absolute features (phase for context,
-    # material_us/them for scale) and all features without delta versions
-    # (engine probes, interaction terms, etc.).
     _keep_absolute = {"phase", "material_us", "material_them"}
     _delta_originals = {k[2:] for k in feature_names if k.startswith("d_")}
     feature_names = [
         k
         for k in feature_names
-        if k.startswith("d_")  # keep all delta features
-        or "_x_" in k  # keep all interaction terms
-        or k in _keep_absolute  # keep selected absolute features
-        or k not in _delta_originals  # keep features without a delta counterpart
+        if k.startswith("d_")
+        or "_x_" in k
+        or k in _keep_absolute
+        or k not in _delta_originals
     ]
 
     X_mat = np.array(
@@ -323,10 +229,7 @@ def audit_feature_set(  # noqa: C901
     )
     y_arr_cp: npt.NDArray[np.floating] = np.array(y, dtype=float)
 
-    # Convert centipawn deltas to win-rate deltas.  This compresses
-    # extreme evaluations (e.g. +500 vs +700 cp) while preserving
-    # high sensitivity around 0, producing better-behaved regression
-    # targets and reducing the influence of outlier positions.
+    # Convert centipawn deltas to win-rate deltas.
     y_base_arr = np.array(y_base_evals, dtype=float)
     y_arr: npt.NDArray[np.floating] = np.asarray(
         _cp_to_winrate(y_base_arr + y_arr_cp) - _cp_to_winrate(y_base_arr),
@@ -337,169 +240,17 @@ def audit_feature_set(  # noqa: C901
     X_train, X_test, y_train, y_test = train_test_split(
         X_mat, y_arr, test_size=test_size, random_state=42
     )
-    # Keep centipawn-space targets aligned with the same split for
-    # metrics that need the original scale (e.g. faithfulness).
     _, _, _y_train_cp, _y_test_cp = train_test_split(
         X_mat, y_arr_cp, test_size=test_size, random_state=42
     )
 
-    # For testing, we need to split boards separately
-    # Since we have move deltas, we'll use a subset of boards for testing
     n_test_boards = max(1, int(len(boards) * test_size))
     B_test = boards[:n_test_boards]
 
     # 2) Fit nonlinear surrogate (GBT) with distilled Lasso explanations
-    # Normalize features (GBT is invariant but the distilled LassoCV
-    # for stability selection still benefits from scaling).
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-
-    class TreeSurrogate:
-        """Gradient-boosted tree surrogate with distilled linear explanations.
-
-        Wraps HistGradientBoostingRegressor for prediction and distils
-        its predictions into a sparse ElasticNet whose coefficients drive
-        the sparsity, coverage, and top-feature metrics.
-
-        Improvements over plain Lasso distillation:
-        - **ElasticNet (L1+L2)** handles correlated features more stably
-          than pure L1, keeping groups of related features rather than
-          arbitrarily picking one.
-        - **Mixed distillation target** blends the GBT's predictions with
-          the raw Stockfish targets so the linear model stays grounded
-          in the real evaluation while still benefiting from the GBT's
-          learned decision boundary.
-        """
-
-        #: Fraction of the raw Stockfish target blended into the
-        #: distillation target.  0.0 = pure GBT predictions (original
-        #: behaviour), 1.0 = ignore GBT entirely.
-        DISTILL_MIX: float = 0.3
-
-        def __init__(self, n_samples: int = 100, distill_top_k: int = 10):
-            """Build a GBT surrogate sized for *n_samples* training rows.
-
-            Uses early stopping when the dataset is large enough for a
-            reliable validation split; otherwise a conservative fixed
-            iteration count avoids overfitting on small datasets.
-            """
-            use_early = n_samples >= 400
-            gbt_kwargs = {
-                "max_depth": 4,
-                "learning_rate": 0.05,
-                "max_iter": 500 if use_early else 300,
-                "min_samples_leaf": max(5, n_samples // 50),
-                "random_state": 42,
-            }
-            if use_early:
-                gbt_kwargs.update(
-                    early_stopping=True,
-                    validation_fraction=0.15,
-                    n_iter_no_change=30,
-                )
-            else:
-                gbt_kwargs["early_stopping"] = False
-            self.gbt = HistGradientBoostingRegressor(**gbt_kwargs)
-            self._distill_alpha: float = 1.0
-            self._distill_l1_ratio: float = 0.5
-            self._distill_top_k = distill_top_k
-            self.feature_importances: np.ndarray = np.zeros(0)
-            self.distilled_coef: np.ndarray = np.zeros(0)
-            self.top_k_idx: np.ndarray = np.zeros(0, dtype=int)
-
-        def fit(
-            self,
-            X: np.ndarray,
-            y: np.ndarray,
-            y_raw: Optional[np.ndarray] = None,
-        ) -> None:
-            """Fit the GBT and distil into a sparse ElasticNet.
-
-            The distilled ElasticNet is trained on a *mixed* target that
-            blends the GBT's predictions with the raw Stockfish targets
-            (controlled by ``DISTILL_MIX``).  This keeps the sparse
-            linear approximation grounded in the real evaluation while
-            still benefiting from the GBT's smoothed decision boundary.
-
-            Feature pre-selection uses the GBT's built-in split-gain
-            importances to keep only the top-K features.
-
-            Args:
-                X: Feature matrix (n_samples, n_features), scaled.
-                y: Training targets (win-rate deltas).
-                y_raw: Optional raw targets (same space as *y* when no
-                    win-rate scaling, or the original cp deltas).  When
-                    provided the mixed distillation target blends GBT
-                    predictions with *y_raw*; otherwise *y* is used.
-            """
-            self.gbt.fit(X, y)
-            # feature_importances_ may be unavailable when all targets
-            # are constant (no splits), so fall back to uniform weights.
-            self.feature_importances = getattr(
-                self.gbt,
-                "feature_importances_",
-                np.ones(X.shape[1]) / X.shape[1],
-            )
-
-            # Distill GBT into a sparse linear model for crisp
-            # explanations.  The mixed target keeps the Lasso grounded.
-            y_gbt = self.gbt.predict(X)
-            y_ground = y_raw if y_raw is not None else y
-            mix = self.DISTILL_MIX
-            y_distill = (1.0 - mix) * y_gbt + mix * y_ground
-
-            n_features = X.shape[1]
-            k = min(self._distill_top_k, n_features)
-            self.top_k_idx = np.argsort(self.feature_importances)[-k:]
-            X_distill = X[:, self.top_k_idx]
-
-            n_samples = X.shape[0]
-            cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
-            alphas = (
-                np.logspace(-4, 2, 30).tolist()
-                if n_samples >= 10
-                else [1.0, 10.0, 100.0]
-            )
-            # ElasticNet's L1/L2 blend handles correlated features
-            # (e.g. mobility_us and safe_mobility_us) more stably
-            # than pure L1, keeping related features in the model
-            # rather than arbitrarily zeroing one of them.
-            l1_ratios = [0.3, 0.5, 0.7, 0.9, 1.0]
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", module="sklearn")
-                distill_model = ElasticNetCV(
-                    cv=cv_folds,
-                    alphas=alphas,
-                    l1_ratio=l1_ratios,
-                    random_state=42,
-                    max_iter=10000,
-                )
-                distill_model.fit(X_distill, y_distill)
-
-            # Expand back to full-length coefficient vector (zeros for
-            # features excluded by the importance pre-selection).
-            full_coef = np.zeros(n_features)
-            full_coef[self.top_k_idx] = distill_model.coef_
-            self.distilled_coef = full_coef
-            self._distill_alpha = float(distill_model.alpha_)
-            self._distill_l1_ratio = float(distill_model.l1_ratio_)
-
-        def predict(self, X: np.ndarray) -> np.ndarray:
-            """Predict eval deltas (in win-rate space)."""
-            if len(X.shape) == 1:
-                return np.asarray(self.gbt.predict(X.reshape(1, -1)), dtype=float)
-            return np.asarray(self.gbt.predict(X), dtype=float)
-
-        @property
-        def alpha_(self) -> float:
-            """ElasticNet alpha from the distilled fit, used by stability selection."""
-            return self._distill_alpha
-
-        @property
-        def l1_ratio_(self) -> float:
-            """ElasticNet l1_ratio from the distilled fit."""
-            return self._distill_l1_ratio
 
     model = TreeSurrogate(n_samples=X_train_scaled.shape[0])
 
@@ -539,7 +290,7 @@ def audit_feature_set(  # noqa: C901
         sur_scores = []
         base_eval = cached_sf_eval(engine, b, cfg)
         base_board = b.copy()
-        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
+        base_feats_raw = extract_base_feats(extract_features_fn, base_board)
 
         for mv, _ in cand:
             b.push(mv)
@@ -550,14 +301,7 @@ def audit_feature_set(  # noqa: C901
                 after_reply_eval = cached_sf_eval(engine, b, cfg)
                 delta_eval = after_reply_eval - base_eval
 
-                feats_after_reply = _enrich_features(
-                    b,
-                    base_board,
-                    base_feats_raw,
-                    extract_features_fn,
-                    engine,
-                    apply_interactions,
-                )
+                feats_after_reply = _enrich(b, base_board, base_feats_raw)
                 vec_after_reply = np.array(
                     [float(feats_after_reply.get(k, 0.0)) for k in feature_names],
                     dtype=float,
@@ -570,13 +314,10 @@ def audit_feature_set(  # noqa: C901
                 sf_scores.append(delta_eval)
                 sur_scores.append(sur_delta)
 
-                # Pop the reply
                 b.pop()
 
-            # Pop the move
             b.pop()
 
-        # Convert to rankings (higher is better)
         sf_rank = np.argsort(np.argsort(-np.array(sf_scores))).tolist()
         sur_rank = np.argsort(np.argsort(-np.array(sur_scores))).tolist()
 
@@ -589,7 +330,6 @@ def audit_feature_set(  # noqa: C901
     tau_mean = float(np.mean(taus)) if taus else 0.0
 
     # 4) Local faithfulness, sparsity, coverage, AND decisive faithfulness
-    #    (merged into a single pass to avoid redundant Stockfish calls)
     logger.info("Computing local faithfulness and sparsity...")
     faithful_hits = 0
     faithful_total = 0
@@ -627,10 +367,7 @@ def audit_feature_set(  # noqa: C901
         base_board: chess.Board,
         base_feats_raw: Dict[str, float],
     ) -> Tuple[float, np.ndarray]:
-        """Evaluate a single move: push move+reply, get delta and features.
-
-        Returns (delta_sf, vec) where vec is the feature vector or zeros.
-        """
+        """Evaluate a single move: push move+reply, get delta and features."""
         b.push(mv)
         reply_move = cached_best_reply(engine, b, cfg.depth)
 
@@ -639,14 +376,7 @@ def audit_feature_set(  # noqa: C901
             after_eval = cached_sf_eval(engine, b, cfg)
             delta_sf = after_eval - base_eval
 
-            feats = _enrich_features(
-                b,
-                base_board,
-                base_feats_raw,
-                extract_features_fn,
-                engine,
-                apply_interactions,
-            )
+            feats = _enrich(b, base_board, base_feats_raw)
             vec = np.array(
                 [float(feats.get(k, 0.0)) for k in feature_names], dtype=float
             )
@@ -668,7 +398,7 @@ def audit_feature_set(  # noqa: C901
 
         base_eval = cached_sf_eval(engine, b, cfg)
         base_board = b.copy()
-        base_feats_raw = _extract_base_feats(extract_features_fn, base_board)
+        base_feats_raw = extract_base_feats(extract_features_fn, base_board)
 
         delta_sf_best, vec_best = _eval_move_delta(
             b, best_mv, base_eval, base_board, base_feats_raw
@@ -677,21 +407,17 @@ def audit_feature_set(  # noqa: C901
             b, second_mv, base_eval, base_board, base_feats_raw
         )
 
-        # Predict with GBT; use distilled linear coefs for attribution
         vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
         vec_second_scaled = scaler.transform(vec_second.reshape(1, -1))
         sur_best = float(model.predict(vec_best_scaled)[0])
         sur_second = float(model.predict(vec_second_scaled)[0])
 
-        # Distilled linear attribution: coef * scaled_feature
         contrib_best = coef * vec_best_scaled[0]
 
         sp = _sparsity(contrib_best)
         if sp > 0:
             sparsity_counts.append(sp)
 
-        # coverage: at least 2 features with meaningful |coef| and
-        # non-zero local linear contribution
         strong_feats: int = int(
             np.sum((abs_coef >= weight_threshold) & (np.abs(contrib_best) > 0))
         )
@@ -699,15 +425,12 @@ def audit_feature_set(  # noqa: C901
         if strong_feats >= 2:
             coverage_hits += 1
 
-        # faithfulness: does the surrogate rank best > second in the same
-        # direction as Stockfish?
         dir_sur = sur_best - sur_second
         dir_sf = float(delta_sf_best - delta_sf_second)
         if dir_sur * dir_sf > 0:
             faithful_hits += 1
         faithful_total += 1
 
-        # decisive faithfulness (gap ≥ 80 cp) — computed in the same pass
         if abs(delta_sf_best - delta_sf_second) >= 80.0:
             if (sur_best > sur_second) == (delta_sf_best > delta_sf_second):
                 faithful_decisive_hits += 1
@@ -722,10 +445,7 @@ def audit_feature_set(  # noqa: C901
         else 0.0
     )
 
-    # 5) Stability selection (ElasticNet bootstraps): how often is a
-    #    feature chosen (non-zero coefficient) across bootstrap
-    #    resamples.  Uses the same alpha/l1_ratio as the distilled
-    #    model for consistency.
+    # 5) Stability selection (ElasticNet bootstraps)
     if X_train.shape[0] >= 20:
         logger.info("Running stability selection...")
         top_k = model.top_k_idx
@@ -749,7 +469,6 @@ def audit_feature_set(  # noqa: C901
             picks_topk += m.coef_ != 0.0
         pick_freq_topk = picks_topk / stability_bootstraps
         stable_topk = np.where(pick_freq_topk >= stability_thresh)[0]
-        # Map back to full feature indices
         stable_idx = [int(top_k[i]) for i in stable_topk]
     else:
         stable_idx = []

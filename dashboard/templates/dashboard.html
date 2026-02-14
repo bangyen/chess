@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css?v=2">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23E63946' stroke-width='2'%3E%3Crect x='2' y='2' width='6' height='6' stroke='currentColor' stroke-width='2'/%3E%3Crect x='12' y='2' width='6' height='6' stroke='currentColor' stroke-width='2'/%3E%3Crect x='2' y='12' width='6' height='6' stroke='currentColor' stroke-width='2'/%3E%3Crect x='12' y='12' width='6' height='6' stroke='currentColor' stroke-width='2'/%3E%3C/svg%3E">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                    <rect x="0" y="0" width="12" height="12" fill="#E63946"/>
+                    <rect x="16" y="0" width="12" height="12" fill="#F1FAEE"/>
+                    <rect x="0" y="16" width="12" height="12" fill="#F1FAEE"/>
+                    <rect x="16" y="16" width="12" height="12" fill="#1D3557"/>
+                </svg>
+                <span>Dashboard</span>
+            </div>
+            
+            <nav class="nav">
+                <button class="nav-item active" data-view="overview">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <rect x="2" y="2" width="6" height="6" stroke="currentColor" stroke-width="2"/>
+                        <rect x="12" y="2" width="6" height="6" stroke="currentColor" stroke-width="2"/>
+                        <rect x="2" y="12" width="6" height="6" stroke="currentColor" stroke-width="2"/>
+                        <rect x="12" y="12" width="6" height="6" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    <span>Overview</span>
+                </button>
+                
+                <button class="nav-item" data-view="analytics">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <path d="M2 18L6 10L10 14L18 2" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="6" cy="10" r="2" fill="currentColor"/>
+                        <circle cx="10" cy="14" r="2" fill="currentColor"/>
+                        <circle cx="18" cy="2" r="2" fill="currentColor"/>
+                    </svg>
+                    <span>Analytics</span>
+                </button>
+                
+                <button class="nav-item" data-view="data">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                        <rect x="2" y="4" width="4" height="14" fill="currentColor"/>
+                        <rect x="8" y="8" width="4" height="10" fill="currentColor"/>
+                        <rect x="14" y="6" width="4" height="12" fill="currentColor"/>
+                    </svg>
+                    <span>Data</span>
+                </button>
+                
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Live</span>
+                </div>
+            </div>
+        </aside>
+        
+        <main class="main-content">
+            <header class="header">
+                <h1 class="page-title">Dashboard Overview</h1>
+                <div class="header-actions">
+                    <button class="btn-primary" id="refresh-btn">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M14 8C14 11.3137 11.3137 14 8 14C4.68629 14 2 11.3137 2 8C2 4.68629 4.68629 2 8 2C10.3 2 12.3 3.2 13.4 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <path d="M13 2V5H10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+            </header>
+            
+            <!-- Loading Indicator -->
+            <div id="loading-indicator" class="loading hidden">
+                <div class="spinner"></div>
+                <span id="loading-text">Loading data...</span>
+            </div>
+            
+            <!-- Overview View -->
+            <div class="view-container" id="overview-view">
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Metric 1</div>
+                        <div class="metric-value" id="metric-1">—</div>
+                        <div class="metric-change positive">Active</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-label">Metric 2</div>
+                        <div class="metric-value" id="metric-2">—</div>
+                        <div class="metric-change neutral">Normal</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-label">Metric 3</div>
+                        <div class="metric-value" id="metric-3">—</div>
+                        <div class="metric-change">—</div>
+                    </div>
+                    
+                    <div class="metric-card">
+                        <div class="metric-label">Metric 4</div>
+                        <div class="metric-value" id="metric-4">—</div>
+                        <div class="metric-change">—</div>
+                    </div>
+                </div>
+                
+                <div class="chart-section">
+                    <div class="chart-card">
+                        <h3 class="chart-title">Chart 1</h3>
+                        <canvas id="chart-1"></canvas>
+                    </div>
+                    
+                    <div class="chart-card">
+                        <h3 class="chart-title">Distribution</h3>
+                        <canvas id="chart-2"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Analytics View -->
+            <div class="view-container hidden" id="analytics-view">
+                <div class="chart-full">
+                    <h3 class="chart-title">Time Series Data</h3>
+                    <canvas id="timeseries-chart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Data View -->
+            <div class="view-container hidden" id="data-view">
+                <div class="data-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Value</th>
+                                <th>Metric</th>
+                            </tr>
+                        </thead>
+                        <tbody id="details-table-body">
+                            <tr>
+                                <td colspan="3" class="loading">Loading data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+        </main>
+    </div>
+    
+    <!-- Toast Messages Container -->
+    <div id="messages" class="toast-container"></div>
+    
+    <script src="/static/js/dashboard.js?v=2"></script>
+</body>
+</html>
+
+
+

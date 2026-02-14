@@ -79,6 +79,9 @@ rust/target/
 *.dylib
 *.dll
 
+# Mutation testing (mutmut)
+mutants/
+
 # Logs and profiling
 *.log
 profile_output*.txt

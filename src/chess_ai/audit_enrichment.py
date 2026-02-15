@@ -5,7 +5,7 @@ independently and the main audit function stays focused on
 orchestration.
 """
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, cast
 
 import chess
 
@@ -31,6 +31,25 @@ def enrich_features(
     Centralises the feature-enrichment pipeline that was previously
     duplicated in every loop of the audit.
     """
+    # Attempt to use the batched Rust implementation for a massive speedup
+    try:
+        from chess_ai.rust_utils import extract_features_delta_rust
+
+        if extract_fn.__name__ == "baseline_extract_features" and base_board:
+            # Cast to Dict[str, float] to satisfy mypy, as the Rust extension
+            # return type is seen as Any.
+            rust_feats = cast(
+                Dict[str, float],
+                extract_features_delta_rust(base_board.fen(), board.fen()),
+            )
+
+            # Even with the Rust batch, we still need to apply interaction terms
+            _apply_interactions(rust_feats, interaction_pairs)
+            return rust_feats
+    except (ImportError, AttributeError):
+        pass
+
+    # Fallback to Python-orchestrated enrichment
     feats = extract_fn(board)
     probes = feats.pop("_engine_probes", {})
     feats = {

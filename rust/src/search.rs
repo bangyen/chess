@@ -414,7 +414,7 @@ pub fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
 
 /// Core forcing-swing calculation: evaluates the largest evaluation
 /// swing obtainable from a forcing move (capture or check).
-fn calculate_forcing_swing_impl(pos: &Chess, depth: u8) -> f32 {
+pub fn calculate_forcing_swing_impl(pos: &Chess, depth: u8) -> f32 {
     let mut ctx = SearchContext::new();
     let base_eval = alpha_beta(pos, -50000, 50000, depth, &mut ctx);
 

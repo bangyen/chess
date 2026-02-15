@@ -846,7 +846,7 @@ fn extract_features_internal(pos: &Chess) -> BTreeMap<String, f32> {
 }
 
 #[pyfunction]
-pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str) -> PyResult<BTreeMap<String, f32>> {
+pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) -> PyResult<BTreeMap<String, f32>> {
     let setup_base: Fen = base_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
     let pos_base: Chess = setup_base.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base Position"))?;
 
@@ -898,7 +898,67 @@ pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str) -> PyResult<B
     move_feats.insert("d_pp_blockaded".to_string(), -(pp_move_us.blockaded - pp_base_us.blockaded) + (pp_move_them.blockaded - pp_base_them.blockaded));
     move_feats.insert("d_pp_rook_behind".to_string(), d_pp(pp_move_us.rook_behind, pp_base_us.rook_behind, pp_move_them.rook_behind, pp_base_them.rook_behind));
 
+    // 3. Search-based probes (Forcing Swing, Hanging After Reply)
+    if depth > 0 {
+        // Forcing swing for the MOVE position
+        let forcing_swing = crate::search::calculate_forcing_swing_impl(&pos_move, depth);
+        move_feats.insert("best_forcing_swing".to_string(), forcing_swing);
+
+        // Hanging after reply for the MOVE position
+        let best_reply_uci = crate::search::find_best_reply_impl(&pos_move, depth);
+        if let Some(uci) = best_reply_uci {
+            if let Ok(m) = uci.parse::<shakmaty::uci::UciMove>() {
+                if let Some(mv) = m.to_move(&pos_move).ok() {
+                    let mut pos_after = pos_move.clone();
+                    pos_after.play_unchecked(mv);
+                    let (cnt, v_max, near_k) = calculate_hanging_pieces(&pos_after);
+                    move_feats.insert("hanging_cnt_after_reply".to_string(), cnt as f32);
+                    move_feats.insert("hanging_max_v_after_reply".to_string(), v_max as f32);
+                    move_feats.insert("hanging_near_king_after_reply".to_string(), near_k as f32);
+                }
+            }
+        }
+    }
+
     Ok(move_feats)
+}
+
+fn calculate_hanging_pieces(pos: &Chess) -> (i32, i32, i32) {
+    let side = pos.turn();
+    let opp = side.other();
+    let board = pos.board();
+    let occupied = board.occupied();
+    let mut cnt = 0;
+    let mut v_max = 0;
+    let mut near_k = 0;
+
+    let opp_king_sq = pos.board().king_of(opp);
+
+    for sq in board.by_color(opp) {
+        let attackers = board.attacks_to(sq, side, occupied).count();
+        let defenders = board.attacks_to(sq, opp, occupied).count();
+
+        if attackers > 0 && defenders == 0 {
+            cnt += 1;
+            let val = match board.piece_at(sq).map(|p| p.role) {
+                Some(Role::Pawn) => 1,
+                Some(Role::Knight) => 3,
+                Some(Role::Bishop) => 3,
+                Some(Role::Rook) => 5,
+                Some(Role::Queen) => 9,
+                _ => 0,
+            };
+            if val > v_max {
+                v_max = val;
+            }
+            if let Some(ksq) = opp_king_sq {
+                if sq.distance(ksq) <= 1 {
+                    near_k = 1;
+                }
+            }
+        }
+    }
+    (cnt, v_max, near_k)
 }
 
 fn checkability_count(pos: &Chess) -> (i32, i32) {
@@ -973,35 +1033,22 @@ fn pp_momentum_snapshot(pos: &Chess, side: Color) -> PPMomentum {
 }
 
 fn is_passed_internal(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    let file = sq.file();
-    let rank = sq.rank();
+    let file = sq.file() as i8;
+    let rank = sq.rank() as i8;
     let opp = side.other();
     let enemy_pawns = board.by_role(Role::Pawn) & board.by_color(opp);
 
     for f_off in -1..=1 {
-        let f = file as i8 + f_off;
+        let f = file + f_off;
         if f < 0 || f > 7 { continue; }
-        let check_file = shakmaty::File::new(f as u32);
-        let file_bb = Bitboard::from_file(check_file);
-
-        let ahead_bb = match side {
-            Color::White => {
-                let mut bb = Bitboard::EMPTY;
-                for r in (rank as usize + 1)..8 {
-                    bb |= Bitboard::from_rank(shakmaty::Rank::new(r as u32));
-                }
-                bb
+        
+        // Squares ahead on this file
+        let ranks = if side == Color::White { rank + 1..8 } else { 0..rank };
+        for r in ranks {
+            let check_sq = Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
+            if enemy_pawns.contains(check_sq) {
+                return false;
             }
-            Color::Black => {
-                let mut bb = Bitboard::EMPTY;
-                for r in 0..(rank as usize) {
-                    bb |= Bitboard::from_rank(shakmaty::Rank::new(r as u32));
-                }
-                bb
-            }
-        };
-        if !(enemy_pawns & file_bb & ahead_bb).is_empty() {
-            return false;
         }
     }
     true

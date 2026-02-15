@@ -38,10 +38,21 @@ def enrich_features(
         if extract_fn.__name__ == "baseline_extract_features" and base_board:
             # Cast to Dict[str, float] to satisfy mypy, as the Rust extension
             # return type is seen as Any.
+            # We pass depth=6 for search probes (forcing swing, hanging after reply)
             rust_feats = cast(
                 Dict[str, float],
-                extract_features_delta_rust(base_board.fen(), board.fen()),
+                extract_features_delta_rust(base_board.fen(), board.fen(), 6),
             )
+
+            # Map the Rust probe names to the names expected by the Python audit
+            # and interaction terms if necessary.
+            if "hanging_cnt_after_reply" in rust_feats:
+                # Keep them as individual floats for the surrogate model
+                pass
+
+            # d_forcing_swing is used in INTERACTION_PAIRS
+            if "best_forcing_swing" in rust_feats:
+                rust_feats["d_forcing_swing"] = rust_feats["best_forcing_swing"]
 
             # Even with the Rust batch, we still need to apply interaction terms
             _apply_interactions(rust_feats, interaction_pairs)

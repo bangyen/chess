@@ -156,7 +156,7 @@ def audit_feature_set(  # noqa: C901
         board: chess.Board, base_board: chess.Board, base_feats_raw: Dict[str, float]
     ) -> Dict[str, float]:
         """Shorthand for enrich_features with the audit's caches."""
-        return enrich_features(
+        res = enrich_features(
             board,
             base_board,
             base_feats_raw,
@@ -166,6 +166,7 @@ def audit_feature_set(  # noqa: C901
             _hanging_cache,
             _swing_cache,
         )
+        return res
 
     # 1) Collect dataset (X, y) for fidelity (move delta-level)
     logger.info("Collecting move deltas for training...")
@@ -183,6 +184,8 @@ def audit_feature_set(  # noqa: C901
 
         for move, _ in top_moves:
             b.push(move)
+            # DEBUG
+            # print(f"DEBUG: Pushed move {move}, stack {len(b.move_stack)}")
             reply_move = cached_best_reply(engine, b, cfg.depth)
 
             if reply_move is not None:

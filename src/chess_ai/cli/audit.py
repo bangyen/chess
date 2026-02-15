@@ -231,7 +231,8 @@ def main() -> None:
     print(f"Coverage (≥2 strong reasons):  {res.coverage_ratio*100:0.1f}%")
     print("\nTop features by |coef|:")
     for name, coef in res.top_features_by_coef:
-        print(f"  {name:30s}  coef={coef:.4f}")
+        if abs(coef) > 1e-8:
+            print(f"  {name:30s}  coef={coef:.4f}")
     if res.stable_features:
         print(f"\nStable features (picked ≥{100 * 0.7:.0f}% of bootstraps):")
         for name in res.stable_features:

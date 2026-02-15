@@ -107,16 +107,9 @@ def see_safe(board: chess.Board, target: int, attacker_sq: int) -> int:
     Makes a snapshot before the destructive ``_see`` call and
     restores the board afterwards.
     """
-    saved = board.copy()
-    result = _see(board, target, attacker_sq)
-    # Restore by copying back.
-    for sq in chess.SQUARES:
-        p = saved.piece_at(sq)
-        if p != board.piece_at(sq):
-            if p is None:
-                board.remove_piece_at(sq)
-            else:
-                board.set_piece_at(sq, p)
+    # Use a scratch board to avoid modifying the original state at all
+    scratch = board.copy()
+    result = _see(scratch, target, attacker_sq)
     return result
 
 

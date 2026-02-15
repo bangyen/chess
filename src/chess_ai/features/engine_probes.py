@@ -76,32 +76,34 @@ def hanging_after_reply(
         if reply is None:
             return 0, 0, 0
         board.push(reply)
-        side = board.turn
-        cnt, v_max, near_king = 0, 0, 0
-        opp = not side
-        opp_king_sq = board.king(opp)
-        for sq in chess.SQUARES:
-            piece = board.piece_at(sq)
-            if piece and piece.color == opp:
-                defenders = board.attackers(opp, sq)
-                attackers = board.attackers(side, sq)
-                if not defenders and attackers:
-                    cnt += 1
-                    pv = {
-                        chess.PAWN: 1,
-                        chess.KNIGHT: 3,
-                        chess.BISHOP: 3,
-                        chess.ROOK: 5,
-                        chess.QUEEN: 9,
-                    }.get(piece.piece_type, 0)
-                    v_max = max(v_max, pv)
-                    if (
-                        opp_king_sq is not None
-                        and chess.square_distance(sq, opp_king_sq) <= 1
-                    ):
-                        near_king = 1
-        board.pop()
-        return cnt, v_max, near_king
+        try:
+            side = board.turn
+            cnt, v_max, near_king = 0, 0, 0
+            opp = not side
+            opp_king_sq = board.king(opp)
+            for sq in chess.SQUARES:
+                piece = board.piece_at(sq)
+                if piece and piece.color == opp:
+                    defenders = board.attackers(opp, sq)
+                    attackers = board.attackers(side, sq)
+                    if not defenders and attackers:
+                        cnt += 1
+                        pv = {
+                            chess.PAWN: 1,
+                            chess.KNIGHT: 3,
+                            chess.BISHOP: 3,
+                            chess.ROOK: 5,
+                            chess.QUEEN: 9,
+                        }.get(piece.piece_type, 0)
+                        v_max = max(v_max, pv)
+                        if (
+                            opp_king_sq is not None
+                            and chess.square_distance(sq, opp_king_sq) <= 1
+                        ):
+                            near_king = 1
+            return cnt, v_max, near_king
+        finally:
+            board.pop()
     except Exception:
         return 0, 0, 0
 
@@ -128,9 +130,11 @@ def best_forcing_swing(
         swings = []
         for m in forcing[:k_max]:
             board.push(m)
-            v = sf_eval_shallow(engine, board, d_base - 1)
-            board.pop()
-            swings.append(v - base)
+            try:
+                v = sf_eval_shallow(engine, board, d_base - 1)
+                swings.append(v - base)
+            finally:
+                board.pop()
         return max(swings) if swings else 0.0
     except Exception:
         return 0.0

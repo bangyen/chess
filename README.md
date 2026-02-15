@@ -4,13 +4,18 @@
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)
 [![License](https://img.shields.io/github/license/bangyen/chess)](LICENSE)
 
-**Chess AI Explainability: 87.5% decisive faithfulness, 2.0 sparsity explanations, 100% position coverage with interactive learning engine**
+**Chess AI Explainability: 86.7% decisive faithfulness, 2.5 sparsity explanations, 100% position coverage with interactive learning engine**
 
 <p align="center">
   <img src="docs/audit-demo.gif" alt="Demo preview" width="600">
 </p>
 
 ## Quickstart
+
+### Prerequisites
+
+- Python 3.8+
+- Rust 1.70+ (required for building the acceleration module)
 
 ### Installation
 
@@ -49,14 +54,15 @@ Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Feature Explainability | **87.5%** | ≥80% |
-| Explanation Sparsity | **2.0** | ≤3.0 |
+| Feature Explainability | **86.7%** | ≥80% |
+| Explanation Sparsity | **2.5** | ≤3.0 |
 | Position Coverage | **100%** | ≥95% |
 
 ## Features
 
-- **Feature Explainability Audit** — ML-based evaluation of how well chess features explain Stockfish's reasoning with 87.5% decisive faithfulness.
+- **Feature Explainability Audit** — ML-based evaluation of how well chess features explain Stockfish's reasoning with 86.7% decisive faithfulness.
 - **Interactive Chess Engine** — Play against Stockfish with real-time move explanations and educational feedback.
+- **Rust-Accelerated Analysis** — High-performance feature extraction and evaluation using a custom Rust backend for maximum speed.
 - **Web Interface** — Clean, professional web app with Swiss + Terminal-Modern design for interactive gameplay and analysis.
 - **Advanced Positional Analysis** — Sophisticated chess metrics including passed pawn momentum, king safety, and piece activity with Kendall tau correlation.
 
@@ -69,8 +75,10 @@ chess/
 │   ├── engine/       # Chess engine configuration
 │   ├── features/     # Feature extraction
 │   ├── metrics/      # Evaluation metrics
+│   ├── rust_utils/   # Rust extension bindings
 │   ├── utils/        # Helper utilities
 │   └── web/          # Web interface (Flask app)
+├── rust/             # Rust acceleration module source
 ├── tests/            # Unit and integration tests
 ├── docs/             # Documentation and design system
 ├── scripts/          # Example and launch scripts
@@ -81,7 +89,7 @@ See [docs/WEB_APP.md](docs/WEB_APP.md) for web interface documentation and [docs
 
 ## Validation
 
-- ✅ Overall test coverage of 85% (`pytest`)
+- ✅ Overall test coverage of 96% (`pytest`)
 - ✅ Reproducible seeds for experiments
 - ✅ Benchmark scripts included
 

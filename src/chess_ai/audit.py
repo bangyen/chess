@@ -66,6 +66,7 @@ INTERACTION_PAIRS = [
     ("d_king_ring_pressure_them", "phase"),
     ("d_passed_us", "phase"),
     ("d_rook_open_file_us", "phase"),
+    ("d_forcing_swing", "phase"),
 ]
 
 

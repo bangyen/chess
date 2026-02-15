@@ -44,15 +44,20 @@ def enrich_features(
                 extract_features_delta_rust(base_board.fen(), board.fen(), 6),
             )
 
-            # Map the Rust probe names to the names expected by the Python audit
-            # and interaction terms if necessary.
+            # Map the Rust probe names to the names expected by the Python audit.
+            # We use 'd_' prefix for all search-based probes to signify they are
+            # dynamic features calculated at move execution time.
             if "hanging_cnt_after_reply" in rust_feats:
-                # Keep them as individual floats for the surrogate model
-                pass
+                rust_feats["d_hanging_them"] = rust_feats.pop("hanging_cnt_after_reply")
+                rust_feats["d_hanging_max_v"] = rust_feats.pop(
+                    "hanging_max_v_after_reply"
+                )
+                rust_feats["d_hanging_near_king"] = rust_feats.pop(
+                    "hanging_near_king_after_reply"
+                )
 
-            # d_forcing_swing is used in INTERACTION_PAIRS
             if "best_forcing_swing" in rust_feats:
-                rust_feats["d_forcing_swing"] = rust_feats["best_forcing_swing"]
+                rust_feats["d_forcing_swing"] = rust_feats.pop("best_forcing_swing")
 
             # Even with the Rust batch, we still need to apply interaction terms
             _apply_interactions(rust_feats, interaction_pairs)
@@ -78,9 +83,9 @@ def enrich_features(
                 engine, board, depth=6
             )
             hanging_cache[fen_key] = (hang_cnt, hang_max_val, hang_near_king)
-        feats["hang_cnt"] = hang_cnt
-        feats["hang_max_val"] = hang_max_val
-        feats["hang_near_king"] = hang_near_king
+        feats["d_hanging_cnt"] = float(hang_cnt)
+        feats["d_hanging_max_v"] = float(hang_max_val)
+        feats["d_hanging_near_king"] = float(hang_near_king)
 
         if fen_key in swing_cache:
             forcing_swing = swing_cache[fen_key]
@@ -89,7 +94,7 @@ def enrich_features(
                 engine, board, d_base=6, k_max=12
             )
             swing_cache[fen_key] = forcing_swing
-        feats["forcing_swing"] = forcing_swing
+        feats["d_forcing_swing"] = float(forcing_swing)
 
     # Passed-pawn momentum delta
     pp_delta = passed_pawn_momentum_delta(base_board, board)

@@ -14,6 +14,10 @@ pub fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
     let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
 
+    Ok(extract_features_internal(&pos))
+}
+
+fn extract_features_internal(pos: &Chess) -> BTreeMap<String, f32> {
     let mut feats = BTreeMap::new();
     let turn = pos.turn();
     let opp = turn.other();
@@ -838,7 +842,234 @@ pub fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     feats.insert("see_vulnerability_us".to_string(), see_vuln_us);
     feats.insert("see_vulnerability_them".to_string(), see_vuln_them);
 
-    Ok(feats)
+    feats
+}
+
+#[pyfunction]
+pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str) -> PyResult<BTreeMap<String, f32>> {
+    let setup_base: Fen = base_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
+    let pos_base: Chess = setup_base.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base Position"))?;
+
+    let setup_move: Fen = move_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move FEN"))?;
+    let pos_move: Chess = setup_move.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move Position"))?;
+
+    let base_feats = extract_features_internal(&pos_base);
+    let mut move_feats = extract_features_internal(&pos_move);
+
+    let us = pos_base.turn();
+
+    // 1. Calculate standard deltas (d_feature = after - base)
+    let keys: Vec<String> = base_feats.keys().cloned().collect();
+    for k in keys {
+        if let Some(v_base) = base_feats.get(&k) {
+            if let Some(v_move) = move_feats.get(&k) {
+                move_feats.insert(format!("d_{}", k), v_move - v_base);
+            }
+        }
+    }
+
+    // 2. Add extra heuristics (Checkability, Confinement, PP Momentum)
+    let check_base = checkability_count(&pos_base);
+    let check_move = checkability_count(&pos_move);
+    move_feats.insert("d_quiet_checks".to_string(), (check_move.0 - check_base.0) as f32);
+    move_feats.insert("d_capture_checks".to_string(), (check_move.1 - check_base.1) as f32);
+
+    let conf_base_us = confinement_count_internal(&pos_base, us);
+    let conf_base_them = confinement_count_internal(&pos_base, us.other());
+    let conf_move_us = confinement_count_internal(&pos_move, us);
+    let conf_move_them = confinement_count_internal(&pos_move, us.other());
+
+    // d_confinement = (move_them - base_them) - (move_us - base_us)
+    let d_conf = ((conf_move_them - conf_base_them) as f32) - ((conf_move_us - conf_base_us) as f32);
+    move_feats.insert("d_confinement".to_string(), d_conf);
+
+    let pp_base_us = pp_momentum_snapshot(&pos_base, us);
+    let pp_base_them = pp_momentum_snapshot(&pos_base, us.other());
+    let pp_move_us = pp_momentum_snapshot(&pos_move, us);
+    let pp_move_them = pp_momentum_snapshot(&pos_move, us.other());
+
+    let d_pp = |val_move_us: f32, val_base_us: f32, val_move_them: f32, val_base_them: f32| {
+        (val_move_us - val_base_us) - (val_move_them - val_base_them)
+    };
+
+    move_feats.insert("d_pp_count".to_string(), d_pp(pp_move_us.count, pp_base_us.count, pp_move_them.count, pp_base_them.count));
+    move_feats.insert("d_pp_min_dist".to_string(), -(pp_move_us.min_dist - pp_base_us.min_dist) + (pp_move_them.min_dist - pp_base_them.min_dist));
+    move_feats.insert("d_pp_runners_clear".to_string(), d_pp(pp_move_us.runners_clear, pp_base_us.runners_clear, pp_move_them.runners_clear, pp_base_them.runners_clear));
+    move_feats.insert("d_pp_blockaded".to_string(), -(pp_move_us.blockaded - pp_base_us.blockaded) + (pp_move_them.blockaded - pp_base_them.blockaded));
+    move_feats.insert("d_pp_rook_behind".to_string(), d_pp(pp_move_us.rook_behind, pp_base_us.rook_behind, pp_move_them.rook_behind, pp_base_them.rook_behind));
+
+    Ok(move_feats)
+}
+
+fn checkability_count(pos: &Chess) -> (i32, i32) {
+    let mut quiet = 0;
+    let mut capture = 0;
+    for m in pos.legal_moves() {
+        let mut next = pos.clone();
+        next.play_unchecked(m);
+        if next.is_check() {
+            if m.is_capture() { capture += 1; } else { quiet += 1; }
+        }
+    }
+    (quiet, capture)
+}
+
+fn confinement_count_internal(pos: &Chess, constrained_side: Color) -> i32 {
+    let mut count = 0;
+    let board = pos.board();
+    let opp = constrained_side.other();
+    let occupied = board.occupied();
+
+    let pieces = (board.by_role(Role::Knight) | board.by_role(Role::Bishop)) & board.by_color(constrained_side);
+
+    for sq in pieces {
+        let mut safe = 0;
+        // Check moves from this square
+        for m in pos.legal_moves() {
+            if m.from() == Some(sq) {
+                let to = m.to();
+                let attackers = board.attacks_to(to, opp, occupied).count();
+                let defenders = board.attacks_to(to, constrained_side, occupied).count();
+                if attackers <= defenders {
+                    safe += 1;
+                }
+            }
+        }
+        if safe <= 2 {
+            count += 1;
+        }
+    }
+    count
+}
+
+struct PPMomentum {
+    count: f32,
+    min_dist: f32,
+    runners_clear: f32,
+    blockaded: f32,
+    rook_behind: f32,
+}
+
+fn pp_momentum_snapshot(pos: &Chess, side: Color) -> PPMomentum {
+    let mut m = PPMomentum { count: 0.0, min_dist: 8.0, runners_clear: 0.0, blockaded: 0.0, rook_behind: 0.0 };
+    let board = pos.board();
+
+    let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
+    for sq in my_pawns {
+        if !is_passed_internal(board, sq, side) { continue; }
+
+        m.count += 1.0;
+        let dist = match side {
+            Color::White => 7 - sq.rank() as i32,
+            Color::Black => sq.rank() as i32,
+        };
+        if (dist as f32) < m.min_dist { m.min_dist = dist as f32; }
+
+        if is_runner_clear(board, sq, side) { m.runners_clear += 1.0; }
+        if is_blockaded(board, sq, side) { m.blockaded += 1.0; }
+        if has_rook_behind(board, sq, side) { m.rook_behind += 1.0; }
+    }
+    m
+}
+
+fn is_passed_internal(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
+    let file = sq.file();
+    let rank = sq.rank();
+    let opp = side.other();
+    let enemy_pawns = board.by_role(Role::Pawn) & board.by_color(opp);
+
+    for f_off in -1..=1 {
+        let f = file as i8 + f_off;
+        if f < 0 || f > 7 { continue; }
+        let check_file = shakmaty::File::new(f as u32);
+        let file_bb = Bitboard::from_file(check_file);
+
+        let ahead_bb = match side {
+            Color::White => {
+                let mut bb = Bitboard::EMPTY;
+                for r in (rank as usize + 1)..8 {
+                    bb |= Bitboard::from_rank(shakmaty::Rank::new(r as u32));
+                }
+                bb
+            }
+            Color::Black => {
+                let mut bb = Bitboard::EMPTY;
+                for r in 0..(rank as usize) {
+                    bb |= Bitboard::from_rank(shakmaty::Rank::new(r as u32));
+                }
+                bb
+            }
+        };
+        if !(enemy_pawns & file_bb & ahead_bb).is_empty() {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_blockaded(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
+    let next_rank = match side {
+        Color::White => sq.rank().offset(1),
+        Color::Black => sq.rank().offset(-1),
+    };
+    if let Some(r) = next_rank {
+        let next_sq = Square::from_coords(sq.file(), r);
+        if let Some(p) = board.piece_at(next_sq) {
+            return p.color != side;
+        }
+    }
+    false
+}
+
+fn is_runner_clear(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
+    if is_blockaded(board, sq, side) { return false; }
+
+    let file = sq.file();
+    let rank = sq.rank();
+    let opp = side.other();
+
+    for f_off in -1..=1 {
+        let f = file as i8 + f_off;
+        if f < 0 || f > 7 { continue; }
+        let check_file = shakmaty::File::new(f as u32);
+
+        let near_ranks = match side {
+            Color::White => [rank.offset(1), rank.offset(2)],
+            Color::Black => [rank.offset(-1), rank.offset(-2)],
+        };
+
+        for r_opt in near_ranks {
+            if let Some(r) = r_opt {
+                let check_sq = Square::from_coords(check_file, r);
+                if let Some(p) = board.piece_at(check_sq) {
+                    if p.role == Role::Pawn && p.color == opp {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+fn has_rook_behind(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
+    let file = sq.file();
+    let rank = sq.rank();
+
+    let ranks = match side {
+        Color::White => (0..rank as usize).rev().collect::<Vec<_>>(),
+        Color::Black => (rank as usize + 1..8).collect::<Vec<_>>(),
+    };
+
+    for r in ranks {
+        let check_sq = Square::from_coords(file, shakmaty::Rank::new(r as u32));
+        if let Some(p) = board.piece_at(check_sq) {
+            if p.role == Role::Rook && p.color == side {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]

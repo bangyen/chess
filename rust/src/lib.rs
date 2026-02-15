@@ -14,6 +14,7 @@ fn _chess_ai_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(search::find_best_reply, m)?)?;
     m.add_function(wrap_pyfunction!(search::calculate_forcing_swing, m)?)?;
     m.add_function(wrap_pyfunction!(features::extract_features_rust, m)?)?;
+    m.add_function(wrap_pyfunction!(features::extract_features_delta_rust, m)?)?;
     m.add_class::<syzygy::SyzygyTablebase>()?;
     Ok(())
 }

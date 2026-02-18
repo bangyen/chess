@@ -572,10 +572,13 @@ def audit_feature_set(  # noqa: C901
         stable_idx = []
 
     stable_features = [feature_names[i] for i in stable_idx]
-    top_features = sorted(
-        [(feature_names[i], float(coef[i])) for i in range(len(feature_names))],
-        key=lambda x: -abs(x[1]),
-    )[:15]
+    top_features = [
+        (feature_names[i], float(coef[i]))
+        for i in range(len(feature_names))
+        if abs(coef[i]) >= 1e-8
+    ]
+    top_features.sort(key=lambda x: -abs(x[1]))
+    top_features = top_features[:15]
 
     return AuditResult(
         r2=float(r2),

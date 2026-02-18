@@ -262,7 +262,7 @@ class TestMain:
             main()
 
         captured = capsys.readouterr()
-        assert "Examples:" in captured.out
+        assert "Examples" in captured.out
         assert "chess-ai audit" in captured.out
         assert "chess-ai play" in captured.out
 

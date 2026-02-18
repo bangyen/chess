@@ -506,7 +506,7 @@ class TestExplainableChessEngine:
         engine.print_board()
 
         captured = capsys.readouterr()
-        assert "=" in captured.out
+        assert "Current Position" in captured.out
         assert "r n b q k b n r" in captured.out or "8" in captured.out
 
     def test_print_legal_moves(self, capsys):
@@ -525,8 +525,8 @@ class TestExplainableChessEngine:
         engine._print_help()
 
         captured = capsys.readouterr()
-        assert "Available commands:" in captured.out
-        assert "Make moves:" in captured.out
+        assert "Available Commands" in captured.out
+        assert "e4, Nf3, O-O" in captured.out
         assert "best" in captured.out
         assert "reset" in captured.out
         assert "help" in captured.out
@@ -547,7 +547,7 @@ class TestExplainableChessEngine:
             engine._show_best_move()
 
         captured = capsys.readouterr()
-        assert "Best move:" in captured.out
+        assert "Best Move" in captured.out
 
     def test_show_best_move_no_recommendation(self, capsys):
         """Test showing best move when no recommendation available."""
@@ -568,7 +568,7 @@ class TestExplainableChessEngine:
         engine = ExplainableChessEngine("/path/to/stockfish")
 
         # Mock input to return "quit" immediately
-        monkeypatch.setattr("builtins.input", lambda _: "quit")
+        monkeypatch.setattr("builtins.input", lambda *_, **__: "quit")
 
         # This should not raise an exception and should exit cleanly
         engine.play_interactive_game()
@@ -579,12 +579,12 @@ class TestExplainableChessEngine:
 
         # Mock input to return "help" then "quit"
         input_calls = ["help", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         engine.play_interactive_game()
 
         captured = capsys.readouterr()
-        assert "Available commands:" in captured.out
+        assert "Available Commands" in captured.out
 
     def test_play_interactive_game_reset_command(self, monkeypatch):
         """Test interactive game with reset command."""
@@ -592,7 +592,7 @@ class TestExplainableChessEngine:
 
         # Mock input to return "reset" then "quit"
         input_calls = ["reset", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         engine.play_interactive_game()
 
@@ -605,14 +605,14 @@ class TestExplainableChessEngine:
 
         # Mock input to return "best" then "quit"
         input_calls = ["best", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         engine.play_interactive_game()
 
         captured = capsys.readouterr()
         # Should show best move or error message
         assert (
-            "Best move:" in captured.out
+            "Best Move" in captured.out
             or "Could not get move recommendation" in captured.out
         )
 
@@ -622,7 +622,7 @@ class TestExplainableChessEngine:
 
         # Mock input to return invalid move then "quit"
         input_calls = ["invalid_move", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         engine.play_interactive_game()
 
@@ -635,7 +635,7 @@ class TestExplainableChessEngine:
 
         # Mock input to return valid move then "quit"
         input_calls = ["e4", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         engine.play_interactive_game()
 
@@ -657,7 +657,7 @@ class TestExplainableChessEngine:
 
         # Mock input to return valid move then "quit"
         input_calls = ["e4", "quit"]
-        monkeypatch.setattr("builtins.input", lambda _: input_calls.pop(0))
+        monkeypatch.setattr("builtins.input", lambda *_, **__: input_calls.pop(0))
 
         with engine:
             engine.play_interactive_game()
@@ -675,7 +675,7 @@ class TestExplainableChessEngine:
         )
 
         # Mock input to return "quit" (should exit immediately due to checkmate)
-        monkeypatch.setattr("builtins.input", lambda _: "quit")
+        monkeypatch.setattr("builtins.input", lambda *_, **__: "quit")
 
         engine.play_interactive_game()
 

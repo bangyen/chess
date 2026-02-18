@@ -9,6 +9,7 @@ from typing import Optional
 
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.inspection import permutation_importance
 from sklearn.linear_model import ElasticNetCV
 
 
@@ -34,7 +35,7 @@ class TreeSurrogate:
     #: behaviour), 1.0 = ignore GBT entirely.
     DISTILL_MIX: float = 0.3
 
-    def __init__(self, n_samples: int = 100, distill_top_k: int = 10):
+    def __init__(self, n_samples: int = 100, distill_top_k: int = 20):
         """Build a GBT surrogate sized for *n_samples* training rows.
 
         Uses early stopping when the dataset is large enough for a
@@ -93,11 +94,18 @@ class TreeSurrogate:
         self.gbt.fit(X, y)
         # feature_importances_ may be unavailable when all targets
         # are constant (no splits), so fall back to uniform weights.
-        self.feature_importances = getattr(
-            self.gbt,
-            "feature_importances_",
-            np.ones(X.shape[1]) / X.shape[1],
-        )
+        if hasattr(self.gbt, "feature_importances_"):
+            self.feature_importances = self.gbt.feature_importances_
+        elif X.shape[1] > self._distill_top_k:
+            # Fallback for HistGradientBoostingRegressor which lacks
+            # the feature_importances_ attribute.
+            r = permutation_importance(
+                self.gbt, X, y, n_repeats=5, random_state=42, n_jobs=1
+            )
+            self.feature_importances = r.importances_mean
+        else:
+            # If features are few, skip selection.
+            self.feature_importances = np.ones(X.shape[1])
 
         # Distill GBT into a sparse linear model for crisp
         # explanations.  The mixed target keeps the Lasso grounded.
@@ -112,10 +120,8 @@ class TreeSurrogate:
         X_distill = X[:, self.top_k_idx]
 
         n_samples = X.shape[0]
-        cv_folds = max(2, min(5, n_samples // 10)) if n_samples >= 10 else 2
-        alphas = (
-            np.logspace(-4, 2, 30).tolist() if n_samples >= 10 else [1.0, 10.0, 100.0]
-        )
+        cv_folds = max(2, min(5, n_samples // 3)) if n_samples >= 6 else 2
+        alphas = np.logspace(-4, 2, 30).tolist()
         l1_ratios = [0.3, 0.5, 0.7, 0.9, 1.0]
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="sklearn")

@@ -211,47 +211,112 @@ def main() -> None:
         engine.quit()
 
     # Report
-    print("\n=== Explainability Audit Report ===")
-    print(
-        f"Positions: {len(boards)}  |  Depth: {cfg.depth or 'movetime'}  |  MultiPV: {cfg.multipv}"
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+
+    console = Console()
+
+    # Create Header Panel
+    header_text = Text.assemble(
+        ("Explainability Audit Report", "bold cyan"),
+        "\n",
+        (f"Positions: {len(boards)}", "white"),
+        " | ",
+        (f"Depth: {cfg.depth or 'movetime'}", "white"),
+        " | ",
+        (f"MultiPV: {cfg.multipv}", "white"),
     )
-    print(f"Fidelity (Delta-R^2):          {res.r2:0.3f}")
-    print(
-        f"Move ranking (Kendall tau):    {res.tau_mean:0.3f}  (positions covered: {res.tau_covered}/{res.n_tau})"
+    console.print(Panel(header_text, border_style="cyan"))
+
+    # Main Metrics Table
+    metrics_table = Table(title="Validation Metrics", box=None, show_header=False)
+    metrics_table.add_column("Metric", style="bold white")
+    metrics_table.add_column("Value", style="bold green")
+    metrics_table.add_column("Target", style="dim")
+
+    metrics_table.add_row(
+        "Fidelity (Delta-R²)",
+        f"{res.r2:0.3f}",
+        "≥ 0.35",
+        style="green" if res.r2 >= 0.35 else "yellow",
     )
-    print(
-        f"Local faithfulness (best vs 2): {res.local_faithfulness*100:0.1f}% (gap ≥ {args.gap} cp)"
+    metrics_table.add_row(
+        "Move ranking (Kendall τ)",
+        f"{res.tau_mean:0.3f} ({res.tau_covered}/{res.n_tau})",
+        "≥ 0.45",
+        style="green" if res.tau_mean >= 0.45 else "yellow",
     )
-    print(
-        f"Local faithfulness (decisive): {res.local_faithfulness_decisive*100:0.1f}% (gap ≥ 80.0 cp)"
+    metrics_table.add_row(
+        "Local faithfulness (best vs 2)",
+        f"{res.local_faithfulness*100:0.1f}%",
+        "≥ 80%",
+        style="green" if res.local_faithfulness >= 0.8 else "yellow",
     )
-    print(
-        f"Sparsity (reasons to cover 80% contribution for best move): {res.sparsity_mean:0.2f}"
+    metrics_table.add_row(
+        "Local faithfulness (decisive)",
+        f"{res.local_faithfulness_decisive*100:0.1f}%",
+        "≥ 80%",
+        style="green" if res.local_faithfulness_decisive >= 0.8 else "yellow",
     )
-    print(f"Coverage (≥2 strong reasons):  {res.coverage_ratio*100:0.1f}%")
-    print("\nTop features by |coef|:")
+    metrics_table.add_row(
+        "Sparsity (explanation reasons)",
+        f"{res.sparsity_mean:0.2f}",
+        "≤ 4.0",
+        style="green" if res.sparsity_mean <= 4.0 else "yellow",
+    )
+    metrics_table.add_row(
+        "Position Coverage",
+        f"{res.coverage_ratio*100:0.1f}%",
+        "≥ 70%",
+        style="green" if res.coverage_ratio >= 0.7 else "yellow",
+    )
+
+    # Top Features Table
+    features_table = Table(title="Top Driving Features", header_style="bold magenta")
+    features_table.add_column("Feature", style="cyan")
+    features_table.add_column("Impact (Coef)", justify="right")
+
     for name, coef in res.top_features_by_coef:
         if abs(coef) > 1e-8:
-            print(f"  {name:30s}  coef={coef:.4f}")
-    if res.stable_features:
-        print(f"\nStable features (picked ≥{100 * 0.7:.0f}% of bootstraps):")
-        for name in res.stable_features:
-            print(f"  - {name}")
-    else:
-        print("\nStable features: (none reached threshold)")
+            color = "green" if coef > 0 else "red"
+            features_table.add_row(name, Text(f"{coef:+.4f}", style=color))
 
-    print("\nGuidance:")
-    print(
-        " - Aim for Delta-R^2 ≥ 0.35 on mixed middlegames at depth ~16 as a healthy baseline."
+    # Stable Features Table
+    stable_table = Table(
+        title="Stable Features (Bootstrap)", box=None, show_header=False
     )
-    print(" - Tau ≥ 0.45 for top-3 move ranking is decent; higher is better.")
-    print(
-        " - Local faithfulness ≥ 80% on decisive positions shows explanations track preferences."
+    stable_table.add_column("Feature", style="green")
+
+    if res.stable_features:
+        for name in res.stable_features:
+            stable_table.add_row(f"• {name}")
+    else:
+        stable_table.add_row("(none reached threshold)", style="dim")
+
+    # Layout: side-by-side using a parent grid table for perfect alignment
+    layout_table = Table.grid(padding=(0, 4))
+    layout_table.add_column()
+    layout_table.add_column()
+    layout_table.add_row(features_table, stable_table)
+
+    console.print(metrics_table)
+    console.print(Panel(layout_table, border_style="magenta"))
+
+    # Guidance Panel
+    guidance_text = Text.assemble(
+        ("• ", "bold green"),
+        "Fidelity: How well features track engine eval changes.\n",
+        ("• ", "bold green"),
+        "Tau: Correlation between feature-predicted vs SF rankings.\n",
+        ("• ", "bold green"),
+        "Faithfulness: Consistency with engine's top-move preference.\n",
+        ("• ", "bold green"),
+        "Sparsity/Coverage: Explanation quality vs robustness.",
     )
-    print(" - Sparsity around 3-5 suggests crisp, narratable reasons.")
-    print(
-        " - Coverage ≥ 70% with ≥2 strong reasons means you can explain most positions.\n"
-    )
+    console.print(Panel(guidance_text, title="Guidance", border_style="dim"))
+    console.print("")
 
 
 if __name__ == "__main__":

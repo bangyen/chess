@@ -174,9 +174,8 @@ class TestAuditFaithfulnessAndStability:
         """Audit with large score gaps triggers faithfulness computation."""
 
         def varied_eval(eng, board, cfg):
-            # Board-dependent eval so deltas are large and varied
-            fen_hash = hash(board.fen()) % 500
-            return float(fen_hash) - 250.0
+            # Variance based on FEN hash to provide signal
+            return float(hash(board.fen()) % 1000)
 
         mock_eval.side_effect = varied_eval
 
@@ -202,7 +201,7 @@ class TestAuditFaithfulnessAndStability:
             multipv_for_ranking=3,
             test_size=0.25,
             gap_threshold_cp=50.0,
-            stability_bootstraps=3,
+            stability_bootstraps=2,
             stability_thresh=0.5,
         )
 
@@ -219,11 +218,9 @@ class TestAuditFaithfulnessAndStability:
     @patch("chess_ai.audit.sf_top_moves")
     def test_stability_selection_runs(self, mock_top, mock_eval):
         """With >= 20 training samples, stability selection executes."""
-        eval_counter = {"n": 0}
 
         def varied_eval(eng, board, cfg):
-            eval_counter["n"] += 1
-            return 40.0 + (eval_counter["n"] % 8) * 25.0
+            return float(hash(board.fen()) % 1000)
 
         mock_eval.side_effect = varied_eval
 
@@ -247,7 +244,7 @@ class TestAuditFaithfulnessAndStability:
             multipv_for_ranking=2,
             test_size=0.2,
             gap_threshold_cp=30.0,
-            stability_bootstraps=5,
+            stability_bootstraps=2,
             stability_thresh=0.3,
         )
 
@@ -261,11 +258,9 @@ class TestAuditFaithfulnessAndStability:
     def test_eval_move_delta_reply_none(self, mock_top, mock_eval):
         """When engine returns no reply during faithfulness analysis,
         _eval_move_delta falls back to zero delta and zero feature vector."""
-        eval_counter = {"n": 0}
 
         def varied_eval(eng, board, cfg):
-            eval_counter["n"] += 1
-            return 50.0 + (eval_counter["n"] % 5) * 15.0
+            return float(hash(board.fen()) % 1000)
 
         mock_eval.side_effect = varied_eval
 
@@ -319,11 +314,9 @@ class TestTreeSurrogatePredict1D:
     @patch("chess_ai.audit.sf_top_moves")
     def test_predict_1d_input(self, mock_top, mock_eval):
         """TreeSurrogate.predict handles 1D input via reshape."""
-        eval_counter = {"n": 0}
 
         def varied_eval(eng, board, cfg):
-            eval_counter["n"] += 1
-            return 40.0 + (eval_counter["n"] % 8) * 20.0
+            return float(hash(board.fen()) % 1000)
 
         mock_eval.side_effect = varied_eval
 

@@ -50,6 +50,10 @@ class ExplainableChessEngine:
         self.move_history: list[chess.Move] = []
         self.surrogate_explainer: SurrogateExplainer | None = None
 
+        from rich.console import Console
+
+        self.console = Console()
+
         # Stockfish strength settings
         self.strength_settings: dict[str, dict[str, Any]] = {
             "beginner": {"Skill Level": 0, "UCI_LimitStrength": True, "UCI_Elo": 800},
@@ -106,7 +110,9 @@ class ExplainableChessEngine:
 
             # Train surrogate model if enabled
             if self.enable_model_explanations:
-                print("Training surrogate model for explanations...")
+                self.console.print(
+                    "[bold cyan]Training surrogate model for explanations...[/bold cyan]"
+                )
                 self._initialize_model()
 
             return self
@@ -702,10 +708,31 @@ class ExplainableChessEngine:
             return None
 
     def print_board(self) -> None:
-        """Print the current board position."""
-        print("\n" + "=" * 50)
-        print(self.board)
-        print("=" * 50)
+        """Print the current board position using rich."""
+        from rich.panel import Panel
+        from rich.text import Text
+
+        # Create a stylized board string
+        board_str = str(self.board)
+        # Add some color to pieces
+        styled_board = Text()
+        for char in board_str:
+            if char.isupper():  # White pieces
+                styled_board.append(char, style="bold white")
+            elif char.islower():  # Black pieces
+                styled_board.append(char, style="bold cyan")
+            else:
+                styled_board.append(char, style="dim white")
+
+        self.console.print("\n")
+        self.console.print(
+            Panel(
+                styled_board,
+                title="Current Position",
+                expand=False,
+                border_style="blue",
+            )
+        )
 
     def print_legal_moves(self) -> None:
         """Print all legal moves."""
@@ -716,12 +743,23 @@ class ExplainableChessEngine:
 
     def play_interactive_game(self) -> None:  # noqa: C901
         """Play an interactive chess game against Stockfish with explanations."""
+        from rich.panel import Panel
+        from rich.text import Text
+
+        self.console.print(
+            Panel(
+                "[bold green]Welcome to the Explainable Chess Engine![/bold green]\n"
+                "Play against Stockfish and learn from your moves."
+            )
+        )
 
         while not self.board.is_game_over():
             if self.board.turn == chess.WHITE:
                 # Only print board when it's the human player's turn
                 self.print_board()
-                user_input = input("\nWhite to move: ").strip()
+                user_input = self.console.input(
+                    "\n[bold white]White to move (or 'help', 'best', 'reset', 'quit'): [/bold white]"
+                ).strip()
 
                 if user_input.lower() == "quit":
                     break
@@ -736,14 +774,32 @@ class ExplainableChessEngine:
                     continue
 
                 # Try to make the move
-                if self.make_move(user_input):
+                # Parse the move first to get the SAN notation before pushing
+                try:
+                    move = self.board.parse_san(user_input)
+                except ValueError:
+                    try:
+                        move = self.board.parse_uci(user_input)
+                    except ValueError:
+                        move = None
+
+                if move and move in self.board.legal_moves:
+                    move_san = self.board.san(move)
+                    self.make_move(user_input)  # This pushes the move
+
                     # Analyze the human's move and provide explanation
                     last_move = self.move_history[-1]
                     temp_board = self.board.copy()
                     temp_board.pop()  # Undo the last move to analyze it
                     explanation = self.explain_move_with_board(last_move, temp_board)
 
-                    print(f"\nYour {explanation.overall_explanation}")
+                    self.console.print(
+                        Panel(
+                            f"[bold white]Your move {move_san}:[/bold white]\n{explanation.overall_explanation}",
+                            title="Player Analysis",
+                            border_style="white",
+                        )
+                    )
 
                     # Show what the best move would have been ONLY if it differs from what was played
                     if not self.board.is_game_over():
@@ -759,13 +815,24 @@ class ExplainableChessEngine:
                             except Exception:
                                 move_str = str(best_recommendation.move)
 
-                            print(f"\nBest {best_recommendation.overall_explanation}")
+                            self.console.print(
+                                Panel(
+                                    f"[bold yellow]Better would have been {move_str}:[/bold yellow]\n{best_recommendation.overall_explanation}",
+                                    title="Recommendation",
+                                    border_style="yellow",
+                                )
+                            )
                 else:
-                    print("❌ Invalid move. Try again.")
+                    self.console.print(
+                        "[bold red]❌ Invalid move. Try again.[/bold red]"
+                    )
                     continue
             else:
                 # Stockfish's turn
-                stockfish_move = self.get_stockfish_move()
+                with self.console.status(
+                    "[bold cyan]🤖 Stockfish is thinking...[/bold cyan]"
+                ):
+                    stockfish_move = self.get_stockfish_move()
 
                 if stockfish_move:
                     # Get SAN notation before making the move
@@ -778,50 +845,79 @@ class ExplainableChessEngine:
                     self.board.push(stockfish_move)
                     self.move_history.append(stockfish_move)
 
-                    print(f"\n🤖 Stockfish plays: {move_str}")
+                    self.console.print(
+                        f"\n[bold cyan]🤖 Stockfish plays: {move_str}[/bold cyan]"
+                    )
                 else:
-                    print("❌ Stockfish failed to make a move. Game over.")
+                    self.console.print(
+                        "[bold red]❌ Stockfish failed to make a move. Game over.[/bold red]"
+                    )
                     break
 
             # Check for game over
             if self.board.is_game_over():
                 result = self.board.result()
-                print(f"\n🏁 Game Over! Result: {result}")
+                status_text = Text.assemble(
+                    ("\n🏁 Game Over! Result: ", "bold"), (result, "bold green")
+                )
+                self.console.print(Panel(status_text, border_style="green"))
 
                 if result == "1-0":
-                    print("🎉 You win!")
+                    self.console.print("[bold green]🎉 You win![/bold green]")
                 elif result == "0-1":
-                    print("🎉 Stockfish wins!")
+                    self.console.print("[bold cyan]🎉 Stockfish wins![/bold cyan]")
                 else:
-                    print("🤝 Draw!")
+                    self.console.print("[bold white]🤝 Draw![/bold white]")
                 break
 
     def _print_help(self) -> None:
-        """Print help information."""
-        print("\n📖 Available commands:")
-        print("  • Make moves: e4, Nf3, O-O, etc.")
-        print("  • 'best' - Show the best move recommendation")
-        print("  • 'reset' - Reset the game")
-        print("  • 'help' - Show this help")
-        print("  • 'quit' - Exit the game")
+        """Print help information using rich."""
+        from rich.table import Table
+
+        help_table = Table(title="📖 Available Commands", box=None, show_header=False)
+        help_table.add_column("Command", style="bold magenta")
+        help_table.add_column("Description")
+
+        help_table.add_row("e4, Nf3, O-O", "Make a move using SAN notation")
+        help_table.add_row("best", "Show the best move recommendation with explanation")
+        help_table.add_row("reset", "Reset the game to starting position")
+        help_table.add_row("help", "Show this help screen")
+        help_table.add_row("quit", "Exit the game")
+
+        self.console.print(help_table)
 
     def _show_best_move(self) -> None:
-        """Show the best move recommendation."""
+        """Show the best move recommendation using rich."""
+        from rich.panel import Panel
+        from rich.text import Text
+
         recommendation = self.get_move_recommendation()
         if recommendation:
             try:
                 move_str = self.board.san(recommendation.move)
             except Exception:
                 move_str = str(recommendation.move)
-            print(f"\n💡 Best move: {move_str}")
-            print(f"   {recommendation.overall_explanation}")
 
+            reasons_text = Text()
+            reasons_text.append(
+                f"{recommendation.overall_explanation}\n\n", style="italic"
+            )
             if recommendation.reasons:
-                print("   Why this move:")
+                reasons_text.append("Why this move:\n", style="bold underline")
                 for reason in recommendation.reasons[:3]:
-                    print(f"   • {reason[2]}")
+                    reasons_text.append(f" • {reason[2]}\n", style="green")
+
+            self.console.print(
+                Panel(
+                    reasons_text,
+                    title=f"💡 Best Move: [bold cyan]{move_str}[/bold cyan]",
+                    border_style="cyan",
+                )
+            )
         else:
-            print("❌ Could not get move recommendation")
+            self.console.print(
+                "[bold red]❌ Could not get move recommendation[/bold red]"
+            )
 
 
 if __name__ == "__main__":

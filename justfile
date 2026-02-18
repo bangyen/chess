@@ -30,8 +30,8 @@ type:
     {{PYTHON}} -m mypy .
 
 # run tests
-test:
-    {{PYTHON}} -m pytest
+test *ARGS:
+    {{PYTHON}} -m pytest {{ARGS}}
 
 # run web dashboard
 web:
@@ -64,6 +64,7 @@ verify-syzygy:
     {{PYTHON}} scripts/verify_syzygy_endgames.py
 
 # run all checks (fmt, lint, type, test)
-all: fmt lint type test
+all: fmt lint type
+    {{PYTHON}} -m pytest
     echo "All checks completed!"
 

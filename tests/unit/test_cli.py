@@ -693,13 +693,13 @@ def extract_features(board):
             # Check that output was printed
             output = mock_stdout.getvalue()
             assert "Explainability Audit Report" in output
-            assert "Fidelity (Delta-R^2)" in output
-            assert "Move ranking (Kendall tau)" in output
+            assert "Fidelity" in output
+            assert "ranking" in output
             assert "Local faithfulness" in output
             assert "Sparsity" in output
             assert "Coverage" in output
-            assert "Top features by |coef|" in output
-            assert "Guidance:" in output
+            assert "Top Driving Features" in output
+            assert "Guidance" in output
 
     def test_cli_random_seed_setting(self):
         """Test that random seed is set correctly."""

@@ -5,7 +5,6 @@ Main CLI dispatcher for Chess AI tools.
 This provides a unified entry point for all chess AI functionality.
 """
 
-import argparse
 import sys
 from typing import List, Optional
 
@@ -19,22 +18,49 @@ def main(args: Optional[List[str]] = None) -> None:
         args = sys.argv[1:]
 
     if not args or args[0] in ["help", "-h", "--help"]:
-        parser = argparse.ArgumentParser(
-            description="Chess AI Tools - Feature analysis and explainable gameplay",
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog="""
-Available commands:
-  audit     Run feature explainability audit against Stockfish
-  play      Play interactive chess with AI explanations
-  help      Show this help message
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+        from rich.text import Text
 
-Examples:
-  chess-ai audit --baseline_features --positions 100
-  chess-ai play --strength intermediate
-  chess-ai play --depth 20
-            """,
+        console = Console()
+
+        # Header
+        console.print(
+            Panel(
+                Text(
+                    "Chess AI Tools - Feature analysis and explainable gameplay",
+                    style="bold cyan",
+                ),
+                expand=False,
+                border_style="cyan",
+            )
         )
-        parser.print_help()
+
+        # Commands Table
+        commands_table = Table(box=None, padding=(0, 2))
+        commands_table.add_column("Command", style="bold magenta")
+        commands_table.add_column("Description", style="white")
+
+        commands_table.add_row(
+            "audit", "Run feature explainability audit against Stockfish"
+        )
+        commands_table.add_row("play", "Play interactive chess with AI explanations")
+        commands_table.add_row("help", "Show this help message")
+
+        console.print("\n[bold]Available commands:[/bold]")
+        console.print(commands_table)
+
+        # Examples
+        examples_text = Text.assemble(
+            ("chess-ai audit --baseline_features --positions 100", "green"),
+            "\n",
+            ("chess-ai play --strength intermediate", "green"),
+            "\n",
+            ("chess-ai play --depth 20", "green"),
+        )
+        console.print(Panel(examples_text, title="Examples", border_style="dim"))
+        console.print("")
         return
 
     command = args[0]

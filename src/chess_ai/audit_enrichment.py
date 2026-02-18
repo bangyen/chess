@@ -83,7 +83,7 @@ def enrich_features(
                 engine, board, depth=6
             )
             hanging_cache[fen_key] = (hang_cnt, hang_max_val, hang_near_king)
-        feats["d_hanging_cnt"] = float(hang_cnt)
+        feats["d_hanging_them"] = float(hang_cnt)
         feats["d_hanging_max_v"] = float(hang_max_val)
         feats["d_hanging_near_king"] = float(hang_near_king)
 

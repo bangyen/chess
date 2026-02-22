@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 import chess
 
 from chess_ai.explainable_engine import ExplainableChessEngine, MoveExplanation
+from chess_ai.hardcoded_reasons import generate_hardcoded_reasons
 
 # ---------------------------------------------------------------------------
 # _get_syzygy_data
@@ -171,154 +172,139 @@ class TestGenerateHardcodedReasons:
 
     def test_batteries_reason(self):
         """Battery arrangement detected when batteries delta > 0.5."""
-        eng = ExplainableChessEngine("/sf")
         before = {"batteries_us": 0.0, "batteries_them": 0.0}
         after = {"batteries_them": 1.0, "batteries_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "batteries_us" in names
 
     def test_outposts_reason(self):
         """Outpost creation detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"outposts_us": 0.0, "outposts_them": 0.0}
         after = {"outposts_them": 1.0, "outposts_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "outposts_us" in names
 
     def test_king_pressure_reason(self):
         """King ring pressure increase detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"king_ring_pressure_us": 0.0, "king_ring_pressure_them": 0.0}
         after = {"king_ring_pressure_them": 1.0, "king_ring_pressure_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "king_pressure" in names
 
     def test_bishop_pair_reason(self):
         """Bishop pair advantage detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"bishop_pair_us": 0.0, "bishop_pair_them": 0.0}
         after = {"bishop_pair_them": 1.0, "bishop_pair_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "bishop_pair" in names
 
     def test_passed_pawns_reason(self):
         """Passed pawn creation detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"passed_us": 0.0, "passed_them": 0.0}
         after = {"passed_them": 1.0, "passed_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "passed_pawns" in names
 
     def test_center_control_reason(self):
         """Center control improvement detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"center_control_us": 0.0, "center_control_them": 0.0}
         after = {"center_control_them": 1.0, "center_control_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "center_control" in names
 
     def test_safe_mobility_reason(self):
         """Safe mobility increase detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"safe_mobility_us": 10.0, "safe_mobility_them": 10.0}
         after = {"safe_mobility_them": 12.0, "safe_mobility_us": 10.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "safe_mobility" in names
 
     def test_rook_open_file_reason(self):
         """Rook on open file detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"rook_open_file_us": 0.0, "rook_open_file_them": 0.0}
         after = {"rook_open_file_them": 1.0, "rook_open_file_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "rook_activity" in names
 
     def test_isolated_pawns_opponent_reason(self):
         """Creating isolated pawn for opponent detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"isolated_pawns_them": 0.0, "isolated_pawns_us": 0.0}
         after = {"isolated_pawns_us": 1.0, "isolated_pawns_them": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "structure_damage" in names
 
     def test_backward_pawns_opponent_reason(self):
         """Creating backward pawn for opponent detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"backward_pawns_them": 0.0, "backward_pawns_us": 0.0}
         after = {"backward_pawns_us": 1.0, "backward_pawns_them": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "structure_damage" in names
 
     def test_backward_pawns_repair_reason(self):
         """Fixing backward pawn detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"backward_pawns_us": 2.0, "backward_pawns_them": 0.0}
         after = {"backward_pawns_them": 1.0, "backward_pawns_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "structure_repair" in names
 
     def test_pst_improvement_reason(self):
         """Piece placement improvement detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"pst_us": 0.0, "pst_them": 0.0}
         after = {"pst_them": 1.0, "pst_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "piece_quality" in names
 
     def test_pin_creation_reason(self):
         """Pin creation detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"pinned_them": 0.0, "pinned_us": 0.0}
         after = {"pinned_us": 1.0, "pinned_them": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "pin_creation" in names
 
     def test_pin_escape_reason(self):
         """Pin escape detected."""
-        eng = ExplainableChessEngine("/sf")
         before = {"pinned_us": 2.0, "pinned_them": 0.0}
         after = {"pinned_them": 1.0, "pinned_us": 0.0}
 
-        reasons = eng._generate_hardcoded_reasons(before, after)
+        reasons = generate_hardcoded_reasons(before, after)
         names = [r[0] for r in reasons]
         assert "pin_escape" in names
 
     def test_no_reasons_when_no_deltas(self):
         """Returns empty list when all deltas are near zero."""
-        eng = ExplainableChessEngine("/sf")
         feats = {
             "batteries_us": 0.0,
             "batteries_them": 0.0,
             "outposts_us": 0.0,
             "outposts_them": 0.0,
         }
-        reasons = eng._generate_hardcoded_reasons(feats, feats)
+        reasons = generate_hardcoded_reasons(feats, feats)
         assert reasons == []
 
 

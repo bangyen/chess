@@ -8,8 +8,9 @@ import chess
 import numpy as np
 import pytest
 
-from chess_ai.audit import AuditResult, _cp_to_winrate, audit_feature_set
+from chess_ai.audit import AuditResult, audit_feature_set
 from chess_ai.engine.config import SFConfig
+from chess_ai.utils.math import cp_to_winrate
 
 # Suppress sklearn convergence warnings in tests
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
@@ -863,57 +864,57 @@ class TestAuditFeatureSet(AuditTestBase):
 
 
 class TestCpToWinrate(AuditTestBase):
-    """Tests for the _cp_to_winrate helper function."""
+    """Tests for the cp_to_winrate helper function."""
 
     def test_zero_cp_gives_half(self):
         """A centipawn score of 0 should map to 50% win probability."""
-        assert math.isclose(_cp_to_winrate(0.0), 0.5, abs_tol=1e-9)
+        assert math.isclose(cp_to_winrate(0.0), 0.5, abs_tol=1e-9)
 
     def test_positive_cp_above_half(self):
         """Positive centipawn scores map to >50% win probability."""
-        assert _cp_to_winrate(100.0) > 0.5
-        assert _cp_to_winrate(500.0) > 0.5
+        assert cp_to_winrate(100.0) > 0.5
+        assert cp_to_winrate(500.0) > 0.5
 
     def test_negative_cp_below_half(self):
         """Negative centipawn scores map to <50% win probability."""
-        assert _cp_to_winrate(-100.0) < 0.5
-        assert _cp_to_winrate(-500.0) < 0.5
+        assert cp_to_winrate(-100.0) < 0.5
+        assert cp_to_winrate(-500.0) < 0.5
 
     def test_monotonicity(self):
         """Higher cp scores should always give higher win rates."""
         vals = [-1000, -500, -100, 0, 100, 500, 1000]
-        wrs = [_cp_to_winrate(float(v)) for v in vals]
+        wrs = [cp_to_winrate(float(v)) for v in vals]
         for i in range(len(wrs) - 1):
             assert wrs[i] < wrs[i + 1]
 
     def test_bounded_zero_one(self):
         """Output should always be in [0, 1]."""
         for cp in [-10000.0, -100.0, 0.0, 100.0, 10000.0]:
-            wr = _cp_to_winrate(cp)
+            wr = cp_to_winrate(cp)
             assert 0.0 <= wr <= 1.0
         # Moderate values should be strictly inside (0, 1)
         for cp in [-500.0, -100.0, 0.0, 100.0, 500.0]:
-            wr = _cp_to_winrate(cp)
+            wr = cp_to_winrate(cp)
             assert 0.0 < wr < 1.0
 
     def test_symmetry(self):
-        """_cp_to_winrate(x) + _cp_to_winrate(-x) should equal 1."""
+        """cp_to_winrate(x) + cp_to_winrate(-x) should equal 1."""
         for cp in [50.0, 111.0, 300.0, 700.0]:
             assert math.isclose(
-                _cp_to_winrate(cp) + _cp_to_winrate(-cp), 1.0, abs_tol=1e-9
+                cp_to_winrate(cp) + cp_to_winrate(-cp), 1.0, abs_tol=1e-9
             )
 
     def test_custom_k(self):
         """A larger k produces a less steep sigmoid."""
         # With a larger k, 100 cp maps closer to 0.5
-        wr_default = _cp_to_winrate(100.0, k=111.0)
-        wr_wide = _cp_to_winrate(100.0, k=400.0)
+        wr_default = cp_to_winrate(100.0, k=111.0)
+        wr_wide = cp_to_winrate(100.0, k=400.0)
         assert wr_wide < wr_default  # wider sigmoid → closer to 0.5
 
     def test_numpy_vectorised(self):
-        """_cp_to_winrate works element-wise on numpy arrays."""
+        """cp_to_winrate works element-wise on numpy arrays."""
         arr = np.array([-200.0, 0.0, 200.0])
-        result = _cp_to_winrate(arr)
+        result = cp_to_winrate(arr)
         assert result.shape == (3,)
         assert math.isclose(float(result[1]), 0.5, abs_tol=1e-9)
         assert float(result[0]) < 0.5 < float(result[2])

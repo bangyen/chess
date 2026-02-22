@@ -40,10 +40,6 @@ except Exception:
     raise
 
 
-# _cp_to_winrate has been factored into utils.math.cp_to_winrate
-_cp_to_winrate = cp_to_winrate
-
-
 # Interaction term definitions
 INTERACTION_PAIRS = [
     ("material_diff", "phase"),
@@ -270,7 +266,7 @@ def audit_feature_set(  # noqa: C901
     # Convert centipawn deltas to win-rate deltas.
     y_base_arr = np.array(y_base_evals, dtype=float)
     y_arr: npt.NDArray[np.floating] = np.asarray(
-        _cp_to_winrate(y_base_arr + y_arr_cp) - _cp_to_winrate(y_base_arr),
+        cp_to_winrate(y_base_arr + y_arr_cp) - cp_to_winrate(y_base_arr),
         dtype=float,
     )
 

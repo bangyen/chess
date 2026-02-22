@@ -441,20 +441,12 @@ class ExplainableChessEngine:
             except Exception as e:
                 print(f"Warning: Model-based explanation failed: {e}")
                 # Fall back to hardcoded
-                reasons.extend(
-                    self._generate_hardcoded_reasons(feats_before, feats_after)
-                )
+                reasons.extend(generate_hardcoded_reasons(feats_before, feats_after))
         else:
             # Use hardcoded fallback
-            reasons.extend(self._generate_hardcoded_reasons(feats_before, feats_after))
+            reasons.extend(generate_hardcoded_reasons(feats_before, feats_after))
 
         return reasons
-
-    def _generate_hardcoded_reasons(
-        self, feats_before: dict, feats_after: dict
-    ) -> list[tuple[str, float, str]]:
-        """Generate threshold-based reasons (fallback when model unavailable)."""
-        return generate_hardcoded_reasons(feats_before, feats_after)
 
     def _generate_move_reasons_with_board(
         self, move: chess.Move, board: chess.Board, score: float, best_score: float

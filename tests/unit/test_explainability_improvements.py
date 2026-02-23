@@ -110,10 +110,10 @@ class TestKingTropismFeature:
 
     def test_pieces_close_to_king(self):
         """A knight adjacent to the enemy king should have high tropism."""
-        # White knight on f6, Black king on g8
-        board = chess.Board("6k1/8/5N2/8/8/8/8/4K3 w - - 0 1")
+        # White knight on f6, Black king on h8 (not in check from f6).
+        board = chess.Board("7k/8/5N2/8/8/8/8/4K3 w - - 0 1")
         feats = baseline_extract_features(board)
-        # Distance f6-g8 = 2  =>  contribution = 7 - 2 = 5
+        # Distance f6-h8 = 2 (max(2, 2)) => contribution = 7 - 2 = 5
         assert math.isclose(feats["king_tropism_us"], 5.0, abs_tol=0.1)
 
     def test_no_tropism_without_pieces(self):

@@ -1,7 +1,5 @@
 """Kendall tau correlation metric."""
 
-import numpy as np
-
 
 def kendall_tau(rank_a: list[int], rank_b: list[int]) -> float:
     """Calculate Kendall tau-b correlation between two rankings.
@@ -24,8 +22,9 @@ def kendall_tau(rank_a: list[int], rank_b: list[int]) -> float:
     discordant = 0
     for i in range(n):
         for j in range(i + 1, n):
-            da = np.sign(rank_a[i] - rank_a[j])
-            db = np.sign(rank_b[i] - rank_b[j])
+            # Simple sign implementation: (a > b) - (a < b)
+            da = int(rank_a[i] > rank_a[j]) - int(rank_a[i] < rank_a[j])
+            db = int(rank_b[i] > rank_b[j]) - int(rank_b[i] < rank_b[j])
             if da == db:
                 concordant += 1
             else:

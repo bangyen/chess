@@ -28,103 +28,129 @@ class TestNewFeatures:
 
     def test_batteries_file(self):
         # White Rooks on a1, a2
-        board = chess.Board("8/8/8/8/8/8/R7/R7 w - - 0 1")
+        board = chess.Board(None)
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.A2, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        # Put black king on b7 (safe from a-file rooks)
+        board.set_piece_at(chess.B7, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["batteries_us"] >= 1.0
 
     def test_batteries_rank(self):
         # White Rooks on a1, b1
-        board = chess.Board("8/8/8/8/8/8/8/RR6 w - - 0 1")
+        board = chess.Board(None)
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.B1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        # Put black king on h8 (safe from 1st rank rooks)
+        board.set_piece_at(chess.H8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["batteries_us"] >= 1.0
 
     def test_isolated_pawns(self):
-        # White pawn on e4, no neighbors on d-file or f-file
-        board = chess.Board("8/8/8/8/4P3/8/8/8 w - - 0 1")
+        # White pawn on e4
+        board = chess.Board(None)
+        board.set_piece_at(chess.E4, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["isolated_pawns_us"] == 1.0
 
         # Add neighbor on d4 -> not isolated
-        board = chess.Board("8/8/8/8/3PP3/8/8/8 w - - 0 1")
+        board.set_piece_at(chess.D4, chess.Piece(chess.PAWN, chess.WHITE))
         feats = baseline_extract_features(board)
         assert feats["isolated_pawns_us"] == 0.0
 
     def test_batteries_diagonal(self):
-        # White Bishop on h8, Queen on a1 (main diagonal)
-        board = chess.Board("7B/8/8/8/8/8/8/Q7 w - - 0 1")
+        # White Bishop on h8, Queen on a1
+        board = chess.Board(None)
+        board.set_piece_at(chess.H8, chess.Piece(chess.BISHOP, chess.WHITE))
+        board.set_piece_at(chess.A1, chess.Piece(chess.QUEEN, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["batteries_us"] >= 1.0
 
     def test_safe_mobility(self):
         # White Queen on d4. Black pawns on c5, e5.
-        board = chess.Board("8/8/8/2p1p3/3Q4/8/8/8 w - - 0 1")
+        board = chess.Board(None)
+        board.set_piece_at(chess.D4, chess.Piece(chess.QUEEN, chess.WHITE))
+        board.set_piece_at(chess.C5, chess.Piece(chess.PAWN, chess.BLACK))
+        board.set_piece_at(chess.E5, chess.Piece(chess.PAWN, chess.BLACK))
+        # White king on h1. Mobility = 3 (g1, g2, h2).
+        board.set_piece_at(chess.H1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.A8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
-
-        # Total Legal Moves Calculation:
-        # File d: 7 moves (d1-d3, d5-d8).
-        # Rank 4: 7 moves (a4-c4, e4-h4).
-        # Diag 1 (a1-h8): a1, b2, c3. e5 is capture. Stops there. (4 moves).
-        # Diag 2 (a7-g1): g1, f2, e3. c5 is capture. Stops there. (4 moves).
-        # Total Legal = 7 + 7 + 4 + 4 = 22.
-
-        # Unsafe squares (attacked by c5, e5):
-        # c5 (Black pawn on rank 5) attacks b4, d4.
-        # e5 (Black pawn on rank 5) attacks d4, f4.
-        # d4 is occupation, not move.
-        # b4 and f4 are legal moves on Rank 4.
-        # So 2 moves are unsafe.
-        # Safe mobility = 22 - 2 = 20.
-
-        assert feats["safe_mobility_us"] == 20.0
+        # Queen moves = 20.0. King moves = 3.0. Total = 23.0.
+        assert feats["safe_mobility_us"] == 23.0
 
     def test_rook_open_file(self):
-        # White Rook on a1 (open file). White Rook on b1 (semi-open, black pawn on b7).
-        # White Rook on c1 (closed, white pawn on c2).
-        board = chess.Board("8/1p6/8/8/8/8/2P5/RRR5 w - - 0 1")
-        # a1: open (1.0). b1: semi-open (0.5). c1: closed (0.0).
-        # Total: 1.5
+        # White Rooks.
+        board = chess.Board(None)
+        board.set_piece_at(chess.A1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.B1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.C1, chess.Piece(chess.ROOK, chess.WHITE))
+        board.set_piece_at(chess.B7, chess.Piece(chess.PAWN, chess.BLACK))
+        board.set_piece_at(chess.C2, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["rook_open_file_us"] == 1.5
 
     def test_backward_pawns(self):
-        # White pawn on e4. Stop square e5.
-        # To be backward, e5 must be controlled by enemy pawn.
-        # e5 is rank 5. Enemy pawn must be on rank 6 (d6/f6) to attack rank 5.
-        board = chess.Board("8/8/3p1p2/8/4P3/8/8/8 w - - 0 1")
+        # White pawn e4, black pawns d6, f6.
+        board = chess.Board(None)
+        board.set_piece_at(chess.E4, chess.Piece(chess.PAWN, chess.WHITE))
+        board.set_piece_at(chess.D6, chess.Piece(chess.PAWN, chess.BLACK))
+        board.set_piece_at(chess.F6, chess.Piece(chess.PAWN, chess.BLACK))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["backward_pawns_us"] == 1.0
 
-        # Add support: White pawn on d3 (rank 3, file d). Supports e4.
-        # Does it support e4? Yes, side-by-side or behind.
-        # d3 is behind e4.
-        board = chess.Board("8/8/3p1p2/8/4P3/3P4/8/8 w - - 0 1")
+        # Add support d3.
+        board.set_piece_at(chess.D3, chess.Piece(chess.PAWN, chess.WHITE))
         feats = baseline_extract_features(board)
-        # Should be 0 (supported).
         assert feats["backward_pawns_us"] == 0.0
 
     def test_pst(self):
-        # White Knight on e4 (center) vs h1 (corner).
-        # Board 1: Knight e4.
-        board = chess.Board("8/8/8/8/4N3/8/8/8 w - - 0 1")
+        # White Knight center vs corner.
+        board = chess.Board(None)
+        board.set_piece_at(chess.E4, chess.Piece(chess.KNIGHT, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats1 = baseline_extract_features(board)
 
-        # Board 2: Knight h1.
-        board = chess.Board("8/8/8/8/8/8/8/7N w - - 0 1")
+        board = chess.Board(None)
+        board.set_piece_at(chess.H1, chess.Piece(chess.KNIGHT, chess.WHITE))
+        board.set_piece_at(chess.G1, chess.Piece(chess.KING, chess.WHITE))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats2 = baseline_extract_features(board)
-
-        # Center should be better.
         assert feats1["pst_us"] > feats2["pst_us"]
 
     def test_pinned(self):
-        # White Rook on e1, King on e1. Black Rook on e8.
-        # White Pawn on e2 pinned? (Assuming absolute pin).
-        # Board: 4r3/8/8/8/8/8/4P3/4K3 w - - 0 1
-        # Pawn e2 is pinned by Re8 to Ke1.
-        board = chess.Board("4r3/8/8/8/8/8/4P3/4K3 w - - 0 1")
+        board = chess.Board(None)
+        board.set_piece_at(chess.E1, chess.Piece(chess.KING, chess.WHITE))
+        # Use knight instead of pawn to avoid rank 2 issues if it were rank 1
+        board.set_piece_at(chess.E2, chess.Piece(chess.KNIGHT, chess.WHITE))
+        board.set_piece_at(chess.E8, chess.Piece(chess.ROOK, chess.BLACK))
+        board.set_piece_at(chess.G8, chess.Piece(chess.KING, chess.BLACK))
+        board.turn = chess.WHITE
         feats = baseline_extract_features(board)
         assert feats["pinned_us"] == 1.0
 
         # Unpin: Move king to d1.
-        board = chess.Board("4r3/8/8/8/8/8/4P3/3K4 w - - 0 1")
+        board.remove_piece_at(chess.E1)
+        board.set_piece_at(chess.D1, chess.Piece(chess.KING, chess.WHITE))
         feats = baseline_extract_features(board)
         assert feats["pinned_us"] == 0.0

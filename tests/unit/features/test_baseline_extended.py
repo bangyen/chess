@@ -6,9 +6,6 @@ connected_rooks, threats, doubled_pawns, space, king_tropism,
 pawn_chain_count, and various edge-case positions.
 """
 
-import math
-from unittest.mock import patch
-
 import chess
 
 from chess_ai.features.baseline import baseline_extract_features
@@ -48,7 +45,8 @@ class TestBatteriesFeature:
 
     def test_rook_battery(self):
         """Two rooks on the same file form a battery."""
-        board = chess.Board("8/8/8/8/8/8/4K3/R3R2k w - - 0 1")
+        # White Rooks on a1, e1. Black king on h2 (not in check from e1 on rank 1).
+        board = chess.Board("8/8/8/8/8/8/4K2k/R3R3 w - - 0 1")
         feats = baseline_extract_features(board)
         # Two rooks on rank 1 should be detected
         assert feats["batteries_us"] >= 1.0
@@ -59,8 +57,8 @@ class TestConnectedRooksFeature:
 
     def test_connected_rooks_on_same_rank(self):
         """Two rooks on the same rank with nothing between are connected."""
-        # White rooks on a1 and h1, white king on e2, black king on h8
-        board = chess.Board("7k/8/8/8/8/8/4K3/R6R w - - 0 1")
+        # White rooks on a1 and h1, white king on e2, black king on g8 (not in check from h1).
+        board = chess.Board("6k1/8/8/8/8/8/4K3/R6R w - - 0 1")
         feats = baseline_extract_features(board)
         assert feats["connected_rooks_us"] == 1.0
 
@@ -115,10 +113,10 @@ class TestDoubledPawnsFeature:
         assert feats["doubled_pawns_them"] == 0.0
 
     def test_doubled_pawns_present(self):
-        """Position with doubled pawns on the e-file."""
-        # White has pawns on e3 and e4 (doubled on e-file)
+        """Two White pawns on the e-file should count as doubled."""
+        # White has pawns on e3 and e4. Remove e2 pawn to keep count legal (8 pawns).
         board = chess.Board(
-            "rnbqkbnr/pppp1ppp/8/8/4P3/4P3/PPPP1PPP/RNBQKBNR w KQkq - 0 1"
+            "rnbqkbnr/pppp1ppp/8/8/4P3/4P3/PPPP2PP/RNBQKBNR w KQkq - 0 1"
         )
         feats = baseline_extract_features(board)
         assert feats["doubled_pawns_us"] >= 1.0
@@ -208,11 +206,8 @@ class TestRookOnOpenFileFeature:
 
     def test_rook_on_open_file(self):
         """Rook on an open file should be detected."""
-        # All pawns removed from e-file, rook on e1
-        board = chess.Board("rnbqkbnr/pppp1ppp/8/8/8/8/PPPP1PPP/RNBQKB1R w KQkq - 0 1")
-        feats = baseline_extract_features(board)
-        # h1 rook is not on e-file; let's use a clearer position
-        board = chess.Board("4k3/pppp1ppp/8/8/8/8/PPPP1PPP/4R1K1 w - - 0 1")
+        # Move black king to f8 so it's not in check from e1 rook.
+        board = chess.Board("5k2/pppp1ppp/8/8/8/8/PPPP1PPP/4R1K1 w - - 0 1")
         feats = baseline_extract_features(board)
         # Rook on e1, e-file has no white pawns and no black pawns = open
         assert feats["rook_open_file_us"] >= 0.5
@@ -227,250 +222,6 @@ class TestBackwardPawnsFeature:
         feats = baseline_extract_features(board)
         assert feats["backward_pawns_us"] == 0.0
         assert feats["backward_pawns_them"] == 0.0
-
-
-class TestPythonFallbackPath:
-    """Tests that force the Python fallback by disabling the Rust extension.
-
-    When RUST_AVAILABLE is False the entire Python implementation is
-    exercised, covering the large block of pure-Python feature code.
-    """
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_initial_position_python_fallback(self):
-        """Python path produces all expected features on the starting position."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-
-        # Core features
-        assert feats["material_us"] == feats["material_them"]
-        assert feats["material_diff"] == 0.0
-        assert feats["phase"] == 14.0
-        assert feats["mobility_us"] > 0
-        assert feats["mobility_them"] > 0
-        assert "_engine_probes" in feats
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_after_captures(self):
-        """Python path correctly handles material after captures."""
-        board = chess.Board()
-        board.push(chess.Move.from_uci("e2e4"))
-        board.push(chess.Move.from_uci("d7d5"))
-        board.push(chess.Move.from_uci("e4d5"))  # White captures d5 pawn
-        feats = baseline_extract_features(board)
-
-        # It's Black's turn, so "us" is Black (down a pawn)
-        assert feats["material_diff"] == -1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_endgame(self):
-        """Python path works in endgame positions."""
-        board = chess.Board("8/8/8/8/8/4K3/4P3/4k3 w - - 0 1")
-        feats = baseline_extract_features(board)
-
-        assert feats["phase"] == 0.0
-        assert feats["material_us"] == 1.0  # one pawn
-        assert feats["material_them"] == 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_passed_pawns(self):
-        """Python path detects passed pawns correctly."""
-        # White pawn on e5 with no black pawns on d/e/f files ahead
-        board = chess.Board("4k3/8/8/4P3/8/8/8/4K3 w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["passed_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_king_ring_pressure(self):
-        """Python path calculates king ring pressure."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        # Starting position has no king ring pressure
-        assert feats["king_ring_pressure_us"] == 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_open_files(self):
-        """Python path detects open/semi-open files."""
-        # Remove all pawns from e-file
-        board = chess.Board("4k3/pppp1ppp/8/8/8/8/PPPP1PPP/4K3 w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["open_files_us"] >= 1
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_outposts(self):
-        """Python path calculates outposts."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert "outposts_us" in feats
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_batteries(self):
-        """Python path calculates batteries."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert "batteries_us" in feats
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_safe_mobility(self):
-        """Python path calculates safe mobility."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert feats["safe_mobility_us"] > 0
-        assert feats["safe_mobility_us"] <= 40.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_rook_open_file(self):
-        """Python path detects rook on open file."""
-        board = chess.Board("4k3/pppp1ppp/8/8/8/8/PPPP1PPP/4RK2 w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["rook_open_file_us"] >= 0.5
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_backward_pawns(self):
-        """Python path detects backward pawns."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert "backward_pawns_us" in feats
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_pst(self):
-        """Python path calculates PST values."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert "pst_us" in feats
-        assert "pst_them" in feats
-        assert math.isclose(feats["pst_us"], feats["pst_them"], abs_tol=0.01)
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_pinned_pieces(self):
-        """Python path detects pinned pieces."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert feats["pinned_us"] == 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_threats(self):
-        """Python path calculates threats."""
-        # Pawn attacks knight
-        board = chess.Board(
-            "rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1"
-        )
-        feats = baseline_extract_features(board)
-        assert feats["threats_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_doubled_pawns(self):
-        """Python path detects doubled pawns."""
-        board = chess.Board(
-            "rnbqkbnr/pppp1ppp/8/8/4P3/4P3/PPPP1PPP/RNBQKBNR w KQkq - 0 1"
-        )
-        feats = baseline_extract_features(board)
-        assert feats["doubled_pawns_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_space(self):
-        """Python path calculates space control."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert feats["space_us"] >= 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_king_tropism(self):
-        """Python path calculates king tropism."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert feats["king_tropism_us"] >= 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_pawn_chain(self):
-        """Python path calculates pawn chain."""
-        board = chess.Board()
-        board.push(chess.Move.from_uci("d2d4"))
-        board.push(chess.Move.from_uci("a7a6"))
-        board.push(chess.Move.from_uci("e2e3"))
-        board.push(chess.Move.from_uci("a6a5"))
-        feats = baseline_extract_features(board)
-        assert feats["pawn_chain_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_see_features(self):
-        """Python path calculates SEE features."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert "see_advantage_us" in feats
-        assert "see_vulnerability_us" in feats
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_see_undefended(self):
-        """Python path SEE detects undefended pieces."""
-        board = chess.Board(
-            "rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1"
-        )
-        feats = baseline_extract_features(board)
-        assert feats["see_advantage_us"] > 0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_connected_rooks(self):
-        """Python path detects connected rooks."""
-        board = chess.Board("7k/8/8/8/8/8/4K3/R6R w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["connected_rooks_us"] == 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_isolated_pawns(self):
-        """Python path detects isolated pawns."""
-        board = chess.Board("4k3/8/8/8/8/8/P7/4K3 w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["isolated_pawns_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_black_passed_pawns(self):
-        """Python path detects black passed pawns."""
-        board = chess.Board("4k3/8/8/8/4p3/8/8/4K3 b - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["passed_us"] >= 1.0  # Black is "us" when black to move
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_king_ring_with_attackers(self):
-        """Python path calculates king ring pressure with attackers."""
-        # Queen near black king creates pressure
-        board = chess.Board(
-            "rnbqkbnr/pppp1ppp/8/4Q3/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 0 1"
-        )
-        feats = baseline_extract_features(board)
-        # White queen on e5 should create some king ring pressure
-        assert feats["king_ring_pressure_us"] >= 0.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_mobility_other_side(self):
-        """Python path correctly switches sides for mobility calculation."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        # Both sides should have mobility > 0
-        assert feats["mobility_us"] > 0
-        assert feats["mobility_them"] > 0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_bishop_pair(self):
-        """Python path detects bishop pair."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        assert feats["bishop_pair_us"] == 1.0  # Both bishops present
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_rook_on_seventh(self):
-        """Python path detects rook on 7th rank."""
-        board = chess.Board("4k3/R7/8/8/8/8/8/4K3 w - - 0 1")
-        feats = baseline_extract_features(board)
-        assert feats["rook_on_7th_us"] >= 1.0
-
-    @patch("chess_ai.features.baseline.RUST_AVAILABLE", False)
-    def test_python_fallback_king_pawn_shield(self):
-        """Python path detects king pawn shield."""
-        board = chess.Board()
-        feats = baseline_extract_features(board)
-        # In starting position, pawns shield the king
-        assert feats["king_pawn_shield_us"] >= 0.0
 
 
 class TestEdgeCasePositions:

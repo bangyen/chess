@@ -32,5 +32,4 @@ def cp_to_winrate(
     Returns:
         Win probability in [0, 1], same type as *cp*.
     """
-    result: Union[float, npt.NDArray[np.floating]] = 1.0 / (1.0 + np.exp(-cp / k))
-    return result
+    return 1.0 / (1.0 + np.exp(-cp / k))

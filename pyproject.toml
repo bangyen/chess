@@ -43,6 +43,8 @@ dev = [
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
     "maturin>=1.0.0",
+    "pytest-timeout>=2.0.0",
+    "pytest-xdist>=3.0.0",
 ]
 
 [project.scripts]
@@ -131,7 +133,7 @@ exclude = [
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q"
+addopts = "-ra -q --timeout=20 -n auto"
 testpaths = [
     "tests",
 ]

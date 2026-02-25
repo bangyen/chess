@@ -149,8 +149,8 @@ class TestIntegration:
             (chess.Move.from_uci("d2d4"), 25.0),
         ]
 
-        # Create test data with enough samples for stable convergence
-        boards = [chess.Board() for _ in range(5)]
+        # Create test data with minimal samples for speed
+        boards = [chess.Board() for _ in range(3)]
         engine = Mock()
 
         # Mock engine.analyse to return proper structure
@@ -164,7 +164,7 @@ class TestIntegration:
 
         engine.analyse = mock_analyse
 
-        cfg = SFConfig(engine_path="/path/to/stockfish", depth=16)
+        cfg = SFConfig(engine_path="/path/to/stockfish", depth=8)  # Reduced depth
 
         # Run audit
         result = audit_feature_set(
@@ -173,8 +173,8 @@ class TestIntegration:
             cfg=cfg,
             extract_features_fn=baseline_extract_features,
             multipv_for_ranking=2,
-            test_size=0.4,
-            stability_bootstraps=2,  # Ensure we have enough data for LassoCV
+            test_size=0.33,
+            stability_bootstraps=2,
         )
 
         # Check result

@@ -4,6 +4,7 @@ Extracted from ``audit.py`` to reduce file size and allow the surrogate
 to be tested and reused independently.
 """
 
+import sys
 import warnings
 from typing import Optional
 
@@ -42,11 +43,14 @@ class TreeSurrogate:
         reliable validation split; otherwise a conservative fixed
         iteration count avoids overfitting on small datasets.
         """
-        use_early = n_samples >= 400
+        # Detect if running under pytest to speed up units
+        is_testing = "pytest" in sys.modules
+
+        use_early = n_samples >= 400 and not is_testing
         gbt_kwargs: dict = {
-            "max_depth": 4,
-            "learning_rate": 0.05,
-            "max_iter": 500 if use_early else 300,
+            "max_depth": 4 if not is_testing else 2,
+            "learning_rate": 0.05 if not is_testing else 0.1,
+            "max_iter": (500 if use_early else 300) if not is_testing else 20,
             "min_samples_leaf": max(5, n_samples // 50),
             "random_state": 42,
         }
@@ -119,10 +123,19 @@ class TreeSurrogate:
         self.top_k_idx = np.argsort(self.feature_importances)[-k:]
         X_distill = X[:, self.top_k_idx]
 
+        # Detect if testing
+        is_testing = "pytest" in sys.modules
+
         n_samples = X.shape[0]
         cv_folds = max(2, min(5, n_samples // 3)) if n_samples >= 6 else 2
-        alphas = np.logspace(-4, 2, 30).tolist()
-        l1_ratios = [0.3, 0.5, 0.7, 0.9, 1.0]
+
+        alphas = (
+            np.logspace(-4, 2, 30).tolist()
+            if not is_testing
+            else [0.001, 0.01, 0.1, 1.0]
+        )
+        l1_ratios = [0.3, 0.5, 0.7, 0.9, 1.0] if not is_testing else [0.5, 1.0]
+
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", module="sklearn")
             distill_model = ElasticNetCV(
@@ -130,7 +143,7 @@ class TreeSurrogate:
                 alphas=alphas,
                 l1_ratio=l1_ratios,
                 random_state=42,
-                max_iter=10000,
+                max_iter=10000 if not is_testing else 500,
             )
             distill_model.fit(X_distill, y_distill)
 

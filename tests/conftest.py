@@ -1,11 +1,13 @@
-"""
-Pytest configuration and shared fixtures.
-
-Provides shared fixtures and compatibility patches for mutmut mutation testing.
-"""
-
 import contextlib
 import multiprocessing
+import os
+
+# Limit threading for math libraries to avoid contention in parallel tests
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import pytest
 

@@ -503,7 +503,7 @@ class ExplainableChessEngine:
                     return self.explain_move(heuristic_move, board=analyze_board)
                 if legal_moves:
                     return self.explain_move(legal_moves[0], board=analyze_board)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
             return None
 

@@ -35,7 +35,7 @@ class TestInitializeModel:
         mock_scaler = Mock()
 
         with patch(
-            "chess_ai.model_trainer.train_surrogate_model",
+            "chess_ai.explainable_engine.train_surrogate_model",
             return_value=(mock_model, mock_scaler, ["f1", "f2"]),
         ):
             eng._initialize_model()

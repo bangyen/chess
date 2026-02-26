@@ -3,7 +3,6 @@
 import os
 import random
 import tempfile
-from unittest.mock import patch
 
 import chess
 import pytest
@@ -22,15 +21,13 @@ class TestSampling:
 
     def test_sample_random_positions_basic(self):
         """Test basic random position sampling."""
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = range(3)  # Mock tqdm to return simple range
+        positions = sample_random_positions(3, max_random_plies=15)
 
-            positions = sample_random_positions(3, max_random_plies=15)
-
-            assert len(positions) == 3
-            for pos in positions:
-                assert isinstance(pos, chess.Board)
-                assert not pos.is_game_over()
+        assert len(positions) == 3
+        for pos in positions:
+            assert isinstance(pos, chess.Board)
+            assert not pos.is_game_over()
+            assert len(pos.move_stack) <= 15
 
     def test_sample_random_positions_empty(self):
         """Test sampling zero positions."""
@@ -39,13 +36,10 @@ class TestSampling:
 
     def test_sample_random_positions_single(self):
         """Test sampling a single position."""
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = range(1)
+        positions = sample_random_positions(1, max_random_plies=10)
 
-            positions = sample_random_positions(1, max_random_plies=10)
-
-            assert len(positions) == 1
-            assert isinstance(positions[0], chess.Board)
+        assert len(positions) == 1
+        assert isinstance(positions[0], chess.Board)
 
     def test_sample_positions_from_pgn_nonexistent_file(self):
         """Test sampling from non-existent PGN file."""
@@ -162,30 +156,24 @@ class TestSampling:
 
     def test_sample_random_positions_max_plies(self):
         """Test different max_random_plies values."""
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = range(2)
+        # Test with different max plies
+        positions1 = sample_random_positions(2, max_random_plies=15)
+        positions2 = sample_random_positions(2, max_random_plies=20)
+        positions3 = sample_random_positions(2, max_random_plies=25)
 
-            # Test with different max plies
-            positions1 = sample_random_positions(2, max_random_plies=15)
-            positions2 = sample_random_positions(2, max_random_plies=20)
-            positions3 = sample_random_positions(2, max_random_plies=25)
-
-            assert len(positions1) == 2
-            assert len(positions2) == 2
-            assert len(positions3) == 2
+        assert len(positions1) == 2
+        assert len(positions2) == 2
+        assert len(positions3) == 2
 
     def test_sample_random_positions_game_over_handling(self):
         """Test that game over positions are handled correctly."""
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = range(5)
+        positions = sample_random_positions(5, max_random_plies=100)
 
-            positions = sample_random_positions(5, max_random_plies=100)
-
-            # All positions should be valid and not game over
-            for pos in positions:
-                assert isinstance(pos, chess.Board)
-                assert not pos.is_game_over()
-                assert len(list(pos.legal_moves)) > 0
+        # All positions should be valid and not game over
+        for pos in positions:
+            assert isinstance(pos, chess.Board)
+            assert not pos.is_game_over()
+            assert len(list(pos.legal_moves)) > 0
 
     def test_sample_positions_from_pgn_invalid_pgn(self):
         """Test sampling from invalid PGN file."""

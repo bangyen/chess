@@ -211,8 +211,8 @@ class TestExplainableChessEngine:
 
         assert best_move is None
 
-    @patch("chess_ai.engine.sf_top_moves")
-    @patch("chess_ai.engine.sf_eval")
+    @patch("chess_ai.explainable_engine.sf_top_moves")
+    @patch("chess_ai.explainable_engine.sf_eval")
     @patch("chess_ai.explainable_engine.baseline_extract_features")
     def test_analyze_position_success(
         self, mock_extract_features, mock_sf_eval, mock_sf_top_moves
@@ -281,7 +281,7 @@ class TestExplainableChessEngine:
         # Mock the engine
         engine.engine = Mock()
 
-        explanation = engine.explain_move_with_board(move, board)
+        explanation = engine.explain_move(move, board=board)
 
         assert explanation.move == move
         assert isinstance(explanation.reasons, list)
@@ -368,7 +368,7 @@ class TestExplainableChessEngine:
 
         explanation = engine._generate_overall_explanation(move, 0.0, [])
 
-        assert explanation == "Move e4: Reasonable move. (+0 cp)"
+        assert "Reasonable move. (+0 cp)" in explanation
 
     def test_generate_overall_explanation_with_board(self):
         """Test generating overall explanation with board."""
@@ -377,8 +377,8 @@ class TestExplainableChessEngine:
         board = chess.Board()
         reasons = [("development", 2, "Develops pawn from starting position")]
 
-        explanation = engine._generate_overall_explanation_with_board(
-            move, board, 50.0, reasons
+        explanation = engine._generate_overall_explanation(
+            move, 50.0, reasons, board=board
         )
 
         assert "Move e4:" in explanation

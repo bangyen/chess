@@ -108,15 +108,12 @@ class TestIntegration:
         """Test position sampling integration."""
         from chess_ai.utils import sample_random_positions
 
-        with patch("chess_ai.utils.sampling.tqdm") as mock_tqdm:
-            mock_tqdm.return_value = range(3)
+        positions = sample_random_positions(3, max_random_plies=15)
 
-            positions = sample_random_positions(3, max_random_plies=15)
-
-            assert len(positions) > 0
-            for pos in positions:
-                assert isinstance(pos, chess.Board)
-                assert not pos.is_game_over()
+        assert len(positions) > 0
+        for pos in positions:
+            assert isinstance(pos, chess.Board)
+            assert not pos.is_game_over()
 
     def test_audit_result_integration(self):
         """Test AuditResult integration."""

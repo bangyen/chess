@@ -14,11 +14,6 @@ from typing import Dict, List, Optional
 import chess
 import chess.pgn
 
-try:
-    from tqdm import tqdm
-except Exception:
-    raise
-
 logger = logging.getLogger(__name__)
 
 
@@ -200,7 +195,7 @@ def sample_random_positions(n: int, max_random_plies: int = 24) -> List["chess.B
     """
     boards: List[chess.Board] = []
     logger.info("Generating %d random positions...", n)
-    for _ in tqdm(range(n), desc="Generating positions"):
+    for _ in range(n):
         b = chess.Board()
         # play random but legal moves to get middlegame-ish positions
         plies = random.randint(10, max_random_plies)  # noqa: S311
@@ -279,7 +274,6 @@ def sample_stratified_positions(
         generated = 0
         attempts = 0
         max_attempts = target * _MAX_ATTEMPTS_PER_POSITION
-        pbar = tqdm(total=target, desc=f"  {phase}")
         while generated < target and attempts < max_attempts:
             attempts += 1
             board = _generate_candidate(phase, lo, hi)
@@ -288,8 +282,6 @@ def sample_stratified_positions(
             if classify_phase(board) == phase:
                 buckets[phase].append(board)
                 generated += 1
-                pbar.update(1)
-        pbar.close()
 
     result: List[chess.Board] = []
     for phase in targets:

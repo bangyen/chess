@@ -12,17 +12,24 @@ from typing import TYPE_CHECKING, Any
 import chess
 import chess.engine
 import chess.pgn
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
+from .engine import SFConfig, sf_eval, sf_top_moves
 from .features import baseline_extract_features
 from .hardcoded_reasons import (
     generate_hardcoded_reasons,
     generate_move_reasons_with_board,
 )
+from .model_trainer import train_surrogate_model
 from .move_explanation import MoveExplanation
+from .surrogate_explainer import SurrogateExplainer
 from .utils.sampling import sample_stratified_positions
 
 if TYPE_CHECKING:
-    from .surrogate_explainer import SurrogateExplainer
+    pass
 
 
 class ExplainableChessEngine:
@@ -49,9 +56,6 @@ class ExplainableChessEngine:
         self.board = chess.Board()
         self.move_history: list[chess.Move] = []
         self.surrogate_explainer: SurrogateExplainer | None = None
-
-        from rich.console import Console
-
         self.console = Console()
 
         # Stockfish strength settings
@@ -136,10 +140,6 @@ class ExplainableChessEngine:
     def _initialize_model(self) -> None:
         """Train and cache surrogate model for explanations."""
         try:
-            from .engine import SFConfig
-            from .model_trainer import train_surrogate_model
-            from .surrogate_explainer import SurrogateExplainer
-
             # Generate phase-stratified positions so the surrogate
             # model sees a representative mix of opening, middlegame,
             # and endgame states rather than only chaotic random play.
@@ -231,8 +231,6 @@ class ExplainableChessEngine:
 
     def analyze_position(self) -> dict:
         """Analyze the current position using our explainable features and Syzygy."""
-        from .engine import SFConfig, sf_eval, sf_top_moves
-
         try:
             engine = self.engine
             if engine is None:
@@ -259,76 +257,43 @@ class ExplainableChessEngine:
                 "syzygy": syzygy_data,
             }
         except Exception as e:
-            print(f"❌ Error analyzing position: {e}")
-            return {}
+            msg = f"Error analyzing position: {e}"
+            print(f"❌ {msg}")
+            return {"error": msg}
 
-    def explain_move(self, move: chess.Move) -> MoveExplanation:
-        """Explain why a move is good or bad."""
-        from .engine import SFConfig, sf_eval
-
-        if not self.engine:
-            return MoveExplanation(move, 0, [], "Engine not available")
-
-        try:
-            cfg = SFConfig(engine_path=self.stockfish_path, depth=self.depth, multipv=1)
-
-            # Get score before move
-            score_before = sf_eval(self.engine, self.board, cfg)
-
-            # Make move on temp board
-            temp_board = self.board.copy()
-            temp_board.push(move)
-
-            # Get score after move (from opponent's perspective, so negate)
-            score_after = -sf_eval(self.engine, temp_board, cfg)
-
-            # Move quality from current player's perspective
-            move_score = score_after - score_before
-
-            reasons = self._generate_move_reasons(move, score_after, score_before)
-            overall_explanation = self._generate_overall_explanation(
-                move, move_score, reasons
-            )
-
-            return MoveExplanation(
-                move=move,
-                score=move_score,
-                reasons=reasons,
-                overall_explanation=overall_explanation,
-            )
-
-        except Exception as e:
-            return MoveExplanation(move, 0, [], f"Error analyzing move: {e}")
-
-    def explain_move_with_board(
-        self, move: chess.Move, board: chess.Board
+    def explain_move(
+        self, move: chess.Move, board: chess.Board | None = None
     ) -> MoveExplanation:
-        """Explain why a move is good or bad using a specific board state."""
-        from .engine import SFConfig, sf_eval
-
+        """Explain why a move is good or bad. If board is None, uses self.board."""
         if not self.engine:
             return MoveExplanation(move, 0, [], "Engine not available")
+
+        analyze_board = board if board is not None else self.board
 
         try:
             cfg = SFConfig(engine_path=self.stockfish_path, depth=self.depth, multipv=1)
 
             # Get score before move
-            score_before = sf_eval(self.engine, board, cfg)
+            score_before = sf_eval(self.engine, analyze_board, cfg)
 
             # Make move on temp board
-            temp_board = board.copy()
+            temp_board = analyze_board.copy()
             temp_board.push(move)
 
-            # Get score after move
+            # Get score after move (if it's our turn, negate opponent's score)
             score_after = -sf_eval(self.engine, temp_board, cfg)
             move_score = score_after - score_before
 
-            # Generate explanation using the provided board
-            reasons = self._generate_move_reasons_with_board(
-                move, board, score_after, score_before
-            )
-            overall_explanation = self._generate_overall_explanation_with_board(
-                move, board, move_score, reasons
+            # Generate explanation
+            if board is not None:
+                reasons = self._generate_move_reasons_with_board(
+                    move, board, score_after, score_before
+                )
+            else:
+                reasons = self._generate_move_reasons(move, score_after, score_before)
+
+            overall_explanation = self._generate_overall_explanation(
+                move, move_score, reasons, board=analyze_board
             )
 
             return MoveExplanation(
@@ -470,10 +435,12 @@ class ExplainableChessEngine:
         move: chess.Move,
         move_quality: float,
         reasons: list[tuple[str, float, str]],
+        board: chess.Board | None = None,
     ) -> str:
         """Generate an overall explanation for the move with centipawn quality."""
+        analyze_board = board if board is not None else self.board
         try:
-            move_str = self.board.san(move)
+            move_str = analyze_board.san(move)
         except Exception:
             move_str = str(move)
 
@@ -499,190 +466,87 @@ class ExplainableChessEngine:
             bullet_points
         )
 
-    def _generate_overall_explanation_with_board(
-        self,
-        move: chess.Move,
-        board: chess.Board,
-        move_quality: float,
-        reasons: list[tuple[str, float, str]],
-    ) -> str:
-        """Generate an overall explanation for the move using a specific board state."""
-        try:
-            move_str = board.san(move)
-        except Exception:
-            move_str = str(move)
-
-        # Quality labels based on centipawn evaluation
-        if move_quality > 50:
-            quality = "Excellent move!"
-        elif move_quality > 20:
-            quality = "Good move."
-        elif move_quality > -20:
-            quality = "Reasonable move."
-        elif move_quality > -50:
-            quality = "Questionable move."
-        else:
-            quality = "Poor move!"
-
-        if not reasons:
-            return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)"
-
-        # Convert to bullet points with tab indentation
-        bullet_points = [f"  - {reason[2]}" for reason in reasons[:5]]
-
-        return f"Move {move_str}: {quality} ({move_quality:+.0f} cp)\n" + "\n".join(
-            bullet_points
-        )
-
-    def get_move_recommendation(self) -> MoveExplanation | None:  # noqa: C901
+    def get_move_recommendation(
+        self, board: chess.Board | None = None
+    ) -> MoveExplanation | None:
         """Get the best move recommendation with explanation."""
+        analyze_board = board if board is not None else self.board
         try:
-            # Get legal moves for the current position
-            legal_moves = list(self.board.legal_moves)
+            legal_moves = list(analyze_board.legal_moves)
             if not legal_moves:
                 return None
 
-            # Try to get Stockfish recommendation first
+            # Try Stockfish first
             if self.engine:
-                try:
-                    # Get Stockfish's best move
-                    info = self.engine.analyse(self.board, chess.engine.Limit(depth=10))
-                    if info.get("pv"):
-                        best_move = info["pv"][0]
-                        if best_move in legal_moves:
-                            return self.explain_move(best_move)
-                except Exception:  # noqa: S110
-                    # If Stockfish fails, fall back to simple logic
-                    pass
+                info = self.engine.analyse(analyze_board, chess.engine.Limit(depth=10))
+                if info.get("pv"):
+                    best_move = info["pv"][0]
+                    if best_move in legal_moves:
+                        return self.explain_move(best_move, board=analyze_board)
 
-            # Fallback: suggest good opening moves
-            if len(self.move_history) == 0:
-                # First move - suggest e4 or d4
-                for move in legal_moves:
-                    if (
-                        move.from_square == chess.E2 and move.to_square == chess.E4
-                    ) or (move.from_square == chess.D2 and move.to_square == chess.D4):
-                        return self.explain_move(move)
-            elif len(self.move_history) == 1:
-                # Second move - suggest Nf3 or Nc3
-                for move in legal_moves:
-                    if (
-                        move.from_square == chess.G1 and move.to_square == chess.F3
-                    ) or (move.from_square == chess.B1 and move.to_square == chess.C3):
-                        return self.explain_move(move)
+            # Heuristic fallback
+            heuristic_move = self._get_heuristic_move(analyze_board, legal_moves)
+            if heuristic_move:
+                return self.explain_move(heuristic_move, board=analyze_board)
 
-            # For other moves, pick a reasonable move (not just the first one)
-            # Prioritize center control and development
-            center_moves = []
-            development_moves = []
+            # Ultimate fallback: return first legal move
+            if legal_moves:
+                return self.explain_move(legal_moves[0], board=analyze_board)
 
-            for move in legal_moves:
-                # Check for center control
-                if move.to_square in [chess.E4, chess.E5, chess.D4, chess.D5]:
-                    center_moves.append(move)
-                # Check for piece development
-                piece = self.board.piece_at(move.from_square)
-                if (
-                    piece
-                    and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
-                    and (move.from_square < 16 or move.from_square > 47)
-                ):  # From starting ranks
-                    development_moves.append(move)
-
-            # Prefer center moves, then development moves
-            if center_moves:
-                return self.explain_move(center_moves[0])
-            elif development_moves:
-                return self.explain_move(development_moves[0])
-            else:
-                return self.explain_move(legal_moves[0])
-
+            return None
         except Exception as e:
             print(f"❌ Error getting move recommendation: {e}")
+            try:
+                legal_moves = list(analyze_board.legal_moves)
+                heuristic_move = self._get_heuristic_move(analyze_board, legal_moves)
+                if heuristic_move:
+                    return self.explain_move(heuristic_move, board=analyze_board)
+                if legal_moves:
+                    return self.explain_move(legal_moves[0], board=analyze_board)
+            except Exception:
+                pass
             return None
 
-    def get_best_move_for_player(self) -> MoveExplanation | None:  # noqa: C901
-        """Get the best move that the player who just moved should have played."""
-        try:
-            # Create a temporary board to analyze what the player should have done
-            temp_board = self.board.copy()
-            temp_board.pop()  # Undo the last move
+    def _get_heuristic_move(
+        self, board: chess.Board, legal_moves: list[chess.Move]
+    ) -> chess.Move:
+        """Pick a reasonable move based on simple heuristics."""
+        fullmove_number = board.fullmove_number
 
-            # Get legal moves for the player who just moved
-            legal_moves = list(temp_board.legal_moves)
-            if not legal_moves:
-                return None
-
-            # Try to get Stockfish recommendation first
-            if self.engine:
-                try:
-                    # Get Stockfish's best move for the previous position
-                    info = self.engine.analyse(temp_board, chess.engine.Limit(depth=10))
-                    if info.get("pv"):
-                        best_move = info["pv"][0]
-                        if best_move in legal_moves:
-                            # Check if this is the same move that was just played
-                            last_move = self.move_history[-1]
-                            if best_move != last_move:
-                                return self.explain_move_with_board(
-                                    best_move, temp_board
-                                )
-                except Exception:  # noqa: S110
-                    # If Stockfish fails, fall back to simple logic
-                    pass
-
-            # Fallback: suggest good opening moves
-            if len(self.move_history) == 1:  # After first move
-                # First move - suggest e4 or d4, but not the move that was just played
-                last_move = self.move_history[-1]
-                for move in legal_moves:
-                    if (
-                        move.from_square == chess.E2
-                        and move.to_square == chess.E4
-                        and move != last_move
-                    ) or (
-                        move.from_square == chess.D2
-                        and move.to_square == chess.D4
-                        and move != last_move
-                    ):
-                        return self.explain_move_with_board(move, temp_board)
-            elif len(self.move_history) == 2:  # After second move
-                # Second move - suggest Nf3 or Nc3
-                for move in legal_moves:
-                    if (
-                        move.from_square == chess.G1 and move.to_square == chess.F3
-                    ) or (move.from_square == chess.B1 and move.to_square == chess.C3):
-                        return self.explain_move_with_board(move, temp_board)
-
-            # For other moves, pick a reasonable move (not just the first one)
-            # Prioritize center control and development
-            center_moves = []
-            development_moves = []
-
+        # Opening: e4/d4
+        if fullmove_number == 1:
             for move in legal_moves:
-                # Check for center control
-                if move.to_square in [chess.E4, chess.E5, chess.D4, chess.D5]:
-                    center_moves.append(move)
-                # Check for piece development
-                piece = temp_board.piece_at(move.from_square)
-                if (
-                    piece
-                    and piece.piece_type in [chess.KNIGHT, chess.BISHOP]
-                    and (move.from_square < 16 or move.from_square > 47)
-                ):  # From starting ranks
-                    development_moves.append(move)
+                if move.to_square in [chess.E4, chess.D4, chess.E5, chess.D5]:
+                    return move
 
-            # Prefer center moves, then development moves
-            if center_moves:
-                return self.explain_move_with_board(center_moves[0], temp_board)
-            elif development_moves:
-                return self.explain_move_with_board(development_moves[0], temp_board)
-            else:
-                return self.explain_move_with_board(legal_moves[0], temp_board)
+        # Development: Nf3/Nc3/Nf6/Nc6
+        if fullmove_number <= 5:
+            for move in legal_moves:
+                piece = board.piece_at(move.from_square)
+                if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
+                    from_rank = chess.square_rank(move.from_square)
+                    if from_rank in [0, 7]:  # Starting ranks
+                        return move
 
-        except Exception as e:
-            print(f"❌ Error getting best move for player: {e}")
+        # Center control priority
+        for move in legal_moves:
+            if move.to_square in [chess.E4, chess.E5, chess.D4, chess.D5]:
+                return move
+
+        return legal_moves[0]
+
+    def get_best_move_for_player(self) -> MoveExplanation | None:
+        """Get the best move that the player who just moved should have played."""
+        if not self.move_history:
             return None
+
+        temp_board = self.board.copy()
+        temp_board.pop()  # Undo the last move
+        best_rec = self.get_move_recommendation(board=temp_board)
+
+        if best_rec and best_rec.move != self.move_history[-1]:
+            return best_rec
+        return None
 
     def get_stockfish_move(self) -> chess.Move | None:
         """Get Stockfish's move for the current position."""
@@ -701,9 +565,6 @@ class ExplainableChessEngine:
 
     def print_board(self) -> None:
         """Print the current board position using rich."""
-        from rich.panel import Panel
-        from rich.text import Text
-
         # Create a stylized board string
         board_str = str(self.board)
         # Add some color to pieces
@@ -735,9 +596,6 @@ class ExplainableChessEngine:
 
     def play_interactive_game(self) -> None:  # noqa: C901
         """Play an interactive chess game against Stockfish with explanations."""
-        from rich.panel import Panel
-        from rich.text import Text
-
         self.console.print(
             Panel(
                 "[bold green]Welcome to the Explainable Chess Engine![/bold green]\n"
@@ -783,7 +641,7 @@ class ExplainableChessEngine:
                     last_move = self.move_history[-1]
                     temp_board = self.board.copy()
                     temp_board.pop()  # Undo the last move to analyze it
-                    explanation = self.explain_move_with_board(last_move, temp_board)
+                    explanation = self.explain_move(last_move, board=temp_board)
 
                     self.console.print(
                         Panel(
@@ -864,8 +722,6 @@ class ExplainableChessEngine:
 
     def _print_help(self) -> None:
         """Print help information using rich."""
-        from rich.table import Table
-
         help_table = Table(title="📖 Available Commands", box=None, show_header=False)
         help_table.add_column("Command", style="bold magenta")
         help_table.add_column("Description")
@@ -880,9 +736,6 @@ class ExplainableChessEngine:
 
     def _show_best_move(self) -> None:
         """Show the best move recommendation using rich."""
-        from rich.panel import Panel
-        from rich.text import Text
-
         recommendation = self.get_move_recommendation()
         if recommendation:
             try:

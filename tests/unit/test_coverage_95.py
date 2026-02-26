@@ -18,7 +18,7 @@ from chess_ai.explainable_engine import ExplainableChessEngine, MoveExplanation
 from chess_ai.features.utils import load_feature_module
 from chess_ai.surrogate_explainer import SurrogateExplainer
 
-_SF_EVAL = "chess_ai.engine.sf_eval"
+_SF_EVAL = "chess_ai.explainable_engine.sf_eval"
 
 
 # -----------------------------------------------------------------------
@@ -335,7 +335,7 @@ class TestOverallExplanationEdges:
         board = chess.Board("4k3/8/8/8/8/8/8/4K3 w - - 0 1")
         move = chess.Move.from_uci("e2e4")
 
-        result = eng._generate_overall_explanation_with_board(move, board, 30.0, [])
+        result = eng._generate_overall_explanation(move, 30.0, [], board=board)
         assert "e2e4" in result
 
     def test_reasonable_quality_label(self):
@@ -346,7 +346,7 @@ class TestOverallExplanationEdges:
         board = chess.Board()
         move = chess.Move.from_uci("e2e4")
 
-        result = eng._generate_overall_explanation_with_board(move, board, 0.0, [])
+        result = eng._generate_overall_explanation(move, 0.0, [], board=board)
         assert "Reasonable" in result
 
     def test_with_board_reasons_bullet_points(self):
@@ -358,9 +358,7 @@ class TestOverallExplanationEdges:
         move = chess.Move.from_uci("e2e4")
         reasons = [("center", 15, "Controls center")]
 
-        result = eng._generate_overall_explanation_with_board(
-            move, board, 30.0, reasons
-        )
+        result = eng._generate_overall_explanation(move, 30.0, reasons, board=board)
         assert "Controls center" in result
 
 

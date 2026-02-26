@@ -15,8 +15,8 @@ from chess_ai.explainable_engine import ExplainableChessEngine, MoveExplanation
 # Patch target: the lazy import ``from .engine import sf_eval`` inside
 # explain methods resolves to ``chess_ai.engine.sf_eval``.  We patch
 # that attribute so the local binding picks up the mock.
-_SF_EVAL = "chess_ai.engine.sf_eval"
-_SF_TOP = "chess_ai.engine.sf_top_moves"
+_SF_EVAL = "chess_ai.explainable_engine.sf_eval"
+_SF_TOP = "chess_ai.explainable_engine.sf_top_moves"
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ class TestExplainMoveWithBoard:
 
         board = chess.Board()
         move = chess.Move.from_uci("e2e4")
-        result = eng.explain_move_with_board(move, board)
+        result = eng.explain_move(move, board=board)
 
         assert isinstance(result, MoveExplanation)
         assert result.move == move
@@ -118,7 +118,7 @@ class TestExplainMoveWithBoard:
 
         board = chess.Board()
         move = chess.Move.from_uci("e2e4")
-        result = eng.explain_move_with_board(move, board)
+        result = eng.explain_move(move, board=board)
 
         assert "not available" in result.overall_explanation.lower()
 
@@ -132,7 +132,7 @@ class TestExplainMoveWithBoard:
 
         board = chess.Board()
         move = chess.Move.from_uci("e2e4")
-        result = eng.explain_move_with_board(move, board)
+        result = eng.explain_move(move, board=board)
 
         assert "error" in result.overall_explanation.lower()
 
@@ -171,7 +171,7 @@ class TestAnalyzePosition:
 
     @patch(_SF_EVAL, side_effect=RuntimeError("no engine"))
     def test_analyze_position_exception(self, _mock):
-        """analyze_position returns {} on error."""
+        """analyze_position returns error dict on exception."""
         eng = ExplainableChessEngine("/sf")
         eng.engine = Mock()
         eng.board = chess.Board()
@@ -180,7 +180,7 @@ class TestAnalyzePosition:
 
         result = eng.analyze_position()
 
-        assert result == {}
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------

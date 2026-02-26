@@ -360,9 +360,7 @@ class TestOverallExplanationWithBoardQualityLabels:
         eng = ExplainableChessEngine("/sf")
         move = chess.Move.from_uci("e2e4")
         board = chess.Board()
-        explanation = eng._generate_overall_explanation_with_board(
-            move, board, 60.0, []
-        )
+        explanation = eng._generate_overall_explanation(move, 60.0, [], board=board)
         assert "Excellent" in explanation
 
     def test_good_with_board(self):
@@ -370,9 +368,7 @@ class TestOverallExplanationWithBoardQualityLabels:
         eng = ExplainableChessEngine("/sf")
         move = chess.Move.from_uci("e2e4")
         board = chess.Board()
-        explanation = eng._generate_overall_explanation_with_board(
-            move, board, 30.0, []
-        )
+        explanation = eng._generate_overall_explanation(move, 30.0, [], board=board)
         assert "Good" in explanation
 
     def test_questionable_with_board(self):
@@ -380,9 +376,7 @@ class TestOverallExplanationWithBoardQualityLabels:
         eng = ExplainableChessEngine("/sf")
         move = chess.Move.from_uci("e2e4")
         board = chess.Board()
-        explanation = eng._generate_overall_explanation_with_board(
-            move, board, -30.0, []
-        )
+        explanation = eng._generate_overall_explanation(move, -30.0, [], board=board)
         assert "Questionable" in explanation
 
     def test_poor_with_board(self):
@@ -390,9 +384,7 @@ class TestOverallExplanationWithBoardQualityLabels:
         eng = ExplainableChessEngine("/sf")
         move = chess.Move.from_uci("e2e4")
         board = chess.Board()
-        explanation = eng._generate_overall_explanation_with_board(
-            move, board, -60.0, []
-        )
+        explanation = eng._generate_overall_explanation(move, -60.0, [], board=board)
         assert "Poor" in explanation
 
     def test_with_reasons(self):
@@ -404,8 +396,8 @@ class TestOverallExplanationWithBoardQualityLabels:
             ("dev", 2.0, "Develops pawn"),
             ("center", 1.0, "Controls center"),
         ]
-        explanation = eng._generate_overall_explanation_with_board(
-            move, board, 50.0, reasons
+        explanation = eng._generate_overall_explanation(
+            move, 50.0, reasons, board=board
         )
         assert "Develops pawn" in explanation
         assert "Controls center" in explanation

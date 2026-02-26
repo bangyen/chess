@@ -1,6 +1,7 @@
 """Main audit functionality."""
 
 import concurrent.futures
+import contextlib
 import logging
 import warnings
 from dataclasses import dataclass
@@ -10,18 +11,24 @@ import chess
 import numpy as np
 import numpy.typing as npt
 
+from ..engine import SFConfig, sf_eval, sf_top_moves
+from ..metrics.kendall import kendall_tau
+from ..tree_surrogate import TreeSurrogate
+from ..utils.math import cp_to_winrate
 from .audit_enrichment import enrich_features
-from .engine import SFConfig, sf_eval, sf_top_moves
-from .metrics.kendall import kendall_tau
-from .tree_surrogate import TreeSurrogate
-from .utils.math import cp_to_winrate
+from .workers import (
+    INTERACTION_PAIRS,
+    _audit_worker_process,
+    _faithfulness_worker_process,
+    _ranking_worker_process,
+)
 
 logger = logging.getLogger(__name__)
 
 # Suppress sklearn convergence warnings for small datasets
 warnings.filterwarnings("ignore", category=UserWarning, module="sklearn")
 
-try:
+with contextlib.suppress(Exception):
     from sklearn.exceptions import ConvergenceWarning
     from sklearn.linear_model import ElasticNet
     from sklearn.metrics import r2_score
@@ -31,39 +38,9 @@ try:
     warnings.filterwarnings("ignore", category=ConvergenceWarning, module="sklearn")
     warnings.filterwarnings("ignore", message=".*convergence.*", module="sklearn")
     warnings.filterwarnings("ignore", module="sklearn")
-except Exception:
-    raise
 
-try:
+with contextlib.suppress(Exception):
     from tqdm import tqdm
-except Exception:
-    raise
-
-
-# Interaction term definitions
-INTERACTION_PAIRS = [
-    ("material_diff", "phase"),
-    ("passed_us", "phase"),
-    ("mobility_us", "phase"),
-    ("batteries_us", "open_files_us"),
-    ("batteries_us", "semi_open_us"),
-    ("outposts_us", "phase"),
-    ("bishop_pair_us", "open_files_us"),
-    ("threats_us", "phase"),
-    ("king_tropism_us", "phase"),
-    ("space_us", "phase"),
-    ("doubled_pawns_us", "phase"),
-    # Delta-based interactions
-    ("d_material_diff", "phase"),
-    ("d_threats_us", "phase"),
-    ("d_mobility_us", "phase"),
-    ("d_hanging_them", "phase"),
-    ("d_space_us", "phase"),
-    ("d_king_ring_pressure_them", "phase"),
-    ("d_passed_us", "phase"),
-    ("d_rook_open_file_us", "phase"),
-    ("d_forcing_swing", "phase"),
-]
 
 
 @dataclass
@@ -588,251 +565,3 @@ def audit_feature_set(  # noqa: C901
         stable_features=stable_features,
         top_features_by_coef=top_features,
     )
-
-
-def _audit_worker_process(
-    board_fen: str,
-    cfg: SFConfig,
-    extract_features_fn: Callable[[chess.Board], Dict[str, float]],
-    interaction_pairs: List[Tuple[str, str]],
-) -> List[Tuple[Dict[str, float], float, float]]:
-    """Worker process for parallelizing move delta collection.
-
-    Opens its own Stockfish engine instance and processes one board.
-    """
-    from .audit_enrichment import enrich_features
-    from .engine.interface import sf_eval, sf_open, sf_top_moves
-
-    engine = sf_open(cfg)
-    try:
-        board = chess.Board(board_fen)
-        base_eval = sf_eval(engine, board, cfg)
-        base_board = board.copy()
-
-        # We need the base features for delta calculation if we are NOT using the Rust batch.
-        # But if we ARE using Rust batch, extract_features_delta_rust handles it.
-        # For simplicity and correctness with the existing enrich logic:
-        base_feats_raw = extract_features_fn(base_board)
-
-        top_moves = sf_top_moves(engine, board, cfg)
-        results = []
-
-        for move, _ in top_moves:
-            board.push(move)
-            # Use same depth as in the sequential version
-            reply_res = engine.analyse(
-                board, chess.engine.Limit(depth=cfg.depth), multipv=1
-            )
-            res_info = reply_res[0] if isinstance(reply_res, list) else reply_res
-            reply_move = cast(Dict[str, Any], res_info).get("pv", [None])[0]
-
-            if reply_move is not None:
-                board.push(reply_move)
-                after_reply_eval = sf_eval(engine, board, cfg)
-                delta_eval = after_reply_eval - base_eval
-
-                # enrich_features will handle the Rust batching if available
-                feats = enrich_features(
-                    board,
-                    base_board,
-                    base_feats_raw,
-                    extract_features_fn,
-                    engine,
-                    interaction_pairs,
-                    {},  # local hanging_cache
-                    {},  # local swing_cache
-                )
-                results.append((feats, delta_eval, base_eval))
-                board.pop()
-
-            board.pop()
-        return results
-    finally:
-        engine.quit()
-
-
-def _ranking_worker_process(
-    board_fen: str,
-    cfg: SFConfig,
-    cfg_local: SFConfig,
-    extract_features_fn: Callable[[chess.Board], Dict[str, float]],
-    interaction_pairs: List[Tuple[str, str]],
-    feature_names: List[str],
-    scaler: Any,
-    model: Any,  # Changed from model_coef/intercept
-) -> Optional[Tuple[List[float], List[float]]]:
-    """Worker process for parallelizing move ranking analysis."""
-    import chess
-    import numpy as np
-
-    from .audit_enrichment import enrich_features
-    from .engine.interface import sf_eval, sf_open, sf_top_moves
-
-    engine = sf_open(cfg)
-    try:
-        board = chess.Board(board_fen)
-        cand = sf_top_moves(engine, board, cfg_local)
-        if len(cand) < 2:
-            return None
-
-        sf_scores = []
-        sur_scores = []
-        base_eval = sf_eval(engine, board, cfg)
-        base_board = board.copy()
-        base_feats_raw = extract_features_fn(base_board)
-
-        for mv, _ in cand:
-            board.push(mv)
-            reply_res = engine.analyse(
-                board, chess.engine.Limit(depth=cfg.depth), multipv=1
-            )
-            res_info = reply_res[0] if isinstance(reply_res, list) else reply_res
-            reply_move = cast(Dict[str, Any], res_info).get("pv", [None])[0]
-
-            if reply_move is not None:
-                board.push(reply_move)
-                after_reply_eval = sf_eval(engine, board, cfg)
-                delta_eval = after_reply_eval - base_eval
-
-                feats = enrich_features(
-                    board,
-                    base_board,
-                    base_feats_raw,
-                    extract_features_fn,
-                    engine,
-                    interaction_pairs,
-                    {},
-                    {},
-                )
-
-                # Predict with the surrogate (GBT)
-                x_vec = np.array(
-                    [float(feats.get(k, 0.0)) for k in feature_names], dtype=float
-                )
-                x_scaled = scaler.transform(x_vec.reshape(1, -1))
-                sur_val = float(model.predict(x_scaled)[0])
-
-                sf_scores.append(delta_eval)
-                sur_scores.append(sur_val)
-                board.pop()
-
-            board.pop()
-
-        if len(sf_scores) >= 2:
-            return sf_scores, sur_scores
-        return None
-    finally:
-        engine.quit()
-
-
-def _faithfulness_worker_process(
-    board_fen: str,
-    cfg: SFConfig,
-    extract_features_fn: Callable[[chess.Board], Dict[str, float]],
-    interaction_pairs: List[Tuple[str, str]],
-    feature_names: List[str],
-    scaler: Any,
-    model: Any,
-    gap_threshold_cp: float,
-    weight_threshold: float,
-    coef: np.ndarray,
-    abs_coef: np.ndarray,
-) -> Optional[Tuple[int, int, int, List[int], int, int]]:
-    """Worker process for parallelizing faithfulness analysis."""
-    import chess
-    import numpy as np
-
-    from .audit_enrichment import enrich_features
-    from .engine.interface import sf_eval, sf_open, sf_top_moves
-
-    engine = sf_open(cfg)
-    try:
-        board = chess.Board(board_fen)
-        cand = sf_top_moves(engine, board, cfg)
-        if len(cand) < 2:
-            return None
-
-        cand_sorted = sorted(cand, key=lambda x: -x[1])
-        (best_mv, best_cp), (second_mv, second_cp) = cand_sorted[0], cand_sorted[1]
-        if abs(best_cp - second_cp) < gap_threshold_cp:
-            return None
-
-        base_eval = sf_eval(engine, board, cfg)
-        base_board = board.copy()
-        base_feats_raw = extract_features_fn(base_board)
-
-        def _eval_move(mv: chess.Move) -> Tuple[float, np.ndarray]:
-            board.push(mv)
-            reply_res = engine.analyse(
-                board, chess.engine.Limit(depth=cfg.depth), multipv=1
-            )
-            res_info = reply_res[0] if isinstance(reply_res, list) else reply_res
-            reply_move = cast(Dict[str, Any], res_info).get("pv", [None])[0]
-            if reply_move is not None:
-                board.push(reply_move)
-                after_eval = sf_eval(engine, board, cfg)
-                delta_sf = after_eval - base_eval
-                feats = enrich_features(
-                    board,
-                    base_board,
-                    base_feats_raw,
-                    extract_features_fn,
-                    engine,
-                    interaction_pairs,
-                    {},
-                    {},
-                )
-                vec = np.array(
-                    [float(feats.get(k, 0.0)) for k in feature_names], dtype=float
-                )
-                board.pop()
-            else:
-                delta_sf = 0.0
-                vec = np.zeros(len(feature_names))
-            board.pop()
-            return delta_sf, vec
-
-        delta_sf_best, vec_best = _eval_move(best_mv)
-        delta_sf_second, vec_second = _eval_move(second_mv)
-
-        vec_best_scaled = scaler.transform(vec_best.reshape(1, -1))
-        vec_second_scaled = scaler.transform(vec_second.reshape(1, -1))
-
-        sur_best = float(model.predict(vec_best_scaled)[0])
-        sur_second = float(model.predict(vec_second_scaled)[0])
-
-        contrib_best = coef * vec_best_scaled[0]
-
-        # Sparsity check
-        tot = np.sum(np.abs(contrib_best))
-        sp = 0
-        if tot > 1e-9:
-            c_sorted = np.sort(np.abs(contrib_best))[::-1]
-            cum = 0.0
-            for v in c_sorted:
-                cum += v
-                sp += 1
-                if cum >= 0.8 * tot:
-                    break
-
-        sp_counts = [sp] if sp > 0 else []
-
-        strong_feats = int(
-            np.sum((abs_coef >= weight_threshold) & (np.abs(contrib_best) > 0))
-        )
-        cov_hits = 1 if strong_feats >= 2 else 0
-        cov_total = 1
-
-        f_hits = (
-            1 if (sur_best - sur_second) * (delta_sf_best - delta_sf_second) > 0 else 0
-        )
-        f_decisive_hits = 0
-        f_decisive_total = 0
-        if abs(delta_sf_best - delta_sf_second) >= 80.0:
-            f_decisive_total = 1
-            if (sur_best > sur_second) == (delta_sf_best > delta_sf_second):
-                f_decisive_hits = 1
-
-        return f_hits, f_decisive_hits, f_decisive_total, sp_counts, cov_hits, cov_total
-    finally:
-        engine.quit()

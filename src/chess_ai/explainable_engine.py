@@ -18,13 +18,15 @@ from rich.table import Table
 from rich.text import Text
 
 from .engine import SFConfig, sf_eval, sf_top_moves
-from .features import baseline_extract_features
-from .hardcoded_reasons import (
+from .engine.hardcoded_reasons import (
     generate_hardcoded_reasons,
     generate_move_reasons_with_board,
 )
+from .engine.move_explanation import MoveExplanation
+from .engine.recommendations import get_heuristic_move
+from .engine.syzygy import SyzygyManager
+from .features import baseline_extract_features
 from .model_trainer import train_surrogate_model
-from .move_explanation import MoveExplanation
 from .surrogate_explainer import SurrogateExplainer
 from .utils.sampling import sample_stratified_positions
 
@@ -52,7 +54,7 @@ class ExplainableChessEngine:
         self.enable_model_explanations = enable_model_explanations
         self.model_training_positions = model_training_positions
         self.engine: chess.engine.SimpleEngine | None = None
-        self.syzygy: Any = None
+        self.syzygy_manager = SyzygyManager(self.syzygy_path)
         self.board = chess.Board()
         self.move_history: list[chess.Move] = []
         self.surrogate_explainer: SurrogateExplainer | None = None
@@ -98,19 +100,6 @@ class ExplainableChessEngine:
                 self.engine.configure(options)
             except chess.engine.EngineError as e:
                 print(f"⚠️  Warning: Failed to configure Stockfish options: {e}")
-
-            # Initialize Syzygy tablebases (Python side wrapper)
-            if self.syzygy_path:
-                try:
-                    from .rust_utils import SyzygyTablebase
-
-                    self.syzygy = SyzygyTablebase(self.syzygy_path)
-                    print(f"✅ Syzygy tablebases initialized from {self.syzygy_path}")
-                except Exception as e:
-                    print(
-                        f"⚠️  Warning: Failed to initialize Syzygy tablebases wrapper: {e}"
-                    )
-                    self.syzygy = None
 
             # Train surrogate model if enabled
             if self.enable_model_explanations:
@@ -208,26 +197,7 @@ class ExplainableChessEngine:
 
     def _get_syzygy_data(self, board: chess.Board) -> dict:
         """Get Syzygy tablebase data for the position."""
-        if not self.syzygy:
-            return {}
-
-        # Check piece count (Syzygy generally supports up to 7 pieces)
-        if len(board.piece_map()) > 7:
-            return {}
-
-        try:
-            fen = board.fen()
-            wdl = self.syzygy.probe_wdl(fen)
-            dtz = self.syzygy.probe_dtz(fen)
-
-            result = {}
-            if wdl is not None:
-                result["wdl"] = wdl
-            if dtz is not None:
-                result["dtz"] = dtz
-            return result
-        except Exception:
-            return {}
+        return self.syzygy_manager.get_syzygy_data(board)
 
     def analyze_position(self) -> dict:
         """Analyze the current position using our explainable features and Syzygy."""
@@ -310,43 +280,7 @@ class ExplainableChessEngine:
         self, board_before: chess.Board, board_after: chess.Board
     ) -> tuple[str, float, str] | None:
         """Generate a reason based on Syzygy tablebase changes."""
-        data_before = self._get_syzygy_data(board_before)
-        if not data_before:
-            return None
-
-        data_after = self._get_syzygy_data(board_after)
-        if not data_after:
-            return None
-
-        wdl_before = data_before.get("wdl", 0)
-        # Invert wdl_after because it's from opponent's perspective
-        wdl_after = -data_after.get("wdl", 0)
-
-        # WDL: 2=Win, 1=MaybeWin, 0=Draw, -1=MaybeLoss, -2=Loss
-
-        # Check for blunders (Win -> Draw/Loss, Draw -> Loss)
-        if wdl_before == 2 and wdl_after < 2:
-            return ("syzygy_blunder", -500.0, "Tablebase: Throws away a forced win")
-        if wdl_before == 0 and wdl_after < 0:
-            return ("syzygy_blunder", -300.0, "Tablebase: Blunders into a forced loss")
-
-        # Check for good moves (maintaining win, finding win)
-        if wdl_before == 2 and wdl_after == 2:
-            # Check DTZ improvement?
-            # dtz_before = data_before.get("dtz", 0)
-            # dtz_after = data_after.get("dtz", 0)
-            # DTZ is distance to zeroing move (capture/pawn move) or mate.
-            # If we are winning, we want to minimize DTZ (to mate) or make progress.
-            # Note: DTZ behavior is complex. Simplified check.
-            return ("syzygy_good", 50.0, "Tablebase: Maintains forced win")
-
-        if wdl_before < 2 and wdl_after == 2:
-            return ("syzygy_brilliant", 500.0, "Tablebase: Finds a forced win!")
-
-        if wdl_before == -2 and wdl_after == 0:
-            return ("syzygy_save", 300.0, "Tablebase: Salvages a draw from a loss")
-
-        return None
+        return self.syzygy_manager.get_syzygy_reason(board_before, board_after)
 
     def _generate_move_reasons(
         self, move: chess.Move, score: float, best_score: float
@@ -509,31 +443,9 @@ class ExplainableChessEngine:
 
     def _get_heuristic_move(
         self, board: chess.Board, legal_moves: list[chess.Move]
-    ) -> chess.Move:
+    ) -> chess.Move | None:
         """Pick a reasonable move based on simple heuristics."""
-        fullmove_number = board.fullmove_number
-
-        # Opening: e4/d4
-        if fullmove_number == 1:
-            for move in legal_moves:
-                if move.to_square in [chess.E4, chess.D4, chess.E5, chess.D5]:
-                    return move
-
-        # Development: Nf3/Nc3/Nf6/Nc6
-        if fullmove_number <= 5:
-            for move in legal_moves:
-                piece = board.piece_at(move.from_square)
-                if piece and piece.piece_type in [chess.KNIGHT, chess.BISHOP]:
-                    from_rank = chess.square_rank(move.from_square)
-                    if from_rank in [0, 7]:  # Starting ranks
-                        return move
-
-        # Center control priority
-        for move in legal_moves:
-            if move.to_square in [chess.E4, chess.E5, chess.D4, chess.D5]:
-                return move
-
-        return legal_moves[0]
+        return get_heuristic_move(board, legal_moves)
 
     def get_best_move_for_player(self) -> MoveExplanation | None:
         """Get the best move that the player who just moved should have played."""

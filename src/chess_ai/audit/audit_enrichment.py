@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Tuple, cast
 
 import chess
 
-from .metrics.positional import (
+from ..metrics.positional import (
     checkability_now,
     confinement_delta,
     passed_pawn_momentum_delta,

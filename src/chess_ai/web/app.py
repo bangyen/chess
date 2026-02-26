@@ -6,7 +6,6 @@ Provides API endpoints for playing chess, analyzing positions,
 and running feature explainability audits.
 """
 
-import shutil
 from typing import Any, Dict, List, Optional
 
 import chess
@@ -14,6 +13,7 @@ import chess.engine
 from flask import Flask, jsonify, render_template, request
 
 from chess_ai.features.baseline import baseline_extract_features
+from chess_ai.utils.engine_discovery import find_stockfish
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -29,12 +29,11 @@ class GameState:
 
     def _init_engine(self) -> None:
         """Initialize Stockfish engine if available."""
-        stockfish_path = shutil.which("stockfish")
-        if stockfish_path:
-            try:
-                self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
-            except Exception:
-                self.engine = None
+        try:
+            stockfish_path = find_stockfish()
+            self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+        except Exception:
+            self.engine = None
 
     def reset(self) -> None:
         """Reset the game to initial position."""
@@ -57,10 +56,7 @@ class GameState:
         if self.board.is_game_over():
             return None
 
-        feature_values = baseline_extract_features(self.board)
-
-        if "_engine_probes" in feature_values:
-            del feature_values["_engine_probes"]
+        feature_values = baseline_extract_features(self.board, include_probes=False)
 
         if self.engine:
             try:
@@ -227,10 +223,7 @@ def analyze_features() -> Any:
     Extracts comprehensive position features including material balance,
     piece mobility, king safety, and positional control metrics.
     """
-    feature_values = baseline_extract_features(game_state.board)
-
-    if "_engine_probes" in feature_values:
-        del feature_values["_engine_probes"]
+    feature_values = baseline_extract_features(game_state.board, include_probes=False)
 
     return jsonify(
         {

@@ -270,13 +270,16 @@ class TestGameState:
 
     def test_init_engine_no_stockfish(self):
         """_init_engine sets engine to None when stockfish is not found."""
-        with patch("chess_ai.web.app.shutil.which", return_value=None):
+        with patch(
+            "chess_ai.web.app.find_stockfish",
+            side_effect=FileNotFoundError("not found"),
+        ):
             gs = GameState()
         assert gs.engine is None
 
-    @patch("chess_ai.web.app.shutil.which", return_value="/usr/bin/stockfish")
+    @patch("chess_ai.web.app.find_stockfish", return_value="/usr/bin/stockfish")
     @patch("chess.engine.SimpleEngine.popen_uci", side_effect=Exception("fail"))
-    def test_init_engine_exception(self, _mock_popen, _mock_which):
+    def test_init_engine_exception(self, _mock_popen, _mock_find):
         """_init_engine sets engine to None when popen_uci fails."""
         gs = GameState()
         assert gs.engine is None

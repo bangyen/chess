@@ -45,6 +45,7 @@ class ExplainableChessEngine:
         opponent_strength: str = "beginner",
         enable_model_explanations: bool = True,
         model_training_positions: int = 200,
+        console: Console | None = None,
     ) -> None:
         """Initialize the explainable chess engine."""
         self.stockfish_path = stockfish_path
@@ -58,7 +59,7 @@ class ExplainableChessEngine:
         self.board = chess.Board()
         self.move_history: list[chess.Move] = []
         self.surrogate_explainer: SurrogateExplainer | None = None
-        self.console = Console()
+        self.console = console or Console()
 
         # Stockfish strength settings
         self.strength_settings: dict[str, dict[str, Any]] = {
@@ -206,7 +207,9 @@ class ExplainableChessEngine:
             if engine is None:
                 return {"error": "Engine not available"}
             # Extract features for current position
-            features = baseline_extract_features(self.board)
+            features = baseline_extract_features(
+                self.board, syzygy_path=self.syzygy_path
+            )
 
             # Get real Stockfish evaluation
             cfg = SFConfig(
@@ -290,7 +293,9 @@ class ExplainableChessEngine:
 
         # 1. Extract features before move
         try:
-            feats_before = baseline_extract_features(self.board)
+            feats_before = baseline_extract_features(
+                self.board, syzygy_path=self.syzygy_path
+            )
         except Exception:
             feats_before = {}
 
@@ -324,7 +329,9 @@ class ExplainableChessEngine:
 
         # 3. Extract features after move
         try:
-            feats_after = baseline_extract_features(temp_board)
+            feats_after = baseline_extract_features(
+                temp_board, syzygy_path=self.syzygy_path
+            )
         except Exception:
             feats_after = {}
 

@@ -86,17 +86,17 @@ def main() -> None:
         help="Keep every Nth ply when sampling from PGN",
     )
     ap.add_argument(
-        "--features_module",
+        "--features-module",
         type=str,
         default="",
         help="Path to a Python module that defines extract_features(board)",
     )
     ap.add_argument(
-        "--baseline_features",
+        "--baseline-features",
         action="store_true",
         help="Use built-in small baseline features",
     )
-    ap.add_argument("--test_size", type=float, default=0.25)
+    ap.add_argument("--test-size", type=float, default=0.25)
     ap.add_argument(
         "--alpha",
         type=float,
@@ -146,7 +146,7 @@ def main() -> None:
         extract_fn = mod.extract_features  # type: ignore
     else:
         print(
-            "Provide --features_module PATH or use --baseline_features to run.",
+            "Provide --features-module PATH or use --baseline-features to run.",
             file=sys.stderr,
         )
         sys.exit(1)

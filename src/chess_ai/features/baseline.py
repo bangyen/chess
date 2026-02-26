@@ -144,11 +144,17 @@ def _minimal_python_fallback(board: "chess.Board") -> Dict[str, float]:
     return feats
 
 
-def baseline_extract_features(board: "chess.Board") -> Dict[str, Any]:
+def baseline_extract_features(
+    board: "chess.Board",
+    include_probes: bool = True,
+    syzygy_path: Optional[str] = None,
+) -> Dict[str, Any]:
     """Small, fast, interpretable baseline feature set.
 
     Args:
         board: The chess board position to extract features from
+        include_probes: Whether to include _engine_probes in the result
+        syzygy_path: Optional path to Syzygy tablebases (falls back to SYZYGY_PATH env var)
 
     Returns:
         Dictionary of feature names to values
@@ -177,16 +183,16 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, Any]:
             feats = _minimal_python_fallback(board)
 
     # Add Syzygy tablebase features (if available)
-    syzygy_path = os.environ.get("SYZYGY_PATH")
-    if syzygy_path:
+    path = syzygy_path or os.environ.get("SYZYGY_PATH")
+    if path:
         try:
             if not _SYZYGY_TB:
                 if RustSyzygyTablebase:
                     _SYZYGY_TB = RustSyzygyTablebase()
-                    _SYZYGY_TB.add_directory(syzygy_path)
+                    _SYZYGY_TB.add_directory(path)
                 else:
                     _SYZYGY_TB = SyzygyTablebase()
-                    _SYZYGY_TB.add_directory(syzygy_path)
+                    _SYZYGY_TB.add_directory(path)
 
             if len(board.piece_map()) <= 7:
                 wdl = _SYZYGY_TB.probe_wdl(board)
@@ -198,9 +204,10 @@ def baseline_extract_features(board: "chess.Board") -> Dict[str, Any]:
         except Exception:  # noqa: S110
             pass
 
-    feats["_engine_probes"] = {
-        "hanging_after_reply": hanging_after_reply,
-        "best_forcing_swing": best_forcing_swing,
-        "sf_eval_shallow": sf_eval_shallow,
-    }
+    if include_probes:
+        feats["_engine_probes"] = {
+            "hanging_after_reply": hanging_after_reply,
+            "best_forcing_swing": best_forcing_swing,
+            "sf_eval_shallow": sf_eval_shallow,
+        }
     return cast(Dict[str, Any], feats)

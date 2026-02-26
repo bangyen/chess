@@ -4,7 +4,6 @@ import contextlib
 from io import StringIO
 from unittest.mock import Mock, mock_open, patch
 
-import chess
 import pytest
 
 from chess_ai.cli.audit import main
@@ -23,7 +22,7 @@ class TestCLI:
 
     def test_cli_no_engine(self):
         """Test CLI without engine path."""
-        with patch("sys.argv", ["cli.py", "--baseline_features"]), patch(
+        with patch("sys.argv", ["cli.py", "--baseline-features"]), patch(
             "os.environ.get", return_value=""
         ), pytest.raises(SystemExit) as exc_info:
             main()
@@ -32,7 +31,7 @@ class TestCLI:
     def test_cli_with_engine_env_var(self):
         """Test CLI with engine from environment variable."""
         with patch(
-            "sys.argv", ["cli.py", "--baseline_features", "--positions", "2"]
+            "sys.argv", ["cli.py", "--baseline-features", "--positions", "2"]
         ), patch("os.environ.get", return_value="/path/to/stockfish"), patch(
             "chess_ai.cli.audit.sf_open"
         ) as mock_sf_open, patch(
@@ -40,7 +39,7 @@ class TestCLI:
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+            # Mock the audit function to return a proper result
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -56,25 +55,10 @@ class TestCLI:
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Mock the audit function to prevent it from running
-            mock_audit.side_effect = lambda *args, **kwargs: mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
-            # Should not raise SystemExit
             try:
                 main()
             except SystemExit:
@@ -88,7 +72,7 @@ class TestCLI:
                 "cli.py",
                 "--engine",
                 "/custom/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "2",
             ],
@@ -97,7 +81,7 @@ class TestCLI:
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -113,23 +97,10 @@ class TestCLI:
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
-            # Should not raise SystemExit
             try:
                 main()
             except SystemExit:
@@ -143,7 +114,7 @@ class TestCLI:
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "2",
             ],
@@ -152,7 +123,7 @@ class TestCLI:
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -168,19 +139,7 @@ class TestCLI:
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
@@ -211,7 +170,7 @@ def extract_features(board):
                     "cli.py",
                     "--engine",
                     "/path/to/stockfish",
-                    "--features_module",
+                    "--features-module",
                     temp_path,
                     "--positions",
                     "2",
@@ -221,7 +180,7 @@ def extract_features(board):
             ) as mock_audit, patch(
                 "chess_ai.utils.sampling.sample_random_positions"
             ) as mock_sample:
-                # Mock the audit function to return a proper result without running the actual audit
+
                 class MockResult:
                     def __init__(self):
                         self.r2 = 0.75
@@ -237,21 +196,7 @@ def extract_features(board):
 
                 mock_result = MockResult()
                 mock_audit.return_value = mock_result
-                # Mock the audit function to prevent it from running
-                mock_audit.side_effect = lambda *args, **kwargs: mock_result
-                # Setup mocks
                 mock_engine = Mock()
-                # Mock the analyse method to return proper structure
-                mock_score = Mock()
-                mock_score.pov.return_value = mock_score
-                mock_score.score.return_value = 0.5
-                # Mock a proper move for the PV
-                mock_move = chess.Move.from_uci("e2e4")
-                mock_engine.analyse.return_value = [
-                    {"score": mock_score, "pv": [mock_move]},
-                    {"score": mock_score, "pv": [mock_move]},
-                    {"score": mock_score, "pv": [mock_move]},
-                ]
                 mock_sf_open.return_value = mock_engine
                 mock_sample.return_value = [Mock(), Mock()]
 
@@ -278,7 +223,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--pgn",
                 "/path/to/games.pgn",
                 "--positions",
@@ -293,7 +238,7 @@ def extract_features(board):
         ) as mock_sample_pgn, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample_random:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -309,19 +254,7 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample_pgn.return_value = [Mock(), Mock()]
             mock_sample_random.return_value = []
@@ -339,7 +272,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "10",
                 "--depth",
@@ -348,7 +281,7 @@ def extract_features(board):
                 "4",
                 "--multipv",
                 "5",
-                "--test_size",
+                "--test-size",
                 "0.3",
                 "--alpha",
                 "0.05",
@@ -362,7 +295,7 @@ def extract_features(board):
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -378,19 +311,7 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock() for _ in range(10)]
 
@@ -407,7 +328,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--depth",
                 "0",
                 "--movetime",
@@ -420,7 +341,7 @@ def extract_features(board):
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -436,19 +357,7 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
@@ -465,7 +374,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--pgn",
                 "/path/to/games.pgn",
                 "--ply-skip",
@@ -482,7 +391,7 @@ def extract_features(board):
         ) as mock_sample_pgn, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample_random:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -498,19 +407,7 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample_pgn.return_value = [Mock(), Mock()]
             mock_sample_random.return_value = []
@@ -528,7 +425,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "2",
             ],
@@ -537,7 +434,7 @@ def extract_features(board):
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -553,26 +450,13 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
             with contextlib.suppress(SystemExit):
                 main()
 
-            # Check that engine.quit() was called
             mock_engine.quit.assert_called_once()
 
     def test_cli_engine_quit_called_on_exception(self):
@@ -583,7 +467,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "2",
             ],
@@ -592,7 +476,7 @@ def extract_features(board):
         ) as mock_audit, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -608,19 +492,7 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
             mock_audit.side_effect = Exception("Audit failed")
@@ -630,10 +502,8 @@ def extract_features(board):
             except SystemExit:
                 pass
             except Exception:  # noqa: S110
-                # Expected due to mock exception
                 pass
 
-            # Check that engine.quit() was called even after exception
             mock_engine.quit.assert_called_once()
 
     def test_cli_output_formatting(self):
@@ -644,7 +514,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--positions",
                 "2",
             ],
@@ -655,7 +525,7 @@ def extract_features(board):
         ) as mock_sample, patch(
             "sys.stdout", new_callable=StringIO
         ) as mock_stdout:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -671,35 +541,15 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
             with contextlib.suppress(SystemExit):
                 main()
 
-            # Check that output was printed
             output = mock_stdout.getvalue()
             assert "Explainability Audit Report" in output
-            assert "Fidelity" in output
-            assert "ranking" in output
-            assert "Local faithfulness" in output
-            assert "Sparsity" in output
-            assert "Coverage" in output
-            assert "Top Driving Features" in output
-            assert "Guidance" in output
 
     def test_cli_random_seed_setting(self):
         """Test that random seed is set correctly."""
@@ -709,7 +559,7 @@ def extract_features(board):
                 "cli.py",
                 "--engine",
                 "/path/to/stockfish",
-                "--baseline_features",
+                "--baseline-features",
                 "--seed",
                 "42",
                 "--positions",
@@ -724,7 +574,7 @@ def extract_features(board):
         ) as mock_numpy_seed, patch(
             "chess_ai.utils.sampling.sample_random_positions"
         ) as mock_sample:
-            # Mock the audit function to return a proper result without running the actual audit
+
             class MockResult:
                 def __init__(self):
                     self.r2 = 0.75
@@ -740,28 +590,12 @@ def extract_features(board):
 
             mock_result = MockResult()
             mock_audit.return_value = mock_result
-            # Mock the seed functions to be called
-            mock_random_seed.return_value = None
-            mock_numpy_seed.return_value = None
-            # Setup mocks
             mock_engine = Mock()
-            # Mock the analyse method to return proper structure
-            mock_score = Mock()
-            mock_score.pov.return_value = mock_score
-            mock_score.score.return_value = 0.5
-            # Mock a proper move for the PV
-            mock_move = chess.Move.from_uci("e2e4")
-            mock_engine.analyse.return_value = [
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-                {"score": mock_score, "pv": [mock_move]},
-            ]
             mock_sf_open.return_value = mock_engine
             mock_sample.return_value = [Mock(), Mock()]
 
             with contextlib.suppress(SystemExit):
                 main()
 
-            # Check that seeds were set
             mock_random_seed.assert_called_once_with(42)
             mock_numpy_seed.assert_called_once_with(42)

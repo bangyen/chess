@@ -10,10 +10,14 @@ __email__ = "your.email@example.com"
 
 from .audit import AuditResult, audit_feature_set
 from .engine import SFConfig, sf_eval, sf_open, sf_top_moves
+from .engine.move_explanation import MoveExplanation
+from .explainable_engine import ExplainableChessEngine
 from .features import baseline_extract_features, load_feature_module
 
 __all__ = [
     "AuditResult",
+    "ExplainableChessEngine",
+    "MoveExplanation",
     "SFConfig",
     "audit_feature_set",
     "baseline_extract_features",

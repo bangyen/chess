@@ -16,6 +16,7 @@
 
 - Python 3.8+
 - Rust 1.70+ (required for building the acceleration module)
+- [Stockfish Engine](https://stockfishchess.org/) (installed and in PATH, or set `STOCKFISH_PATH`)
 
 ### Installation
 
@@ -31,7 +32,7 @@ pytest   # optional: run tests
 **CLI Tools:**
 ```bash
 # Run feature explainability audit
-chess-ai audit --baseline_features --positions 100
+chess-ai audit --baseline-features --positions 100
 
 # Play interactive chess with explanations
 chess-ai play --strength intermediate
@@ -54,9 +55,11 @@ Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main
 
 | Metric | Value | Target |
 |--------|-------|--------|
-| Feature Explainability | **86.7%** | ≥80% |
-| Explanation Sparsity | **2.5** | ≤3.0 |
-| Position Coverage | **100%** | ≥95% |
+| Decisive Faithfulness | **86.7%** | ≥80.0% |
+| Explanation Sparsity | **2.5** | ≤4.0 |
+| Position Coverage | **100%** | ≥70.0% |
+| Move Ranking (τ) | **0.52** | ≥0.45 |
+| Fidelity (Delta-R²) | **0.48** | ≥0.35 |
 
 ## Features
 
@@ -71,13 +74,15 @@ Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main
 ```plaintext
 chess/
 ├── src/chess_ai/
+│   ├── audit/        # Feature explainability audit logic
 │   ├── cli/          # Command-line interface tools
 │   ├── engine/       # Chess engine configuration
 │   ├── features/     # Feature extraction
 │   ├── metrics/      # Evaluation metrics
 │   ├── rust_utils/   # Rust extension bindings
 │   ├── utils/        # Helper utilities
-│   └── web/          # Web interface (Flask app)
+│   ├── web/          # Web interface (Flask app)
+│   └── explainable_engine.py  # Core explainability logic
 ├── rust/             # Rust acceleration module source
 ├── tests/            # Unit and integration tests
 ├── docs/             # Documentation and design system
@@ -89,9 +94,10 @@ See [docs/WEB_APP.md](docs/WEB_APP.md) for web interface documentation and [docs
 
 ## Validation
 
-- ✅ Overall test coverage of 96% (`pytest`)
+- ✅ Continuous test coverage monitoring (`pytest`)
 - ✅ Reproducible seeds for experiments
 - ✅ Benchmark scripts included
+- ⚠️ Note: Some integration tests may timeout on slower hardware or require specific Stockfish builds.
 
 ## References
 

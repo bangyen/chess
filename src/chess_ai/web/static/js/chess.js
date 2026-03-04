@@ -28,6 +28,14 @@ class ChessBoard {
     // Pieces state for animation
     this.pieces = []; // Array of { type, rank, file, currentX, currentY, animating: bool }
 
+    // Dragging state
+    this.draggingPiece = null;
+    this.dragX = 0; // Relative to canvas, in squares
+    this.dragY = 0;
+    this.isMouseDown = false;
+    this.dragStartSquare = null;
+    this.lastDragMove = null;
+
     this.onMove = null;
 
     this.init();
@@ -51,7 +59,22 @@ class ChessBoard {
 
   setupEventListeners() {
     window.addEventListener('resize', () => this.handleResize());
-    this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+
+    this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+    window.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+    window.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+
+    // Touch support
+    this.canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.handleMouseDown(e.touches[0]);
+    }, { passive: false });
+    window.addEventListener('touchmove', (e) => {
+      this.handleMouseMove(e.touches[0]);
+    }, { passive: false });
+    window.addEventListener('touchend', (e) => {
+      this.handleMouseUp(e.changedTouches[0]);
+    });
   }
 
   parseFen(fen) {
@@ -88,13 +111,20 @@ class ChessBoard {
       // Initial setup or reset
       this.pieces = newPieces;
       this.lastMove = null;
+      this.lastDragMove = null;
     } else {
+      if (moveUci === this.lastDragMove) {
+        this.pieces = newPieces;
+        this.lastMove = this.parseLastMove(moveUci);
+        this.lastDragMove = null;
+        return;
+      }
+
       // Find what moved
       const from = this.fromSquareId(moveUci.substring(0, 2));
       const to = this.fromSquareId(moveUci.substring(2, 4));
 
       // Match existing pieces to new pieces to identify animations
-      // For a simple implementation, we'll just animate the piece that was at 'from'
       const movingPiece = this.pieces.find(p => p.rank === from[1] && p.file === from[0]);
 
       if (movingPiece) {
@@ -163,8 +193,10 @@ class ChessBoard {
       });
     }
 
-    // 5. Draw Pieces
+    // 5. Draw Pieces (excluding dragging)
     this.pieces.forEach(piece => {
+      if (this.draggingPiece && piece === this.draggingPiece) return;
+
       let x = piece.file;
       let y = piece.rank;
 
@@ -183,23 +215,29 @@ class ChessBoard {
 
       this.drawPiece(piece.type, x, y);
     });
+
+    // 6. Draw Dragging Piece
+    if (this.draggingPiece) {
+      this.drawPiece(this.draggingPiece.type, this.dragX - 0.5, this.dragY - 0.5, true);
+    }
   }
 
-  drawPiece(type, file, rank) {
+  drawPiece(type, file, rank, isDragging = false) {
     const symbol = PIECES[type];
-    this.ctx.font = `${this.squareSize * 0.8}px 'Arial'`;
+    const scale = isDragging ? 1.1 : 1.0;
+    this.ctx.font = `${this.squareSize * 0.8 * scale}px 'Arial'`;
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
     // Draw shadow for piece
     this.ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    this.ctx.fillText(symbol, (file + 0.5) * this.squareSize, (rank + 0.5) * this.squareSize + 2);
+    this.ctx.fillText(symbol, (file + 0.5) * this.squareSize, (rank + 0.5) * this.squareSize + (isDragging ? 5 : 2));
 
     this.ctx.fillStyle = '#000';
     this.ctx.fillText(symbol, (file + 0.5) * this.squareSize, (rank + 0.5) * this.squareSize);
   }
 
-  handleCanvasClick(event) {
+  handleMouseDown(event) {
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
@@ -208,24 +246,91 @@ class ChessBoard {
     const rank = Math.floor(y / (rect.height / 8));
     const squareId = this.toSquareId(rank, file);
 
-    if (this.selectedSquare) {
+    this.isMouseDown = true;
+    this.dragStartSquare = squareId;
+
+    const pieceAt = this.pieces.find(p => p.rank === rank && p.file === file);
+    if (pieceAt) {
+      this.draggingPiece = pieceAt;
+      this.dragX = x / (rect.width / 8);
+      this.dragY = y / (rect.height / 8);
+
+      // Also select for click-to-move compatibility
+      this.selectedSquare = squareId;
+    }
+  }
+
+  handleMouseMove(event) {
+    if (!this.isMouseDown || !this.draggingPiece) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    this.dragX = x / (rect.width / 8);
+    this.dragY = y / (rect.height / 8);
+  }
+
+  handleMouseUp(event) {
+    if (!this.isMouseDown) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+
+    const file = Math.floor(x / (rect.width / 8));
+    const rank = Math.floor(y / (rect.height / 8));
+    const toSquareId = this.toSquareId(rank, file);
+
+    if (this.draggingPiece) {
+      const fromSquare = this.dragStartSquare;
+      const moveUci = fromSquare + toSquareId;
+
+      if (fromSquare !== toSquareId && this.legalMoves.includes(moveUci)) {
+        if (this.onMove) {
+          // Instantly update the piece's rank/file in the pieces array to prevent jump
+          this.draggingPiece.rank = rank;
+          this.draggingPiece.file = file;
+          this.draggingPiece.currentX = file;
+          this.draggingPiece.currentY = rank;
+
+          this.lastMove = this.parseLastMove(moveUci);
+          this.lastDragMove = moveUci;
+          this.onMove(moveUci);
+        }
+        this.selectedSquare = null;
+      } else if (fromSquare === toSquareId) {
+        // Keep selected for click-to-move
+      } else {
+        this.selectedSquare = null;
+      }
+    } else if (this.selectedSquare) {
+      // Click-to-move targeting an empty square (draggingPiece would be null)
       const fromSquare = this.selectedSquare;
-      const toSquare = squareId;
-      const moveUci = fromSquare + toSquare;
+      const moveUci = fromSquare + toSquareId;
 
       if (this.legalMoves.includes(moveUci)) {
         if (this.onMove) {
+          // Find and update the moving piece locally
+          const [ff, fr] = this.fromSquareId(fromSquare);
+          const movingPiece = this.pieces.find(p => p.rank === fr && p.file === ff);
+          if (movingPiece) {
+            movingPiece.rank = rank;
+            movingPiece.file = file;
+            movingPiece.currentX = file;
+            movingPiece.currentY = rank;
+          }
+
+          this.lastMove = this.parseLastMove(moveUci);
           this.onMove(moveUci);
         }
       }
-
       this.selectedSquare = null;
-    } else {
-      const pieceAt = this.pieces.find(p => p.rank === rank && p.file === file);
-      if (pieceAt) {
-        this.selectedSquare = squareId;
-      }
     }
+
+    this.isMouseDown = false;
+    this.draggingPiece = null;
+    this.dragStartSquare = null;
   }
 
   toSquareId(rank, file) {
@@ -238,6 +343,12 @@ class ChessBoard {
     const file = files.indexOf(squareId[0]);
     const rank = 8 - parseInt(squareId[1]);
     return [file, rank];
+  }
+
+  parseLastMove(moveUci) {
+    const from = this.fromSquareId(moveUci.substring(0, 2));
+    const to = this.fromSquareId(moveUci.substring(2, 4));
+    return { from, to };
   }
 }
 

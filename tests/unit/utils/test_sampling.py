@@ -337,10 +337,8 @@ class TestStratifiedSampling:
 
     def test_deterministic_with_seed(self):
         """Two runs with the same seed produce the same FENs."""
-        random.seed(123)
-        run1 = [b.fen() for b in sample_stratified_positions(6)]
-        random.seed(123)
-        run2 = [b.fen() for b in sample_stratified_positions(6)]
+        run1 = [b.fen() for b in sample_stratified_positions(6, seed=123)]
+        run2 = [b.fen() for b in sample_stratified_positions(6, seed=123)]
         assert run1 == run2
 
 

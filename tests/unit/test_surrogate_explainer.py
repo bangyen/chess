@@ -192,7 +192,7 @@ class TestCalculateContributions:
         if result:
             name, _cp, text = result[0]
             assert name == "material_diff"
-            assert "Material advantage" in text
+            assert "material advantage" in text
 
     def test_unknown_feature_gets_fallback_template(self):
         """Features without a template use the generic fallback."""

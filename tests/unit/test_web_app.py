@@ -134,7 +134,10 @@ class TestGameState:
 
         mock_engine = Mock()
         move = chess.Move.from_uci("e2e4")
-        mock_engine.play.return_value = Mock(move=move)
+        mock_explanation = Mock()
+        mock_explanation.move = move
+        mock_explanation.overall_explanation = "test"
+        mock_engine.get_move_recommendation.return_value = mock_explanation
         gs.engine = mock_engine
 
         result = gs.get_engine_move()
@@ -153,7 +156,7 @@ class TestGameState:
             gs = GameState()
 
         mock_engine = Mock()
-        mock_engine.play.side_effect = Exception("engine crashed")
+        mock_engine.get_move_recommendation.side_effect = Exception("engine crashed")
         gs.engine = mock_engine
 
         result = gs.get_engine_move()

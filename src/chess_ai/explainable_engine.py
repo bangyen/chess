@@ -5,9 +5,8 @@ An interactive chess engine that analyzes your moves and explains what you shoul
 """
 
 from __future__ import annotations
- 
+
 import hashlib
-import os
 import pickle
 import types
 from pathlib import Path
@@ -129,10 +128,12 @@ class ExplainableChessEngine:
         """Get the path to the cached surrogate model."""
         cache_dir = Path.home() / ".cache" / "chess-ai"
         cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Create a unique key based on configuration
-        key_data = f"{self.depth}-{self.model_training_positions}-{self.opponent_strength}"
-        key_hash = hashlib.md5(key_data.encode()).hexdigest()
+        key_data = (
+            f"{self.depth}-{self.model_training_positions}-{self.opponent_strength}"
+        )
+        key_hash = hashlib.sha256(key_data.encode()).hexdigest()
         return cache_dir / f"surrogate_model_{key_hash}.pkl"
 
     def initialize_model(self) -> None:
@@ -141,13 +142,13 @@ class ExplainableChessEngine:
             return
 
         cache_path = self._get_cache_path()
-        
+
         # Try to load from cache first
         if cache_path.exists():
             try:
                 with open(cache_path, "rb") as f:
-                    cache_data = pickle.load(f)
-                
+                    cache_data = pickle.load(f)  # noqa: S301
+
                 self.surrogate_explainer = cache_data["explainer"]
                 print("✅ Loaded surrogate model from cache")
                 return
@@ -177,7 +178,7 @@ class ExplainableChessEngine:
                 scaler=scaler,
                 feature_names=feature_names,
             )
-            
+
             # Save to cache
             try:
                 with open(cache_path, "wb") as f:

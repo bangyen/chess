@@ -25,7 +25,10 @@ class GameState:
 
     def __init__(self) -> None:
         self.board = chess.Board()
-        self.stockfish_path = find_stockfish()
+        try:
+            self.stockfish_path = find_stockfish()
+        except FileNotFoundError:
+            self.stockfish_path = None
         self.engine: Optional[ExplainableChessEngine] = None
         self.move_history: List[Dict[str, Any]] = []
         self.model_ready = False
@@ -55,7 +58,7 @@ class GameState:
                     enable_model_explanations=True,
                 )
                 self.engine.__enter__()
-                
+
                 # Start background training thread
                 thread = threading.Thread(target=_train, daemon=True)
                 thread.start()

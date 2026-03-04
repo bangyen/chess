@@ -137,6 +137,7 @@ def _sample_pgn_stratified(
     path: str,
     max_positions: int,
     phase_weights: Dict[str, float],
+    seed: Optional[int] = None,
 ) -> List[chess.Board]:
     """Sample from a PGN file filling phase buckets proportionally.
 
@@ -174,12 +175,17 @@ def _sample_pgn_stratified(
     result: List[chess.Board] = []
     for phase in targets:
         result.extend(buckets[phase])
-    random.shuffle(result)
+
+    # Use a local Random instance for shuffling to avoid global state interference
+    rng = random.Random(seed if seed is not None else 42)  # noqa: S311
+    rng.shuffle(result)
     logger.info("Sampled %d stratified positions from PGN", len(result))
     return result[:max_positions]
 
 
-def sample_random_positions(n: int, max_random_plies: int = 24) -> List["chess.Board"]:
+def sample_random_positions(
+    n: int, max_random_plies: int = 24, seed: Optional[int] = None
+) -> List["chess.Board"]:
     """Generate random chess positions by playing random legal moves.
 
     Produces uniform (non-stratified) positions that tend toward
@@ -193,19 +199,21 @@ def sample_random_positions(n: int, max_random_plies: int = 24) -> List["chess.B
     Returns:
         List of chess board positions.
     """
+    # Use local RNG for determinism within this call
+    rng = random.Random(seed)  # noqa: S311
     boards: List[chess.Board] = []
     logger.info("Generating %d random positions...", n)
     for _ in range(n):
         b = chess.Board()
         # play random but legal moves to get middlegame-ish positions
-        plies = random.randint(10, max_random_plies)  # noqa: S311
+        plies = rng.randint(10, max_random_plies)
         for __ in range(plies):
             if b.is_game_over():
                 break
             moves = list(b.legal_moves)
             if not moves:
                 break
-            b.push(random.choice(moves))  # noqa: S311
+            b.push(rng.choice(moves))
         if not b.is_game_over():
             boards.append(b.copy(stack=False))
     logger.info("Generated %d valid positions", len(boards))
@@ -215,6 +223,7 @@ def sample_random_positions(n: int, max_random_plies: int = 24) -> List["chess.B
 def sample_stratified_positions(
     n: int,
     phase_weights: Optional[Dict[str, float]] = None,
+    seed: Optional[int] = None,
 ) -> List["chess.Board"]:
     """Generate random positions stratified by game phase.
 
@@ -269,6 +278,7 @@ def sample_stratified_positions(
     buckets: Dict[str, List[chess.Board]] = {p: [] for p in targets}
 
     logger.info("Generating %d stratified positions...", n)
+    rng = random.Random(seed)  # noqa: S311
     for phase, target in targets.items():
         lo, hi = _PHASE_PLY_RANGES[phase]
         generated = 0
@@ -276,7 +286,7 @@ def sample_stratified_positions(
         max_attempts = target * _MAX_ATTEMPTS_PER_POSITION
         while generated < target and attempts < max_attempts:
             attempts += 1
-            board = _generate_candidate(phase, lo, hi)
+            board = _generate_candidate(phase, lo, hi, rng=rng)
             if board is None:
                 continue
             if classify_phase(board) == phase:
@@ -286,7 +296,9 @@ def sample_stratified_positions(
     result: List[chess.Board] = []
     for phase in targets:
         result.extend(buckets[phase])
-    random.shuffle(result)
+
+    # Use local RNG for the final shuffle
+    rng.shuffle(result)
     return result
 
 
@@ -317,15 +329,17 @@ def _adjust_targets(targets: Dict[str, int], n: int) -> None:
 
 
 def _generate_candidate(
-    phase: str, min_plies: int, max_plies: int
+    phase: str, min_plies: int, max_plies: int, rng: Optional[random.Random] = None
 ) -> Optional[chess.Board]:
     """Play random moves and return a non-game-over board, or *None*.
 
-    For the endgame phase, moves are biased toward captures so that
+    For the endgame phase, moves are mirrored toward captures so that
     material is removed and a low piece-count is more likely.
     """
+    if rng is None:
+        rng = random.Random()  # noqa: S311
     b = chess.Board()
-    plies = random.randint(min_plies, max_plies)  # noqa: S311
+    plies = rng.randint(min_plies, max_plies)
     bias_captures = phase == "endgame"
 
     for _ in range(plies):
@@ -337,11 +351,11 @@ def _generate_candidate(
 
         if bias_captures:
             captures = [m for m in moves if b.is_capture(m)]
-            if captures and random.random() < 0.6:  # noqa: S311
-                b.push(random.choice(captures))  # noqa: S311
+            if captures and rng.random() < 0.6:
+                b.push(rng.choice(captures))
                 continue
 
-        b.push(random.choice(moves))  # noqa: S311
+        b.push(rng.choice(moves))
 
     if b.is_game_over():
         return None

@@ -370,17 +370,23 @@ canvas {
     font-weight: 500;
 }
 
-.chess-board {
+.chess-board-wrapper {
     width: 100%;
     max-width: 560px;
     aspect-ratio: 1;
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(8, 1fr);
     border: 2px solid var(--color-border);
     border-radius: 4px;
     overflow: hidden;
     box-shadow: var(--shadow-md);
+    position: relative;
+    background: var(--color-bg);
+}
+
+.chess-board-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: pointer;
 }
 
 .square {

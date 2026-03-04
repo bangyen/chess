@@ -59,7 +59,7 @@ class ChessApp {
             });
 
             const data = await response.json();
-            this.board.setPosition(data.fen);
+            this.board.setPosition(data.fen, null);
             this.board.setLegalMoves(data.legal_moves);
             this.moveCount = 0;
 
@@ -117,7 +117,7 @@ class ChessApp {
             const data = await response.json();
 
             if (data.success) {
-                this.board.setPosition(data.fen);
+                this.board.setPosition(data.fen, move);
                 this.board.setLegalMoves(data.legal_moves);
                 this.moveCount++;
 

@@ -155,15 +155,15 @@ def generate_move_reasons_with_board(
                     (
                         "capture",
                         float(piece_value),
-                        f"Captures {captured_piece.symbol()} (worth {piece_value} points)",
+                        f"Gains material by capturing a {captured_piece.symbol()} (worth {piece_value} points)",
                     )
                 )
 
         if board.gives_check(move):
-            reasons.append(("check", 2.0, "Gives check to opponent's king"))
+            reasons.append(("check", 2.0, "Delivers a check to the opponent's king"))
 
         if board.is_capture(move) or board.gives_check(move):
-            reasons.append(("tactical", 1.0, "Tactical move (capture or check)"))
+            reasons.append(("tactical", 1.0, "Executes a tactical move (capture or check)"))
 
         piece = board.piece_at(move.from_square)
         if (

@@ -5,8 +5,12 @@ An interactive chess engine that analyzes your moves and explains what you shoul
 """
 
 from __future__ import annotations
-
+ 
+import hashlib
+import os
+import pickle
 import types
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import chess
@@ -63,12 +67,12 @@ class ExplainableChessEngine:
 
         # Stockfish strength settings
         self.strength_settings: dict[str, dict[str, Any]] = {
-            "beginner": {"Skill Level": 0, "UCI_LimitStrength": True, "UCI_Elo": 800},
-            "novice": {"Skill Level": 3, "UCI_LimitStrength": True, "UCI_Elo": 1000},
+            "beginner": {"Skill Level": 0, "UCI_LimitStrength": True, "UCI_Elo": 1320},
+            "novice": {"Skill Level": 3, "UCI_LimitStrength": True, "UCI_Elo": 1350},
             "intermediate": {
                 "Skill Level": 8,
                 "UCI_LimitStrength": True,
-                "UCI_Elo": 1400,
+                "UCI_Elo": 1450,
             },
             "advanced": {"Skill Level": 15, "UCI_LimitStrength": True, "UCI_Elo": 1800},
             "expert": {"Skill Level": 20, "UCI_LimitStrength": False},  # Full strength
@@ -102,13 +106,7 @@ class ExplainableChessEngine:
             except chess.engine.EngineError as e:
                 print(f"⚠️  Warning: Failed to configure Stockfish options: {e}")
 
-            # Train surrogate model if enabled
-            if self.enable_model_explanations:
-                self.console.print(
-                    "[bold cyan]Training surrogate model for explanations...[/bold cyan]"
-                )
-                self._initialize_model()
-
+            # Configuration complete
             return self
         except Exception as e:
             raise RuntimeError(
@@ -127,12 +125,37 @@ class ExplainableChessEngine:
             self.engine.quit()
         return None
 
-    def _initialize_model(self) -> None:
+    def _get_cache_path(self) -> Path:
+        """Get the path to the cached surrogate model."""
+        cache_dir = Path.home() / ".cache" / "chess-ai"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create a unique key based on configuration
+        key_data = f"{self.depth}-{self.model_training_positions}-{self.opponent_strength}"
+        key_hash = hashlib.md5(key_data.encode()).hexdigest()
+        return cache_dir / f"surrogate_model_{key_hash}.pkl"
+
+    def initialize_model(self) -> None:
         """Train and cache surrogate model for explanations."""
+        if not self.enable_model_explanations:
+            return
+
+        cache_path = self._get_cache_path()
+        
+        # Try to load from cache first
+        if cache_path.exists():
+            try:
+                with open(cache_path, "rb") as f:
+                    cache_data = pickle.load(f)
+                
+                self.surrogate_explainer = cache_data["explainer"]
+                print("✅ Loaded surrogate model from cache")
+                return
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to load cache: {e}")
+
         try:
-            # Generate phase-stratified positions so the surrogate
-            # model sees a representative mix of opening, middlegame,
-            # and endgame states rather than only chaotic random play.
+            # Generate phase-stratified positions
             training_boards = sample_stratified_positions(self.model_training_positions)
 
             cfg = SFConfig(
@@ -154,6 +177,14 @@ class ExplainableChessEngine:
                 scaler=scaler,
                 feature_names=feature_names,
             )
+            
+            # Save to cache
+            try:
+                with open(cache_path, "wb") as f:
+                    pickle.dump({"explainer": self.surrogate_explainer}, f)
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to save cache: {e}")
+
             print("✅ Surrogate model training complete!")
         except Exception as e:
             print(f"⚠️  Warning: Model training failed: {e}")

@@ -6,12 +6,14 @@ Provides API endpoints for playing chess, analyzing positions,
 and running feature explainability audits.
 """
 
+import threading
 from typing import Any, Dict, List, Optional
 
 import chess
 import chess.engine
 from flask import Flask, jsonify, render_template, request
 
+from chess_ai.explainable_engine import ExplainableChessEngine
 from chess_ai.features.baseline import baseline_extract_features
 from chess_ai.utils.engine_discovery import find_stockfish
 
@@ -23,16 +25,42 @@ class GameState:
 
     def __init__(self) -> None:
         self.board = chess.Board()
-        self.engine: Optional[chess.engine.SimpleEngine] = None
+        self.stockfish_path = find_stockfish()
+        self.engine: Optional[ExplainableChessEngine] = None
         self.move_history: List[Dict[str, Any]] = []
+        self.model_ready = False
+        self.training_error = False
         self._init_engine()
 
     def _init_engine(self) -> None:
-        """Initialize Stockfish engine if available."""
+        """Initialize ExplainableChessEngine in a background thread."""
+        if not self.stockfish_path:
+            self.training_error = True
+            return
+
+        def _train() -> None:
+            try:
+                # The engine should already be available and entered
+                if self.engine:
+                    self.engine.initialize_model()
+                    self.model_ready = True
+            except Exception:
+                self.training_error = True
+
         try:
-            stockfish_path = find_stockfish()
-            self.engine = chess.engine.SimpleEngine.popen_uci(stockfish_path)
+            if self.stockfish_path:
+                self.engine = ExplainableChessEngine(
+                    stockfish_path=self.stockfish_path,
+                    depth=12,
+                    enable_model_explanations=True,
+                )
+                self.engine.__enter__()
+                
+                # Start background training thread
+                thread = threading.Thread(target=_train, daemon=True)
+                thread.start()
         except Exception:
+            self.training_error = True
             self.engine = None
 
     def reset(self) -> None:
@@ -60,14 +88,13 @@ class GameState:
 
         if self.engine:
             try:
-                result = self.engine.play(self.board, chess.engine.Limit(depth=depth))
-                move = result.move
-                if move is not None:
-                    explanation = self._generate_explanation(move, feature_values)
-
+                # Use ExplainableChessEngine to get recommended move and explanation
+                explanation_obj = self.engine.get_move_recommendation(board=self.board)
+                if explanation_obj:
+                    move = explanation_obj.move
                     return {
                         "move": move.uci(),
-                        "explanation": explanation,
+                        "explanation": explanation_obj.overall_explanation,
                         "features": {k: float(v) for k, v in feature_values.items()},
                     }
             except Exception:  # noqa: S110
@@ -189,7 +216,28 @@ def make_move() -> Any:
     if not data or "move" not in data:
         return jsonify({"error": "Move required"}), 400
 
-    success = game_state.make_move(data["move"])
+    # Get SAN/UCI for explanation before pushing
+    move_uci = data["move"]
+    try:
+        move = chess.Move.from_uci(move_uci)
+    except ValueError:
+        return jsonify({"error": "Invalid UCI format"}), 400
+
+    if move not in game_state.board.legal_moves:
+        return jsonify({"error": "Illegal move"}), 400
+
+    # Generate explanation for the move BEFORE pushing it
+    explanation = None
+    if game_state.engine:
+        try:
+            explanation_obj = game_state.engine.explain_move(
+                move, board=game_state.board
+            )
+            explanation = explanation_obj.overall_explanation
+        except Exception:  # noqa: S110
+            pass
+
+    success = game_state.make_move(move_uci)
     if not success:
         return jsonify({"error": "Invalid move"}), 400
 
@@ -199,6 +247,7 @@ def make_move() -> Any:
             "fen": game_state.board.fen(),
             "legal_moves": [m.uci() for m in game_state.board.legal_moves],
             "is_game_over": game_state.board.is_game_over(),
+            "explanation": explanation,
         }
     )
 
@@ -241,6 +290,18 @@ def health_check() -> Any:
             "status": "healthy",
             "engine_available": game_state.engine is not None,
             "version": "1.0.0",
+        }
+    )
+
+
+@app.route("/api/engine/status", methods=["GET"])
+def engine_status() -> Any:
+    """Get surrogate model training status."""
+    return jsonify(
+        {
+            "ready": game_state.model_ready,
+            "error": game_state.training_error,
+            "engine_available": game_state.engine is not None,
         }
     )
 

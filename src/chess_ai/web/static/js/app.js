@@ -144,6 +144,12 @@ class ChessApp {
     }
 
     async requestEngineMove() {
+        const btn = document.getElementById('btn-engine-move');
+        if (btn) {
+            btn.classList.add('loading');
+            btn.disabled = true;
+        }
+
         this.updateEngineStatus('Thinking...', true);
 
         try {
@@ -162,6 +168,11 @@ class ChessApp {
         } catch (error) {
             console.error('Failed to get engine move:', error);
             this.updateEngineStatus('Error', false);
+        } finally {
+            if (btn) {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
         }
     }
 

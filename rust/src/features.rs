@@ -1,3 +1,4 @@
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use shakmaty::{
     attacks, Bitboard, CastlingMode, Chess, Color, Position, Role, Square,
@@ -9,15 +10,16 @@ use crate::eval::{phase_factor, piece_value};
 use crate::pawn_cache::{pawn_cache, pawn_zobrist, PawnCacheEntry, PAWN_CACHE_SIZE};
 use crate::see::{least_valuable_attacker, see};
 
+#[cfg(feature = "python")]
 #[pyfunction]
 pub fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
     let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
     let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
 
-    Ok(extract_features_internal(&pos))
+    Ok(extract_features(&pos))
 }
 
-fn extract_features_internal(pos: &Chess) -> BTreeMap<String, f32> {
+pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     let mut feats = BTreeMap::new();
     let turn = pos.turn();
     let opp = turn.other();
@@ -845,6 +847,7 @@ fn extract_features_internal(pos: &Chess) -> BTreeMap<String, f32> {
     feats
 }
 
+#[cfg(feature = "python")]
 #[pyfunction]
 pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) -> PyResult<BTreeMap<String, f32>> {
     let setup_base: Fen = base_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
@@ -853,8 +856,8 @@ pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) ->
     let setup_move: Fen = move_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move FEN"))?;
     let pos_move: Chess = setup_move.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move Position"))?;
 
-    let base_feats = extract_features_internal(&pos_base);
-    let mut move_feats = extract_features_internal(&pos_move);
+    let base_feats = extract_features(&pos_base);
+    let mut move_feats = extract_features(&pos_move);
 
     let us = pos_base.turn();
 

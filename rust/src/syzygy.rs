@@ -1,13 +1,16 @@
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use shakmaty::{CastlingMode, Chess};
 use shakmaty::fen::Fen;
 use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
 
+#[cfg(feature = "python")]
 #[pyclass]
 pub struct SyzygyTablebase {
     tb: Tablebase<Chess>,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl SyzygyTablebase {
     #[new]

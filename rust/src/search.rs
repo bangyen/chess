@@ -1,3 +1,4 @@
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use shakmaty::{CastlingMode, Chess, Move, Position, Role};
 use shakmaty::fen::Fen;
@@ -401,6 +402,7 @@ pub fn find_best_reply_impl(pos: &Chess, depth: u8) -> Option<String> {
 
 /// Python-facing wrapper around `find_best_reply_impl` that parses
 /// the FEN string and converts the result to a `PyResult`.
+#[cfg(feature = "python")]
 #[pyfunction]
 pub fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
     let setup: Fen = fen
@@ -447,6 +449,7 @@ pub fn calculate_forcing_swing_impl(pos: &Chess, depth: u8) -> f32 {
 
 /// Python-facing wrapper around `calculate_forcing_swing_impl` that
 /// parses the FEN string and converts the result to a `PyResult`.
+#[cfg(feature = "python")]
 #[pyfunction]
 pub fn calculate_forcing_swing(fen: &str, depth: u8) -> PyResult<f32> {
     let setup: Fen = fen

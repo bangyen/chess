@@ -54,6 +54,64 @@ impl UciEngine {
             Err(anyhow!("Unexpected response from engine: {}", line))
         }
     }
+
+    pub fn get_evaluation(&mut self, fen: &str, depth: u32) -> Result<i32> {
+        self.send_command(&format!("position fen {}", fen))?;
+        self.send_command(&format!("go depth {}", depth))?;
+        let line = self.wait_for_line("score cp", Duration::from_secs(30))?;
+        
+        // Parse "info depth 12 ... score cp 15 ..."
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        for i in 0..parts.len() {
+            if parts[i] == "cp" && i + 1 < parts.len() {
+                return Ok(parts[i+1].parse()?);
+            }
+            if parts[i] == "mate" && i + 1 < parts.len() {
+                let m: i32 = parts[i+1].parse()?;
+                return Ok(if m > 0 { 10000 } else { -10000 });
+            }
+        }
+        Err(anyhow!("Could not find score in output: {}", line))
+    }
+
+    pub fn get_top_moves(&mut self, fen: &str, depth: u32, multipv: u32) -> Result<Vec<(String, i32)>> {
+        self.send_command(&format!("setoption name MultiPV value {}", multipv))?;
+        self.send_command(&format!("position fen {}", fen))?;
+        self.send_command(&format!("go depth {}", depth))?;
+        
+        let mut moves = Vec::new();
+        let stdout = self.process.stdout.as_mut().ok_or_else(|| anyhow!("Failed to open stdout"))?;
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+
+        while reader.read_line(&mut line)? > 0 {
+            if line.contains("bestmove") {
+                break;
+            }
+            if line.contains("score cp") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                let mut cp = 0;
+                let mut pv = String::new();
+                for i in 0..parts.len() {
+                    if parts[i] == "cp" && i + 1 < parts.len() {
+                        cp = parts[i+1].parse()?;
+                    }
+                    if parts[i] == "pv" && i + 1 < parts.len() {
+                        pv = parts[i+1].to_string();
+                    }
+                }
+                if !pv.is_empty() {
+                    moves.push((pv, cp));
+                }
+            }
+            line.clear();
+        }
+        
+        // Reset MultiPV
+        self.send_command("setoption name MultiPV value 1")?;
+        
+        Ok(moves)
+    }
 }
 
 pub struct ExplainableEngine {

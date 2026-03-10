@@ -2,6 +2,7 @@
 use pyo3::prelude::*;
 
 pub mod engine;
+pub mod ml;
 pub mod eval;
 pub mod features;
 pub mod pawn_cache;

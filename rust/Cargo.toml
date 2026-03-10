@@ -20,6 +20,11 @@ clap = { version = "4.4", features = ["derive"] }
 tokio = { version = "1.32", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+ndarray = { version = "0.16", features = ["serde"] }
+linfa = "0.8.1"
+linfa-elasticnet = "0.8.1"
+linfa-preprocessing = "0.8.1"
+rand = "0.8"
 pyo3 = { version = "0.28.0", optional = true }
 
 [features]

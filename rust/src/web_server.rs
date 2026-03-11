@@ -159,7 +159,9 @@ async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState>
         .board
         .legal_moves()
         .iter()
-        .map(|m| m.to_string())
+        .map(|m| {
+            shakmaty::uci::UciMove::from_move(*m, shakmaty::CastlingMode::Standard).to_string()
+        })
         .collect();
 
     Json(BoardState {
@@ -206,20 +208,20 @@ async fn make_move_handler(
         return (StatusCode::BAD_REQUEST, "Illegal move").into_response();
     }
 
-    let mut explanation = None;
-    if let (Some(model), Some(engine_arc)) = (&s.model, &s.engine) {
+    // Sync engine if it exists
+    if let Some(engine_arc) = &s.engine {
+        let mut engine = engine_arc.write().unwrap();
+        let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always)
+            .to_string();
+        let _ = engine.set_position(&fen);
+        let _ = engine.make_move(&uci_move.to_string());
+    }
+
+    let mut explanation: Option<String> = None;
+    if let Some(model) = &s.model {
         let explainer = SurrogateExplainer::new(model.clone());
         let mut board_after = s.board.clone();
         board_after.play_unchecked(m);
-
-        // Sync engine for consistency
-        {
-            let mut engine = engine_arc.write().unwrap();
-            let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always)
-                .to_string();
-            let _ = engine.set_position(&fen);
-            let _ = engine.make_move(&uci_move.to_string());
-        }
 
         let feats_after = extract_features(&board_after);
         let reasons = explainer.explain_move(&feats_after, 3, 0.05);
@@ -242,7 +244,9 @@ async fn make_move_handler(
         .board
         .legal_moves()
         .iter()
-        .map(|m| m.to_string())
+        .map(|m| {
+            shakmaty::uci::UciMove::from_move(*m, shakmaty::CastlingMode::Standard).to_string()
+        })
         .collect();
 
     Json(MoveResponse {

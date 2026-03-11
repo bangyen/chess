@@ -1,14 +1,14 @@
 # Contributing to Chess AI
 
-Welcome! Thank you for your interest in contributing to the Chess AI project. This project aims to provide explainable chess analysis tools.
+Welcome! Thank you for your interest in contributing to the Chess AI project. This project provides explainable chess analysis tools, now fully implemented in Rust.
 
 ## Developer Quickstart
 
-1.  **Dependencies**: We use `uv` and `just`.
-    *   Install `uv`: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+1.  **Dependencies**: We use `rust` and `just`.
+    *   Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
     *   Install `just`: `brew install just` (or see [justfile](https://github.com/casey/just))
 
-2.  **Environment**: Initialize the environment:
+2.  **Environment**: Build the project:
     ```bash
     just build
     ```
@@ -25,21 +25,20 @@ Welcome! Thank you for your interest in contributing to the Chess AI project. Th
 ## Development Workflow
 
 -   **Formatting**: Use `just fmt`.
--   **Linting**: Use `just lint`.
--   **Type Checking**: Use `just type`.
+-   **Linting**: Use `just lint` (runs `cargo clippy`).
 -   **Full Verification**: Run `just all`.
 
 ## Project Structure
 
--   `src/chess_ai/`: Core logic.
-    -   `audit/`: Feature set audit and worker processes.
-    -   `engine/`: Stockfish interface, Syzygy, and recommendations.
-    -   `features/`: Chess feature extraction.
--   `tests/`: Unit and integration tests.
--   `rust/`: Performance-critical Rust extensions.
+-   `rust/`: Core engine, ML surrogate model, and web server.
+    -   `src/engine/`: Stockfish interface and explainable engine logic.
+    -   `src/features/`: Chess feature extraction for the surrogate model.
+    -   `src/ml/`: Native Rust ML implementation using `linfa`.
+    -   `src/web_server.rs`: Axum-based web dashboard.
+-   `web/`: Front-end assets (templates and static files).
 
 ## Refactoring Guidelines
 
 -   **Modularize**: Keep files small and focused. Avoid monolithic logic files.
 -   **Pruning**: Remove unused code and over-abstractions.
--   **Tests**: Ensure tests are organized and follow the `src` structure.
+-   **Tests**: Ensure tests are organized and follow the internal module structure.

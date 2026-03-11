@@ -1,12 +1,10 @@
 use shakmaty::bitboard::Bitboard;
-use shakmaty::fen::Fen;
-use shakmaty::{attacks, CastlingMode, Chess, Color, Position, Role, Square};
+use shakmaty::{attacks, Chess, Color, Position, Role, Square};
 use std::collections::BTreeMap;
 
 use crate::eval::{phase_factor, piece_value};
 use crate::pawn_cache::{pawn_cache, pawn_zobrist, PawnCacheEntry, PAWN_CACHE_SIZE};
 use crate::see::{least_valuable_attacker, see};
-
 
 pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     let mut feats = BTreeMap::new();
@@ -113,7 +111,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
         for f_off in -1..=1 {
             let f = file as i8 + f_off;
-            if f < 0 || f > 7 {
+            if !(0..=7).contains(&f) {
                 continue;
             }
             let check_file = shakmaty::File::new(f as u32);
@@ -170,9 +168,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
             if pawns_on_file.is_empty() {
                 open += 1;
-            } else if opp_pawns.is_empty() && !my_pawns.is_empty() {
-                semi_open += 1;
-            } else if my_pawns.is_empty() && !opp_pawns.is_empty() {
+            } else if my_pawns.is_empty() || opp_pawns.is_empty() {
                 semi_open += 1;
             }
         }
@@ -316,7 +312,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
             } else {
                 7 - rank as usize
             };
-            if rel_rank < 3 || rel_rank > 5 {
+            if !(3..=5).contains(&rel_rank) {
                 continue;
             }
 
@@ -394,8 +390,8 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         for s in 0..15 {
             let mut diag_pieces = 0;
             for f in 0..8 {
-                let r = s as i32 - f as i32;
-                if r >= 0 && r < 8 {
+                let r = s - f;
+                if (0..8).contains(&r) {
                     let sq = Square::from_coords(
                         shakmaty::File::new(f as u32),
                         shakmaty::Rank::new(r as u32),
@@ -414,8 +410,8 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         for d in -7..8 {
             let mut diag_pieces = 0;
             for f in 0..8 {
-                let r = f as i32 - d;
-                if r >= 0 && r < 8 {
+                let r = f - d;
+                if (0..8).contains(&r) {
                     let sq = Square::from_coords(
                         shakmaty::File::new(f as u32),
                         shakmaty::Rank::new(r as u32),
@@ -465,7 +461,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                 let mut has_neighbor = false;
                 for f_off in [-1, 1] {
                     let f = file as i32 + f_off;
-                    if f >= 0 && f < 8 {
+                    if (0..8).contains(&f) {
                         let adj_file = shakmaty::File::new(f as u32);
                         let adj_bb = Bitboard::from_file(adj_file);
                         if !(board.by_role(Role::Pawn) & board.by_color(side) & adj_bb).is_empty() {
@@ -509,7 +505,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                 let mut is_supported = false;
                 for f_off in [-1, 1] {
                     let f = file as i32 + f_off;
-                    if f >= 0 && f < 8 {
+                    if (0..8).contains(&f) {
                         let adj_file = shakmaty::File::new(f as u32);
                         let adj_bb = Bitboard::from_file(adj_file);
                         let adj_pawns = board.by_role(Role::Pawn) & board.by_color(side) & adj_bb;
@@ -610,7 +606,7 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         }
         (safe_count as f32).min(40.0)
     };
-    feats.insert("safe_mobility_us".to_string(), get_safe_mobility(&pos));
+    feats.insert("safe_mobility_us".to_string(), get_safe_mobility(pos));
     feats.insert(
         "safe_mobility_them".to_string(),
         get_safe_mobility(&opp_pos),
@@ -894,238 +890,11 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     feats
 }
 
-
-fn calculate_hanging_pieces(pos: &Chess) -> (i32, i32, i32) {
-    let side = pos.turn();
-    let opp = side.other();
-    let board = pos.board();
-    let occupied = board.occupied();
-    let mut cnt = 0;
-    let mut v_max = 0;
-    let mut near_k = 0;
-
-    let opp_king_sq = pos.board().king_of(opp);
-
-    for sq in board.by_color(opp) {
-        let attackers = board.attacks_to(sq, side, occupied).count();
-        let defenders = board.attacks_to(sq, opp, occupied).count();
-
-        if attackers > 0 && defenders == 0 {
-            cnt += 1;
-            let val = match board.piece_at(sq).map(|p| p.role) {
-                Some(Role::Pawn) => 1,
-                Some(Role::Knight) => 3,
-                Some(Role::Bishop) => 3,
-                Some(Role::Rook) => 5,
-                Some(Role::Queen) => 9,
-                _ => 0,
-            };
-            if val > v_max {
-                v_max = val;
-            }
-            if let Some(ksq) = opp_king_sq {
-                if sq.distance(ksq) <= 1 {
-                    near_k = 1;
-                }
-            }
-        }
-    }
-    (cnt, v_max, near_k)
-}
-
-fn checkability_count(pos: &Chess) -> (i32, i32) {
-    let mut quiet = 0;
-    let mut capture = 0;
-    for m in pos.legal_moves() {
-        let mut next = pos.clone();
-        next.play_unchecked(m);
-        if next.is_check() {
-            if m.is_capture() {
-                capture += 1;
-            } else {
-                quiet += 1;
-            }
-        }
-    }
-    (quiet, capture)
-}
-
-fn confinement_count_internal(pos: &Chess, constrained_side: Color) -> i32 {
-    let mut count = 0;
-    let board = pos.board();
-    let opp = constrained_side.other();
-    let occupied = board.occupied();
-
-    let pieces = (board.by_role(Role::Knight) | board.by_role(Role::Bishop))
-        & board.by_color(constrained_side);
-
-    for sq in pieces {
-        let mut safe = 0;
-        // Check moves from this square
-        for m in pos.legal_moves() {
-            if m.from() == Some(sq) {
-                let to = m.to();
-                let attackers = board.attacks_to(to, opp, occupied).count();
-                let defenders = board.attacks_to(to, constrained_side, occupied).count();
-                if attackers <= defenders {
-                    safe += 1;
-                }
-            }
-        }
-        if safe <= 2 {
-            count += 1;
-        }
-    }
-    count
-}
-
-struct PPMomentum {
-    count: f32,
-    min_dist: f32,
-    runners_clear: f32,
-    blockaded: f32,
-    rook_behind: f32,
-}
-
-fn pp_momentum_snapshot(pos: &Chess, side: Color) -> PPMomentum {
-    let mut m = PPMomentum {
-        count: 0.0,
-        min_dist: 8.0,
-        runners_clear: 0.0,
-        blockaded: 0.0,
-        rook_behind: 0.0,
-    };
-    let board = pos.board();
-
-    let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
-    for sq in my_pawns {
-        if !is_passed_internal(board, sq, side) {
-            continue;
-        }
-
-        m.count += 1.0;
-        let dist = match side {
-            Color::White => 7 - sq.rank() as i32,
-            Color::Black => sq.rank() as i32,
-        };
-        if (dist as f32) < m.min_dist {
-            m.min_dist = dist as f32;
-        }
-
-        if is_runner_clear(board, sq, side) {
-            m.runners_clear += 1.0;
-        }
-        if is_blockaded(board, sq, side) {
-            m.blockaded += 1.0;
-        }
-        if has_rook_behind(board, sq, side) {
-            m.rook_behind += 1.0;
-        }
-    }
-    m
-}
-
-fn is_passed_internal(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    let file = sq.file() as i8;
-    let rank = sq.rank() as i8;
-    let opp = side.other();
-    let enemy_pawns = board.by_role(Role::Pawn) & board.by_color(opp);
-
-    for f_off in -1..=1 {
-        let f = file + f_off;
-        if f < 0 || f > 7 {
-            continue;
-        }
-
-        // Squares ahead on this file
-        let ranks = if side == Color::White {
-            rank + 1..8
-        } else {
-            0..rank
-        };
-        for r in ranks {
-            let check_sq =
-                Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
-            if enemy_pawns.contains(check_sq) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn is_blockaded(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    let next_rank = match side {
-        Color::White => sq.rank().offset(1),
-        Color::Black => sq.rank().offset(-1),
-    };
-    if let Some(r) = next_rank {
-        let next_sq = Square::from_coords(sq.file(), r);
-        if let Some(p) = board.piece_at(next_sq) {
-            return p.color != side;
-        }
-    }
-    false
-}
-
-fn is_runner_clear(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    if is_blockaded(board, sq, side) {
-        return false;
-    }
-
-    let file = sq.file();
-    let rank = sq.rank();
-    let opp = side.other();
-
-    for f_off in -1..=1 {
-        let f = file as i8 + f_off;
-        if f < 0 || f > 7 {
-            continue;
-        }
-        let check_file = shakmaty::File::new(f as u32);
-
-        let near_ranks = match side {
-            Color::White => [rank.offset(1), rank.offset(2)],
-            Color::Black => [rank.offset(-1), rank.offset(-2)],
-        };
-
-        for r_opt in near_ranks {
-            if let Some(r) = r_opt {
-                let check_sq = Square::from_coords(check_file, r);
-                if let Some(p) = board.piece_at(check_sq) {
-                    if p.role == Role::Pawn && p.color == opp {
-                        return false;
-                    }
-                }
-            }
-        }
-    }
-    true
-}
-
-fn has_rook_behind(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    let file = sq.file();
-    let rank = sq.rank();
-
-    let ranks = match side {
-        Color::White => (0..rank as usize).rev().collect::<Vec<_>>(),
-        Color::Black => (rank as usize + 1..8).collect::<Vec<_>>(),
-    };
-
-    for r in ranks {
-        let check_sq = Square::from_coords(file, shakmaty::Rank::new(r as u32));
-        if let Some(p) = board.piece_at(check_sq) {
-            if p.role == Role::Rook && p.color == side {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use shakmaty::fen::Fen;
+    use shakmaty::CastlingMode;
 
     #[test]
     fn test_extract_features_includes_see() {

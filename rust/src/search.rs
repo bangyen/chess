@@ -50,9 +50,9 @@ pub struct SearchContext {
     pub allow_null: bool,
 }
 
-impl SearchContext {
+impl Default for SearchContext {
     /// Allocate a fresh search context with an empty TT.
-    pub fn new() -> Self {
+    fn default() -> Self {
         SearchContext {
             tt: vec![TTEntry::default(); TT_SIZE],
             killers: [[None; 2]; MAX_PLY],
@@ -60,6 +60,13 @@ impl SearchContext {
             ply: 0,
             allow_null: true,
         }
+    }
+}
+
+impl SearchContext {
+    /// Allocate a fresh search context with an empty TT.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Probe the TT for a matching entry.  Returns `None` when the
@@ -135,7 +142,7 @@ fn score_moves(
         .iter()
         .map(|m| {
             let score;
-            if tt_move.map_or(false, |tm| tm == m) {
+            if tt_move == Some(m) {
                 score = 30000;
             } else if m.is_promotion() {
                 score = 20000;

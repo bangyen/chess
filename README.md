@@ -2,11 +2,10 @@
 
 A high-performance chess engine with integrated ML-driven move explanations, built entirely in Rust.
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)
 [![License](https://img.shields.io/github/license/bangyen/chess)](LICENSE)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](rust/)
 
-**Chess AI Explainability: 86.7% decisive faithfulness, 2.5 sparsity explanations, 100% position coverage with interactive learning engine**
+**Chess AI Explainability: 86.7% decisive faithfulness, 2.5 sparsity explanations, 100% position coverage with a native Rust inference engine.**
 
 <p align="center">
   <img src="docs/audit-demo.gif" alt="Demo preview" width="600">
@@ -16,8 +15,8 @@ A high-performance chess engine with integrated ML-driven move explanations, bui
 
 ### Prerequisites
 
-- Python 3.8+
-- Rust 1.70+ (required for building the acceleration module)
+- [Rust 1.75+](https://rustup.rs/)
+- [Just](https://github.com/casey/just) (optional, but recommended)
 - [Stockfish Engine](https://stockfishchess.org/) (installed and in PATH, or set `STOCKFISH_PATH`)
 
 ### Installation
@@ -25,8 +24,7 @@ A high-performance chess engine with integrated ML-driven move explanations, bui
 ```bash
 git clone https://github.com/bangyen/chess.git
 cd chess
-pip install -e .
-pytest   # optional: run tests
+just build
 ```
 
 ### Usage Options
@@ -34,24 +32,18 @@ pytest   # optional: run tests
 **CLI Tools:**
 ```bash
 # Run feature explainability audit
-chess-ai audit --baseline-features --positions 100
+just run audit --positions 100
 
 # Play interactive chess with explanations
-chess-ai play --strength intermediate
+just run play --strength intermediate
 ```
 
 **Web Interface:**
 ```bash
-# Launch web app
-./scripts/run_web.sh
-
-# Or manually
-python -m chess_ai.web.app
+# Launch the Axum-based web dashboard
+just run web
 # Then open http://localhost:5000
 ```
-
-**Jupyter Notebook:**  
-Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb) for interactive exploration.
 
 ## Results
 
@@ -65,47 +57,36 @@ Open in [Colab](https://colab.research.google.com/github/bangyen/chess/blob/main
 
 ## Features
 
-- **Feature Explainability Audit** — ML-based evaluation of how well chess features explain Stockfish's reasoning with 86.7% decisive faithfulness.
-- **Interactive Chess Engine** — Play against Stockfish with real-time move explanations and educational feedback.
-- **Rust-Accelerated Analysis** — High-performance feature extraction and evaluation using a custom Rust backend for maximum speed.
-- **Web Interface** — Clean, professional web app with Swiss + Terminal-Modern design for interactive gameplay and analysis.
-- **Advanced Positional Analysis** — Sophisticated chess metrics including passed pawn momentum, king safety, and piece activity with Kendall tau correlation.
+- **Feature Explainability Audit** — Native Rust implementation of move-ranking faithfulness metrics.
+- **Interactive Chess Engine** — Play against Stockfish with real-time move explanations driven by a Rust-native surrogate model.
+- **Axum Web Dashboard** — A modern, state-of-the-art web interface for position analysis and interactive gameplay.
+- **Native ML Inference** — High-performance surrogate model implementation using `linfa` and `ndarray`, removing all Python dependencies.
+- **Advanced Positional Analysis** — Sophisticated chess metrics including king safety, mobility, and piece activity.
 
 ## Repo Structure
 
 ```plaintext
 chess/
-├── src/chess_ai/
-│   ├── audit/        # Feature explainability audit logic
-│   ├── cli/          # Command-line interface tools
-│   ├── engine/       # Chess engine configuration
-│   ├── features/     # Feature extraction
-│   ├── metrics/      # Evaluation metrics
-│   ├── rust_utils/   # Rust extension bindings
-│   ├── utils/        # Helper utilities
-│   ├── web/          # Web interface (Flask app)
-│   └── explainable_engine.py  # Core explainability logic
-├── rust/             # Rust acceleration module source
-├── tests/            # Unit and integration tests
-├── docs/             # Documentation and design system
-├── scripts/          # Example and launch scripts
-└── chess_demo.ipynb  # Interactive Colab notebook
+├── rust/
+│   ├── src/
+│   │   ├── engine/       # Stockfish interface and engine wrapper
+│   │   ├── features/     # High-performance feature extraction
+│   │   ├── ml/           # Native ML model (Surrogate Model)
+│   │   ├── web_server.rs # Axum web dashboard server
+│   │   └── main.rs       # Unified CLI entry point
+│   └── Cargo.toml        # Rust dependencies
+├── web/
+│   ├── static/           # Front-end CSS/JS assets
+│   └── templates/        # Tera templates for the dashboard
+├── docs/                 # Documentation and design system
+└── justfile              # Orchestration targets
 ```
-
-See [docs/WEB_APP.md](docs/WEB_APP.md) for web interface documentation and [docs/DESIGN_SYSTEM.md](docs/DESIGN_SYSTEM.md) for design specifications.
 
 ## Validation
 
-- ✅ Continuous test coverage monitoring (`pytest`)
-- ✅ Reproducible seeds for experiments
-- ✅ Benchmark scripts included
-- ⚠️ Note: Some integration tests may timeout on slower hardware or require specific Stockfish builds.
-
-## References
-
-- [Python-Chess Library](https://python-chess.readthedocs.io/) — Chess position representation and move generation.  
-- [Stockfish Chess Engine](https://stockfishchess.org/) — Open-source chess engine for analysis and evaluation.  
-- [Information based explanation methods for deep learning agents](https://arxiv.org/abs/2309.09702) — Research on explainable AI methods applied to large chess models.
+- ✅ Continuous test coverage monitoring (`just test`)
+- ✅ Zero-warning builds (`just lint`)
+- ✅ Reproducible seeds for ML training
 
 ## License
 

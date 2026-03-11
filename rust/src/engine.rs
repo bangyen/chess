@@ -142,6 +142,13 @@ impl ExplainableEngine {
         Ok(())
     }
 
+    pub fn set_position(&mut self, fen: &str) -> Result<()> {
+        let setup: Fen = fen.parse().map_err(|e| anyhow!("Invalid FEN: {:?}", e))?;
+        self.pos = setup.into_position(shakmaty::CastlingMode::Standard).map_err(|e| anyhow!("Invalid position: {:?}", e))?;
+        self.history.clear();
+        Ok(())
+    }
+
     pub fn get_best_move(&mut self, depth: u32) -> Result<String> {
         let fen = Fen::from_position(&self.pos, shakmaty::EnPassantMode::Always).to_string();
         self.uci.get_best_move(&fen, depth)

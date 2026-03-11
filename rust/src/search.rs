@@ -1,8 +1,8 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use shakmaty::{CastlingMode, Chess, Move, Position, Role};
+use shakmaty::{Chess, Move, Position, Role, CastlingMode};
+#[cfg(feature = "python")]
 use shakmaty::fen::Fen;
-
 use crate::eval::{evaluate, piece_value};
 use crate::zobrist::{piece_index, zobrist_hash};
 

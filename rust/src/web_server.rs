@@ -1,0 +1,375 @@
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{Html, IntoResponse},
+    routing::{get, post},
+    Json, Router,
+};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
+use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
+use shakmaty::{Chess, Position};
+use anyhow::Result;
+use tera::{Context, Tera};
+
+use crate::engine::ExplainableEngine;
+use crate::features::extract_features;
+use crate::ml::{PhaseEnsemble, SurrogateExplainer, train_surrogate_model};
+
+#[derive(Clone)]
+pub struct GameState {
+    pub board: Chess,
+    pub engine: Option<Arc<RwLock<ExplainableEngine>>>,
+    pub model: Option<PhaseEnsemble>,
+    pub stockfish_path: String,
+    pub model_ready: bool,
+    pub training_error: bool,
+}
+
+impl GameState {
+    pub fn new(stockfish_path: String) -> Self {
+        GameState {
+            board: Chess::default(),
+            engine: None,
+            model: None,
+            stockfish_path,
+            model_ready: false,
+            training_error: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.board = Chess::default();
+    }
+}
+
+type SharedState = Arc<RwLock<GameState>>;
+
+#[derive(Serialize)]
+struct BoardState {
+    fen: String,
+    legal_moves: Vec<String>,
+    is_game_over: bool,
+    result: Option<String>,
+    turn: String,
+}
+
+#[derive(Deserialize)]
+struct MoveRequest {
+    #[serde(rename = "move")]
+    move_uci: String,
+}
+
+#[derive(Serialize)]
+struct MoveResponse {
+    success: bool,
+    fen: String,
+    legal_moves: Vec<String>,
+    is_game_over: bool,
+    explanation: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct EngineMoveRequest {
+    depth: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct EngineMoveResponse {
+    #[serde(rename = "move")]
+    mv: String,
+    explanation: String,
+    features: BTreeMap<String, f32>,
+}
+
+#[derive(Serialize)]
+struct AnalysisResponse {
+    features: BTreeMap<String, f32>,
+    fen: String,
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: String,
+    engine_available: bool,
+    version: String,
+}
+
+#[derive(Serialize)]
+struct EngineStatusResponse {
+    ready: bool,
+    error: bool,
+    engine_available: bool,
+}
+
+async fn get_dashboard(State(_state): State<SharedState>) -> impl IntoResponse {
+    let mut tera = Tera::default();
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    
+    let template_paths = [
+        current_dir.join("src/chess_ai/web/templates/dashboard.html"),
+        current_dir.join("../src/chess_ai/web/templates/dashboard.html"),
+    ];
+
+    let mut loaded_error = String::new();
+    let mut loaded = false;
+    for path in &template_paths {
+        if let Some(path_str) = path.to_str() {
+            match tera.add_template_file(path_str, Some("dashboard.html")) {
+                Ok(_) => {
+                    loaded = true;
+                    break;
+                },
+                Err(e) => {
+                    loaded_error.push_str(&format!("{}: {}; ", path_str, e));
+                }
+            }
+        }
+    }
+    
+    if !loaded {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load dashboard.html template. Errors: {}", loaded_error)).into_response();
+    }
+
+    let context = Context::new();
+    match tera.render("dashboard.html", &context) {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to render template: {}", e)).into_response(),
+    }
+}
+
+async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState> {
+    let s = state.read().unwrap();
+    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    let legal_moves = s.board.legal_moves().iter()
+        .map(|m| m.to_string())
+        .collect();
+    
+    Json(BoardState {
+        fen,
+        legal_moves,
+        is_game_over: s.board.is_game_over(),
+        result: if s.board.is_game_over() { Some(format!("{:?}", s.board.outcome())) } else { None },
+        turn: if s.board.turn().is_white() { "white".to_string() } else { "black".to_string() },
+    })
+}
+
+async fn new_game_handler(State(state): State<SharedState>) -> Json<BoardState> {
+    {
+        let mut s = state.write().unwrap();
+        s.reset();
+    }
+    get_state_handler(State(state)).await
+}
+
+async fn make_move_handler(State(state): State<SharedState>, Json(req): Json<MoveRequest>) -> impl IntoResponse {
+    let mut s = state.write().unwrap();
+    let uci_move: shakmaty::uci::UciMove = match req.move_uci.parse() {
+        Ok(m) => m,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid UCI").into_response(),
+    };
+
+    let m = match uci_move.to_move(&s.board) {
+        Ok(m) => m,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Illegal move").into_response(),
+    };
+
+    if !s.board.legal_moves().contains(&m) {
+        return (StatusCode::BAD_REQUEST, "Illegal move").into_response();
+    }
+
+    let mut explanation = None;
+    if let (Some(model), Some(engine_arc)) = (&s.model, &s.engine) {
+        let explainer = SurrogateExplainer::new(model.clone());
+        let mut board_after = s.board.clone();
+        board_after.play_unchecked(m);
+        
+        // Sync engine for consistency
+        {
+            let mut engine = engine_arc.write().unwrap();
+            let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+            let _ = engine.set_position(&fen);
+            let _ = engine.make_move(&uci_move.to_string());
+        }
+
+        let feats_after = extract_features(&board_after);
+        let reasons = explainer.explain_move(&feats_after, 3, 0.05);
+        if !reasons.is_empty() {
+            explanation = Some(reasons.iter().map(|(_, _, text)| text.clone()).collect::<Vec<_>>().join(" · "));
+        }
+    }
+
+    s.board.play_unchecked(m);
+
+    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    let legal_moves = s.board.legal_moves().iter()
+        .map(|m| m.to_string())
+        .collect();
+
+    Json(MoveResponse {
+        success: true,
+        fen,
+        legal_moves,
+        is_game_over: s.board.is_game_over(),
+        explanation,
+    }).into_response()
+}
+
+async fn engine_move_handler(State(state): State<SharedState>, Json(req): Json<EngineMoveRequest>) -> impl IntoResponse {
+    let s = state.read().unwrap();
+    if s.board.is_game_over() {
+        return (StatusCode::BAD_REQUEST, "Game over").into_response();
+    }
+
+    let depth = req.depth.unwrap_or(12);
+    let engine_arc = match &s.engine {
+        Some(e) => e.clone(),
+        None => return (StatusCode::SERVICE_UNAVAILABLE, "Engine not available").into_response(),
+    };
+
+    let mv_uci = {
+        let mut engine = engine_arc.write().unwrap();
+        let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+        engine.set_position(&fen).unwrap();
+        engine.get_best_move(depth).unwrap()
+    };
+
+    let mut explanation = "No explanation available".to_string();
+    if let Some(model) = &s.model {
+        let explainer = SurrogateExplainer::new(model.clone());
+        let uci_move: shakmaty::uci::UciMove = mv_uci.parse().unwrap();
+        let m = uci_move.to_move(&s.board).unwrap();
+        let mut board_after = s.board.clone();
+        board_after.play_unchecked(m);
+        let feats_after = extract_features(&board_after);
+        let reasons = explainer.explain_move(&feats_after, 3, 0.05);
+        if !reasons.is_empty() {
+            explanation = reasons.iter().map(|(_, _, text)| text.clone()).collect::<Vec<_>>().join(" · ");
+        }
+    }
+
+    let feats = extract_features(&s.board);
+
+    Json(EngineMoveResponse {
+        mv: mv_uci,
+        explanation,
+        features: feats,
+    }).into_response()
+}
+
+async fn analyze_features_handler(State(state): State<SharedState>) -> Json<AnalysisResponse> {
+    let s = state.read().unwrap();
+    let feats = extract_features(&s.board);
+    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    
+    Json(AnalysisResponse {
+        features: feats,
+        fen,
+    })
+}
+
+async fn health_handler(State(state): State<SharedState>) -> Json<HealthResponse> {
+    let s = state.read().unwrap();
+    Json(HealthResponse {
+        status: "healthy".to_string(),
+        engine_available: s.engine.is_some(),
+        version: "1.0.0".to_string(),
+    })
+}
+
+async fn engine_status_handler(State(state): State<SharedState>) -> Json<EngineStatusResponse> {
+    let s = state.read().unwrap();
+    Json(EngineStatusResponse {
+        ready: s.model_ready,
+        error: s.training_error,
+        engine_available: s.engine.is_some(),
+    })
+}
+
+pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Result<()> {
+    let state = Arc::new(RwLock::new(GameState::new(stockfish_path.clone())));
+    
+    // Background Initialization
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        println!("Initializing engine in background...");
+        match ExplainableEngine::new(&stockfish_path) {
+            Ok(engine) => {
+                let engine_arc = Arc::new(RwLock::new(engine));
+                {
+                    let mut s = state_clone.write().unwrap();
+                    s.engine = Some(engine_arc);
+                }
+
+                // Try to load existing model
+                if std::path::Path::new("model.json").exists() {
+                    println!("Loading existing model.json...");
+                    if let Ok(model_str) = std::fs::read_to_string("model.json") {
+                        if let Ok(model) = serde_json::from_str::<PhaseEnsemble>(&model_str) {
+                            let mut s = state_clone.write().unwrap();
+                            s.model = Some(model);
+                            s.model_ready = true;
+                            println!("Model loaded successfully.");
+                        }
+                    }
+                }
+
+                // If no model or failed to load, train one?
+                // The Flask app trains one if needed. Let's match that.
+                if !state_clone.read().unwrap().model_ready {
+                    println!("No model found. Starting background training (100 positions)...");
+                    match train_surrogate_model(&stockfish_path, 100) {
+                        Ok(ensemble) => {
+                            let mut s = state_clone.write().unwrap();
+                            s.model = Some(ensemble);
+                            s.model_ready = true;
+                            println!("Background training complete.");
+                            // Save it
+                            if let Ok(json) = serde_json::to_string_pretty(&s.model.as_ref().unwrap()) {
+                                let _ = std::fs::write("model.json", json);
+                            }
+                        },
+                        Err(e) => {
+                            let mut s = state_clone.write().unwrap();
+                            s.training_error = true;
+                            println!("Background training failed: {}", e);
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                let mut s = state_clone.write().unwrap();
+                s.training_error = true;
+                println!("Failed to initialize engine: {}", e);
+            }
+        }
+    });
+
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let static_path = if current_dir.join("src/chess_ai/web/static").exists() {
+        current_dir.join("src/chess_ai/web/static")
+    } else {
+        current_dir.join("../src/chess_ai/web/static")
+    };
+
+    let app = Router::new()
+        .route("/", get(get_dashboard))
+        .route("/api/game/state", get(get_state_handler))
+        .route("/api/game/new", post(new_game_handler))
+        .route("/api/game/move", post(make_move_handler))
+        .route("/api/engine/move", post(engine_move_handler))
+        .route("/api/analysis/features", post(analyze_features_handler))
+        .route("/api/health", get(health_handler))
+        .route("/api/engine/status", get(engine_status_handler))
+        .nest_service("/static", ServeDir::new(static_path))
+        .layer(CorsLayer::permissive())
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", host, port)).await?;
+    println!("Server running at http://{}:{}", host, port);
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}

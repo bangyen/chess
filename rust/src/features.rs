@@ -1,9 +1,10 @@
+#![allow(dead_code)]
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use shakmaty::{
-    attacks, Bitboard, CastlingMode, Chess, Color, Position, Role, Square,
-};
-use shakmaty::fen::Fen;
+use shakmaty::{Color, Position, Role, Square, Chess, attacks};
+#[cfg(feature = "python")]
+use shakmaty::{Board, CastlingMode, fen::Fen};
+use shakmaty::bitboard::Bitboard;
 use std::collections::BTreeMap;
 
 use crate::eval::{phase_factor, piece_value};

@@ -90,7 +90,7 @@ pub fn train_surrogate_model(
     let mut engine = UciEngine::new(engine_path)?;
     let boards = generate_stratified_positions(n_positions);
     
-    let mut X_raw = Vec::new();
+    let mut x_raw = Vec::new();
     let mut y_raw = Vec::new();
     let mut feature_names = Vec::new();
     let mut set_feature_names = false;
@@ -149,31 +149,31 @@ pub fn train_surrogate_model(
                     for name in &feature_names {
                         row.push(*feats.get(name).unwrap_or(&0.0) as f64);
                     }
-                    X_raw.push(row);
+                    x_raw.push(row);
                     y_raw.push(delta as f64);
                 }
             }
         }
     }
 
-    if X_raw.is_empty() {
+    if x_raw.is_empty() {
         return Err(anyhow!("No training data collected"));
     }
 
-    let n_samples = X_raw.len();
+    let n_samples = x_raw.len();
     let n_features = feature_names.len();
-    let X_mat = Array2::from_shape_vec((n_samples, n_features), X_raw.into_iter().flatten().collect())?;
+    let x_mat = Array2::from_shape_vec((n_samples, n_features), x_raw.into_iter().flatten().collect())?;
     let y_vec = Array1::from_vec(y_raw);
 
     let mut scaler = StandardScaler::new(n_features);
-    scaler.fit(&X_mat);
-    let X_scaled = scaler.transform(&X_mat);
+    scaler.fit(&x_mat);
+    let x_scaled = scaler.transform(&x_mat);
 
     let mut ensemble = PhaseEnsemble::new(feature_names);
     ensemble.scaler = Some(scaler);
 
     println!("Training global model with {} samples...", n_samples);
-    let dataset = Dataset::new(X_scaled.clone(), y_vec.clone());
+    let dataset = Dataset::new(x_scaled.clone(), y_vec.clone());
     let (best_alpha, best_l1) = cross_validate_elastic_net(&dataset)?;
     
     let global_model = ElasticNet::params()
@@ -199,9 +199,9 @@ pub fn train_surrogate_model(
         
         if idx.len() > 20 {
             println!("Training model for {} ({} samples)...", phase_name, idx.len());
-            let X_phase = X_scaled.select(Axis(0), &idx);
+            let x_phase = x_scaled.select(Axis(0), &idx);
             let y_phase = y_vec.select(Axis(0), &idx);
-            let ds_phase = Dataset::new(X_phase, y_phase);
+            let ds_phase = Dataset::new(x_phase, y_phase);
             let (pa, pl1) = cross_validate_elastic_net(&ds_phase)?;
             let m = ElasticNet::params()
                 .penalty(pa)

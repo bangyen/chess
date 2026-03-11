@@ -42,9 +42,19 @@ enum Commands {
         #[arg(short, long, default_value_t = 100)]
         n_positions: usize,
     },
+    /// Start the explainable chess web server
+    Server {
+        #[arg(short, long, default_value = "stockfish")]
+        stockfish_path: String,
+        #[arg(short = 'H', long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(short, long, default_value_t = 5000)]
+        port: u16,
+    },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -126,6 +136,9 @@ fn main() -> Result<()> {
             let json = serde_json::to_string_pretty(&ensemble)?;
             std::fs::write(&output_path, json)?;
             println!("✅ Model saved to {}", output_path);
+        }
+        Commands::Server { stockfish_path, host, port } => {
+            _chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
         }
     }
 

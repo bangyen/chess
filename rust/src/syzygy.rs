@@ -1,8 +1,9 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use shakmaty::{CastlingMode, Chess};
-use shakmaty::fen::Fen;
+#[cfg(feature = "python")]
 use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
+#[cfg(feature = "python")]
+use shakmaty::{Chess, Fen, CastlingMode};
 
 #[cfg(feature = "python")]
 #[pyclass]

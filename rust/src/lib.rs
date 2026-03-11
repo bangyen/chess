@@ -10,6 +10,7 @@ pub mod search;
 pub mod see;
 pub mod syzygy;
 pub mod zobrist;
+pub mod web_server;
 
 /// A Python module implemented in Rust.
 #[cfg(feature = "python")]

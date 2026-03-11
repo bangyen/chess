@@ -6,5 +6,6 @@ pub mod pawn_cache;
 pub mod search;
 pub mod see;
 pub mod syzygy;
+pub mod syzygy_utils;
 pub mod web_server;
 pub mod zobrist;

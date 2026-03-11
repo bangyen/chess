@@ -51,6 +51,29 @@ enum Commands {
         #[arg(short, long, default_value_t = 5000)]
         port: u16,
     },
+    /// Syzygy tablebase utilities
+    Syzygy {
+        #[command(subcommand)]
+        action: SyzygyAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SyzygyAction {
+    /// Download 3-5 piece tablebases
+    Download {
+        #[arg(short, long, default_value = "~/syzygy")]
+        dest: String,
+    },
+    /// Verify tablebase integration
+    Verify {
+        #[arg(short, long, default_value = "stockfish")]
+        stockfish_path: String,
+        #[arg(short, long, default_value = "~/syzygy")]
+        syzygy_path: String,
+        #[arg(short, long, default_value = "model.json")]
+        model_path: String,
+    },
 }
 
 #[tokio::main]
@@ -164,6 +187,32 @@ async fn main() -> Result<()> {
         } => {
             chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
         }
+        Commands::Syzygy { action } => match action {
+            SyzygyAction::Download { dest } => {
+                let expanded_dest = if dest.starts_with("~/") {
+                    dest.replace("~", &std::env::var("HOME")?)
+                } else {
+                    dest
+                };
+                chess_ai_rust::syzygy_utils::download_syzygy(&expanded_dest)?;
+            }
+            SyzygyAction::Verify {
+                stockfish_path,
+                syzygy_path,
+                model_path,
+            } => {
+                let expanded_path = if syzygy_path.starts_with("~/") {
+                    syzygy_path.replace("~", &std::env::var("HOME")?)
+                } else {
+                    syzygy_path
+                };
+                chess_ai_rust::syzygy_utils::verify_syzygy(
+                    &stockfish_path,
+                    &expanded_path,
+                    Some(&model_path),
+                )?;
+            }
+        },
     }
 
     Ok(())

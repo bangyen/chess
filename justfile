@@ -33,6 +33,14 @@ audit *ARGS:
 play:
     {{RUN}} play
 
+# download syzygy tablebases (3-5 piece)
+syzygy-download dest="~/syzygy":
+    {{RUN}} syzygy download --dest {{dest}}
+
+# verify syzygy tablebase integration
+syzygy-verify path="~/syzygy":
+    {{RUN}} syzygy verify --syzygy-path {{path}}
+
 # run all checks (fmt, lint, test)
 all: fmt lint test
     @echo "All checks completed!"

@@ -135,6 +135,7 @@ pub struct ExplainableEngine {
     uci: UciEngine,
     pos: Chess,
     history: Vec<Move>,
+    pub tb: Option<crate::syzygy::SyzygyTablebase>,
 }
 
 impl ExplainableEngine {
@@ -144,6 +145,7 @@ impl ExplainableEngine {
             uci,
             pos: Chess::default(),
             history: Vec::new(),
+            tb: None,
         })
     }
 

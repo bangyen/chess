@@ -69,15 +69,14 @@ enum SyzygyAction {
     Verify {
         #[arg(short, long, default_value = "stockfish")]
         stockfish_path: String,
-        #[arg(short, long, default_value = "~/syzygy")]
+        #[arg(long, default_value = "~/syzygy")]
         syzygy_path: String,
         #[arg(short, long, default_value = "model.json")]
         model_path: String,
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -133,6 +132,7 @@ async fn main() -> Result<()> {
                 println!("  {:30}: {:>8.3}", name, val);
             }
 
+            println!("Stockfish is thinking...");
             let best_move = engine.get_best_move(12)?;
             println!("\nEngine Recommendation: {}", best_move);
 
@@ -185,7 +185,10 @@ async fn main() -> Result<()> {
             host,
             port,
         } => {
-            chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(async {
+                chess_ai_rust::web_server::start_server(stockfish_path, host, port).await
+            })?;
         }
         Commands::Syzygy { action } => match action {
             SyzygyAction::Download { dest } => {

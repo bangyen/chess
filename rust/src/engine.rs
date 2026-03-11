@@ -1,7 +1,7 @@
+use anyhow::{anyhow, Result};
+use shakmaty::{fen::Fen, Chess, Move, Position};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
-use shakmaty::{Chess, Move, fen::Fen, Position};
-use anyhow::{Result, anyhow};
 use std::time::Duration;
 
 pub struct UciEngine {
@@ -22,17 +22,25 @@ impl UciEngine {
     }
 
     pub fn send_command(&mut self, cmd: &str) -> Result<()> {
-        let stdin = self.process.stdin.as_mut().ok_or_else(|| anyhow!("Failed to open stdin"))?;
+        let stdin = self
+            .process
+            .stdin
+            .as_mut()
+            .ok_or_else(|| anyhow!("Failed to open stdin"))?;
         writeln!(stdin, "{}", cmd)?;
         stdin.flush()?;
         Ok(())
     }
 
     pub fn wait_for_line(&mut self, expected: &str, _timeout: Duration) -> Result<String> {
-        let stdout = self.process.stdout.as_mut().ok_or_else(|| anyhow!("Failed to open stdout"))?;
+        let stdout = self
+            .process
+            .stdout
+            .as_mut()
+            .ok_or_else(|| anyhow!("Failed to open stdout"))?;
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
-        
+
         while reader.read_line(&mut line)? > 0 {
             if line.contains(expected) {
                 return Ok(line);
@@ -46,7 +54,7 @@ impl UciEngine {
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
         let line = self.wait_for_line("bestmove", Duration::from_secs(30))?;
-        
+
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 && parts[0] == "bestmove" {
             Ok(parts[1].to_string())
@@ -59,28 +67,37 @@ impl UciEngine {
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
         let line = self.wait_for_line("score cp", Duration::from_secs(30))?;
-        
+
         // Parse "info depth 12 ... score cp 15 ..."
         let parts: Vec<&str> = line.split_whitespace().collect();
         for i in 0..parts.len() {
             if parts[i] == "cp" && i + 1 < parts.len() {
-                return Ok(parts[i+1].parse()?);
+                return Ok(parts[i + 1].parse()?);
             }
             if parts[i] == "mate" && i + 1 < parts.len() {
-                let m: i32 = parts[i+1].parse()?;
+                let m: i32 = parts[i + 1].parse()?;
                 return Ok(if m > 0 { 10000 } else { -10000 });
             }
         }
         Err(anyhow!("Could not find score in output: {}", line))
     }
 
-    pub fn get_top_moves(&mut self, fen: &str, depth: u32, multipv: u32) -> Result<Vec<(String, i32)>> {
+    pub fn get_top_moves(
+        &mut self,
+        fen: &str,
+        depth: u32,
+        multipv: u32,
+    ) -> Result<Vec<(String, i32)>> {
         self.send_command(&format!("setoption name MultiPV value {}", multipv))?;
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
-        
+
         let mut moves = Vec::new();
-        let stdout = self.process.stdout.as_mut().ok_or_else(|| anyhow!("Failed to open stdout"))?;
+        let stdout = self
+            .process
+            .stdout
+            .as_mut()
+            .ok_or_else(|| anyhow!("Failed to open stdout"))?;
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
 
@@ -94,10 +111,10 @@ impl UciEngine {
                 let mut pv = String::new();
                 for i in 0..parts.len() {
                     if parts[i] == "cp" && i + 1 < parts.len() {
-                        cp = parts[i+1].parse()?;
+                        cp = parts[i + 1].parse()?;
                     }
                     if parts[i] == "pv" && i + 1 < parts.len() {
-                        pv = parts[i+1].to_string();
+                        pv = parts[i + 1].to_string();
                     }
                 }
                 if !pv.is_empty() {
@@ -106,10 +123,10 @@ impl UciEngine {
             }
             line.clear();
         }
-        
+
         // Reset MultiPV
         self.send_command("setoption name MultiPV value 1")?;
-        
+
         Ok(moves)
     }
 }
@@ -131,12 +148,14 @@ impl ExplainableEngine {
     }
 
     pub fn make_move(&mut self, move_uci: &str) -> Result<()> {
-        let uci_move: shakmaty::uci::UciMove = move_uci.parse()
+        let uci_move: shakmaty::uci::UciMove = move_uci
+            .parse()
             .map_err(|e| anyhow!("Invalid move format {}: {:?}", move_uci, e))?;
-        
-        let m = uci_move.to_move(&self.pos)
+
+        let m = uci_move
+            .to_move(&self.pos)
             .map_err(|e| anyhow!("Illegal or invalid move {}: {:?}", move_uci, e))?;
-        
+
         self.pos.play_unchecked(m);
         self.history.push(m);
         Ok(())
@@ -144,7 +163,9 @@ impl ExplainableEngine {
 
     pub fn set_position(&mut self, fen: &str) -> Result<()> {
         let setup: Fen = fen.parse().map_err(|e| anyhow!("Invalid FEN: {:?}", e))?;
-        self.pos = setup.into_position(shakmaty::CastlingMode::Standard).map_err(|e| anyhow!("Invalid position: {:?}", e))?;
+        self.pos = setup
+            .into_position(shakmaty::CastlingMode::Standard)
+            .map_err(|e| anyhow!("Invalid position: {:?}", e))?;
         self.history.clear();
         Ok(())
     }

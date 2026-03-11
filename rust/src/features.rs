@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use shakmaty::{Color, Position, Role, Square, Chess, attacks};
-#[cfg(feature = "python")]
-use shakmaty::{Board, CastlingMode, fen::Fen};
 use shakmaty::bitboard::Bitboard;
+use shakmaty::fen::Fen;
+#[cfg(feature = "python")]
+use shakmaty::Board;
+use shakmaty::{attacks, CastlingMode, Chess, Color, Position, Role, Square};
 use std::collections::BTreeMap;
 
 use crate::eval::{phase_factor, piece_value};
@@ -14,8 +15,12 @@ use crate::see::{least_valuable_attacker, see};
 #[cfg(feature = "python")]
 #[pyfunction]
 pub fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
-    let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
-    let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+    let setup: Fen = fen
+        .parse()
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+    let pos: Chess = setup
+        .into_position(CastlingMode::Standard)
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
 
     Ok(extract_features(&pos))
 }
@@ -62,7 +67,10 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     feats.insert("mobility_us".to_string(), (moves.len() as f32).min(40.0));
 
     let opp_pos = pos.clone().swap_turn().unwrap_or_else(|_| pos.clone());
-    feats.insert("mobility_them".to_string(), (opp_pos.legal_moves().len() as f32).min(40.0));
+    feats.insert(
+        "mobility_them".to_string(),
+        (opp_pos.legal_moves().len() as f32).min(40.0),
+    );
 
     // 3. King Ring Pressure
     let get_king_ring = |side: Color| {
@@ -88,7 +96,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
     let calc_pressure = |attacking_side: Color| {
         let ring = get_king_ring(attacking_side.other());
-        if ring.is_empty() { return 0.0; }
+        if ring.is_empty() {
+            return 0.0;
+        }
         let mut s = 0.0;
         let occupied = board.occupied();
         for sq in ring {
@@ -98,7 +108,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                 for a_sq in attackers {
                     if let Some(p) = board.piece_at(a_sq) {
                         let w = weight_pressure(p.role);
-                        if w > max_w { max_w = w; }
+                        if w > max_w {
+                            max_w = w;
+                        }
                     }
                 }
                 s += max_w;
@@ -118,7 +130,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
         for f_off in -1..=1 {
             let f = file as i8 + f_off;
-            if f < 0 || f > 7 { continue; }
+            if f < 0 || f > 7 {
+                continue;
+            }
             let check_file = shakmaty::File::new(f as u32);
             let file_bb = Bitboard::from_file(check_file);
             let ahead_bb = match side {
@@ -190,8 +204,10 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     feats.insert("semi_open_them".to_string(), sof_them);
 
     // 6. Center Control & Piece Activity
-    let center_squares = Bitboard::from_square(Square::D4) | Bitboard::from_square(Square::D5) |
-                         Bitboard::from_square(Square::E4) | Bitboard::from_square(Square::E5);
+    let center_squares = Bitboard::from_square(Square::D4)
+        | Bitboard::from_square(Square::D5)
+        | Bitboard::from_square(Square::E4)
+        | Bitboard::from_square(Square::E5);
 
     let center_us = (board.occupied() & board.by_color(turn) & center_squares).count() as f32;
     let center_them = (board.occupied() & board.by_color(opp) & center_squares).count() as f32;
@@ -245,7 +261,11 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     feats.insert("hanging_them".to_string(), count_hanging(opp));
 
     let has_bishop_pair = |side: Color| {
-        if (board.by_role(Role::Bishop) & board.by_color(side)).count() >= 2 { 1.0 } else { 0.0 }
+        if (board.by_role(Role::Bishop) & board.by_color(side)).count() >= 2 {
+            1.0
+        } else {
+            0.0
+        }
     };
     feats.insert("bishop_pair_us".to_string(), has_bishop_pair(turn));
     feats.insert("bishop_pair_them".to_string(), has_bishop_pair(opp));
@@ -255,7 +275,8 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
             Color::White => shakmaty::Rank::Seventh,
             Color::Black => shakmaty::Rank::Second,
         };
-        (board.by_role(Role::Rook) & board.by_color(side) & Bitboard::from_rank(target_rank)).count() as f32
+        (board.by_role(Role::Rook) & board.by_color(side) & Bitboard::from_rank(target_rank))
+            .count() as f32
     };
     feats.insert("rook_on_7th_us".to_string(), count_rook_7th(turn));
     feats.insert("rook_on_7th_them".to_string(), count_rook_7th(opp));
@@ -272,9 +293,13 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
             };
 
             let mut shield_files = Vec::new();
-            if let Some(f) = file.offset(-1) { shield_files.push(f); }
+            if let Some(f) = file.offset(-1) {
+                shield_files.push(f);
+            }
             shield_files.push(file);
-            if let Some(f) = file.offset(1) { shield_files.push(f); }
+            if let Some(f) = file.offset(1) {
+                shield_files.push(f);
+            }
 
             for &f in &shield_files {
                 for &r_opt in &shield_ranks {
@@ -303,8 +328,14 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         let occupied = board.occupied();
         for sq in knights {
             let rank: shakmaty::Rank = sq.rank();
-            let rel_rank = if side == Color::White { rank as usize } else { 7 - rank as usize };
-            if rel_rank < 3 || rel_rank > 5 { continue; }
+            let rel_rank = if side == Color::White {
+                rank as usize
+            } else {
+                7 - rank as usize
+            };
+            if rel_rank < 3 || rel_rank > 5 {
+                continue;
+            }
 
             let mut is_supported = false;
             for attacker_sq in board.attacks_to(sq, side, occupied) {
@@ -315,7 +346,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                     }
                 }
             }
-            if !is_supported { continue; }
+            if !is_supported {
+                continue;
+            }
 
             let mut attacked_by_pawn = false;
             for attacker_sq in board.attacks_to(sq, side.other(), occupied) {
@@ -326,7 +359,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                     }
                 }
             }
-            if attacked_by_pawn { continue; }
+            if attacked_by_pawn {
+                continue;
+            }
 
             count += 1;
         }
@@ -342,25 +377,35 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         for i in 0..8 {
             let mut file_pieces = 0;
             for r in 0..8 {
-                let sq = Square::from_coords(shakmaty::File::new(i as u32), shakmaty::Rank::new(r as u32));
+                let sq = Square::from_coords(
+                    shakmaty::File::new(i as u32),
+                    shakmaty::Rank::new(r as u32),
+                );
                 if let Some(p) = board.piece_at(sq) {
                     if p.color == side && (p.role == Role::Rook || p.role == Role::Queen) {
                         file_pieces += 1;
                     }
                 }
             }
-            if file_pieces >= 2 { count += 1; }
+            if file_pieces >= 2 {
+                count += 1;
+            }
 
             let mut rank_pieces = 0;
             for f in 0..8 {
-                let sq = Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(i as u32));
+                let sq = Square::from_coords(
+                    shakmaty::File::new(f as u32),
+                    shakmaty::Rank::new(i as u32),
+                );
                 if let Some(p) = board.piece_at(sq) {
                     if p.color == side && (p.role == Role::Rook || p.role == Role::Queen) {
                         rank_pieces += 1;
                     }
                 }
             }
-            if rank_pieces >= 2 { count += 1; }
+            if rank_pieces >= 2 {
+                count += 1;
+            }
         }
 
         for s in 0..15 {
@@ -368,7 +413,10 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
             for f in 0..8 {
                 let r = s as i32 - f as i32;
                 if r >= 0 && r < 8 {
-                    let sq = Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
+                    let sq = Square::from_coords(
+                        shakmaty::File::new(f as u32),
+                        shakmaty::Rank::new(r as u32),
+                    );
                     if let Some(p) = board.piece_at(sq) {
                         if p.color == side && (p.role == Role::Bishop || p.role == Role::Queen) {
                             diag_pieces += 1;
@@ -376,14 +424,19 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                     }
                 }
             }
-            if diag_pieces >= 2 { count += 1; }
+            if diag_pieces >= 2 {
+                count += 1;
+            }
         }
         for d in -7..8 {
             let mut diag_pieces = 0;
             for f in 0..8 {
                 let r = f as i32 - d;
                 if r >= 0 && r < 8 {
-                    let sq = Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
+                    let sq = Square::from_coords(
+                        shakmaty::File::new(f as u32),
+                        shakmaty::Rank::new(r as u32),
+                    );
                     if let Some(p) = board.piece_at(sq) {
                         if p.color == side && (p.role == Role::Bishop || p.role == Role::Queen) {
                             diag_pieces += 1;
@@ -391,7 +444,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                     }
                 }
             }
-            if diag_pieces >= 2 { count += 1; }
+            if diag_pieces >= 2 {
+                count += 1;
+            }
         }
 
         count as f32
@@ -401,7 +456,12 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
     // 11. Pawn structure features (cached by pawn Zobrist hash)
     let pawn_hash = pawn_zobrist(board);
-    let pawn_key = pawn_hash ^ if turn == Color::White { 0 } else { 0xAAAA_AAAA_AAAA_AAAA };
+    let pawn_key = pawn_hash
+        ^ if turn == Color::White {
+            0
+        } else {
+            0xAAAA_AAAA_AAAA_AAAA
+        };
 
     let pawn_feats = {
         let cache = pawn_cache().lock().unwrap();
@@ -431,7 +491,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                         }
                     }
                 }
-                if !has_neighbor { count += 1; }
+                if !has_neighbor {
+                    count += 1;
+                }
             }
             count as f32
         };
@@ -471,16 +533,25 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                         for p_sq in adj_pawns {
                             let p_rank = p_sq.rank();
                             if (side == Color::White && (p_rank as usize) <= rank_usize)
-                                || (side == Color::Black && (p_rank as usize) >= rank_usize) {
+                                || (side == Color::Black && (p_rank as usize) >= rank_usize)
+                            {
                                 is_supported = true;
                                 break;
                             }
                         }
                     }
-                    if is_supported { break; }
+                    if is_supported {
+                        break;
+                    }
                 }
-                if is_supported { continue; }
-                let stop_rank = if side == Color::White { sq.rank().offset(1) } else { sq.rank().offset(-1) };
+                if is_supported {
+                    continue;
+                }
+                let stop_rank = if side == Color::White {
+                    sq.rank().offset(1)
+                } else {
+                    sq.rank().offset(-1)
+                };
                 if let Some(r) = stop_rank {
                     let stop_sq = Square::from_coords(file, r);
                     if !(enemy_pawn_attacks & Bitboard::from_square(stop_sq)).is_empty() {
@@ -557,7 +628,10 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         (safe_count as f32).min(40.0)
     };
     feats.insert("safe_mobility_us".to_string(), get_safe_mobility(&pos));
-    feats.insert("safe_mobility_them".to_string(), get_safe_mobility(&opp_pos));
+    feats.insert(
+        "safe_mobility_them".to_string(),
+        get_safe_mobility(&opp_pos),
+    );
 
     // 13. Rook on Open File
     let rook_on_open = |side: Color| {
@@ -580,7 +654,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
     // 13b. Connected Rooks
     let connected_rooks = |side: Color| -> f32 {
-        let rooks: Vec<Square> = (board.by_role(Role::Rook) & board.by_color(side)).into_iter().collect();
+        let rooks: Vec<Square> = (board.by_role(Role::Rook) & board.by_color(side))
+            .into_iter()
+            .collect();
         if rooks.len() < 2 {
             return 0.0;
         }
@@ -589,7 +665,11 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
             return 0.0;
         }
         let between = attacks::between(r0, r1) & board.occupied();
-        if between.is_empty() { 1.0 } else { 0.0 }
+        if between.is_empty() {
+            1.0
+        } else {
+            0.0
+        }
     };
     feats.insert("connected_rooks_us".to_string(), connected_rooks(turn));
     feats.insert("connected_rooks_them".to_string(), connected_rooks(opp));
@@ -630,7 +710,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
         let them = side.other();
         for sq in board.by_color(them) {
             let victim = board.piece_at(sq).unwrap();
-            if victim.role == Role::King { continue; }
+            if victim.role == Role::King {
+                continue;
+            }
             let attackers = board.attacks_to(sq, side, occupied);
             for a_sq in attackers {
                 if let Some(attacker) = board.piece_at(a_sq) {
@@ -675,7 +757,9 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     let king_tropism = |side: Color| {
         let them = side.other();
         let enemy_king = board.king_of(them);
-        if enemy_king.is_none() { return 0.0; }
+        if enemy_king.is_none() {
+            return 0.0;
+        }
         let ksq = enemy_king.unwrap();
         let mut tropism = 0.0;
         for sq in board.by_color(side) {
@@ -698,74 +782,41 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
     // 21. PST with continuous phase interpolation
     const PST_PAWN: [i16; 64] = [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        50, 50, 50, 50, 50, 50, 50, 50,
-        10, 10, 20, 30, 30, 20, 10, 10,
-        5,  5, 10, 25, 25, 10,  5,  5,
-        0,  0,  0, 20, 20,  0,  0,  0,
-        5, -5,-10,  0,  0,-10, -5,  5,
-        5, 10, 10,-20,-20, 10, 10,  5,
-        0,  0,  0,  0,  0,  0,  0,  0
+        0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5,
+        5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10,
+        -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
     const PST_KNIGHT: [i16; 64] = [
-        -50,-40,-30,-30,-30,-30,-40,-50,
-        -40,-20,  0,  0,  0,  0,-20,-40,
-        -30,  0, 10, 15, 15, 10,  0,-30,
-        -30,  5, 15, 20, 20, 15,  5,-30,
-        -30,  0, 15, 20, 20, 15,  0,-30,
-        -30,  5, 10, 15, 15, 10,  5,-30,
-        -40,-20,  0,  5,  5,  0,-20,-40,
-        -50,-40,-30,-30,-30,-30,-40,-50
+        -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15,
+        10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15,
+        15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
     ];
     const PST_BISHOP: [i16; 64] = [
-        -20,-10,-10,-10,-10,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5, 10, 10,  5,  0,-10,
-        -10,  5,  5, 10, 10,  5,  5,-10,
-        -10,  0, 10, 10, 10, 10,  0,-10,
-        -10, 10, 10, 10, 10, 10, 10,-10,
-        -10,  5,  0,  0,  0,  0,  5,-10,
-        -20,-10,-10,-10,-10,-10,-10,-20
+        -20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5,
+        0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10,
+        10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20,
     ];
     const PST_ROOK: [i16; 64] = [
-        0,  0,  0,  0,  0,  0,  0,  0,
-        5, 10, 10, 10, 10, 10, 10,  5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        -5,  0,  0,  0,  0,  0,  0, -5,
-        0,  0,  0,  5,  5,  0,  0,  0
+        0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0,
+        0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0,
+        -5, 0, 0, 0, 5, 5, 0, 0, 0,
     ];
     const PST_QUEEN: [i16; 64] = [
-        -20,-10,-10, -5, -5,-10,-10,-20,
-        -10,  0,  0,  0,  0,  0,  0,-10,
-        -10,  0,  5,  5,  5,  5,  0,-10,
-        -5,  0,  5,  5,  5,  5,  0, -5,
-        -5,  0,  5,  5,  5,  5,  0, -5,
-        -10,  5,  5,  5,  5,  5,  0,-10,
-        -10,  0,  5,  0,  0,  0,  0,-10,
-        -20,-10,-10, -5, -5,-10,-10,-20
+        -20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0,
+        -10, -5, 0, 5, 5, 5, 5, 0, -5, -5, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10,
+        0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20,
     ];
     const PST_KING_MG: [i16; 64] = [
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -30,-40,-40,-50,-50,-40,-40,-30,
-        -20,-30,-30,-40,-40,-30,-30,-20,
-        -10,-20,-20,-20,-20,-20,-20,-10,
-        20, 20,  0,  0,  0,  0, 20, 20,
-        20, 30, 10,  0,  0, 10, 30, 20
+        -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40,
+        -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40,
+        -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20,
+        30, 10, 0, 0, 10, 30, 20,
     ];
     const PST_KING_EG: [i16; 64] = [
-        -50,-40,-30,-20,-20,-30,-40,-50,
-        -30,-20,-10,  0,  0,-10,-20,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 30, 40, 40, 30,-10,-30,
-        -30,-10, 20, 30, 30, 20,-10,-30,
-        -30,-30,  0,  0,  0,  0,-30,-30,
-        -50,-30,-30,-30,-30,-30,-30,-50
+        -50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20,
+        30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 30, 40, 40, 30, -10,
+        -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30,
+        -30, -30, -30, -30, -50,
     ];
 
     let pf = phase_factor(phase);
@@ -774,7 +825,11 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
         for sq in board.by_color(side) {
             let piece = board.piece_at(sq).unwrap();
-            let vis_r = if side == Color::White { 7 - sq.rank() as usize } else { sq.rank() as usize };
+            let vis_r = if side == Color::White {
+                7 - sq.rank() as usize
+            } else {
+                sq.rank() as usize
+            };
             let vis_c = sq.file() as usize;
             let idx = vis_r * 8 + vis_c;
 
@@ -810,9 +865,13 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                 Some(p) => p,
                 None => continue,
             };
-            if victim.role == Role::King { continue; }
+            if victim.role == Role::King {
+                continue;
+            }
 
-            if let Some((attacker_sq, _role)) = least_valuable_attacker(board, target_sq, side, occupied) {
+            if let Some((attacker_sq, _role)) =
+                least_valuable_attacker(board, target_sq, side, occupied)
+            {
                 let see_val = see(board, target_sq, attacker_sq);
                 if see_val > 0 {
                     advantage += see_val as f32 / 100.0;
@@ -825,9 +884,13 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
                 Some(p) => p,
                 None => continue,
             };
-            if piece.role == Role::King { continue; }
+            if piece.role == Role::King {
+                continue;
+            }
 
-            if let Some((attacker_sq, _role)) = least_valuable_attacker(board, our_sq, them, occupied) {
+            if let Some((attacker_sq, _role)) =
+                least_valuable_attacker(board, our_sq, them, occupied)
+            {
                 let see_val = see(board, our_sq, attacker_sq);
                 if see_val > 0 {
                     vulnerability += 1.0;
@@ -850,12 +913,24 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
 
 #[cfg(feature = "python")]
 #[pyfunction]
-pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) -> PyResult<BTreeMap<String, f32>> {
-    let setup_base: Fen = base_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
-    let pos_base: Chess = setup_base.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base Position"))?;
+pub fn extract_features_delta_rust(
+    base_fen: &str,
+    move_fen: &str,
+    depth: u8,
+) -> PyResult<BTreeMap<String, f32>> {
+    let setup_base: Fen = base_fen
+        .parse()
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
+    let pos_base: Chess = setup_base
+        .into_position(CastlingMode::Standard)
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base Position"))?;
 
-    let setup_move: Fen = move_fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move FEN"))?;
-    let pos_move: Chess = setup_move.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move Position"))?;
+    let setup_move: Fen = move_fen
+        .parse()
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move FEN"))?;
+    let pos_move: Chess = setup_move
+        .into_position(CastlingMode::Standard)
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move Position"))?;
 
     let base_feats = extract_features(&pos_base);
     let mut move_feats = extract_features(&pos_move);
@@ -875,8 +950,14 @@ pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) ->
     // 2. Add extra heuristics (Checkability, Confinement, PP Momentum)
     let check_base = checkability_count(&pos_base);
     let check_move = checkability_count(&pos_move);
-    move_feats.insert("d_quiet_checks".to_string(), (check_move.0 - check_base.0) as f32);
-    move_feats.insert("d_capture_checks".to_string(), (check_move.1 - check_base.1) as f32);
+    move_feats.insert(
+        "d_quiet_checks".to_string(),
+        (check_move.0 - check_base.0) as f32,
+    );
+    move_feats.insert(
+        "d_capture_checks".to_string(),
+        (check_move.1 - check_base.1) as f32,
+    );
 
     let conf_base_us = confinement_count_internal(&pos_base, us);
     let conf_base_them = confinement_count_internal(&pos_base, us.other());
@@ -884,7 +965,8 @@ pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) ->
     let conf_move_them = confinement_count_internal(&pos_move, us.other());
 
     // d_confinement = (move_them - base_them) - (move_us - base_us)
-    let d_conf = ((conf_move_them - conf_base_them) as f32) - ((conf_move_us - conf_base_us) as f32);
+    let d_conf =
+        ((conf_move_them - conf_base_them) as f32) - ((conf_move_us - conf_base_us) as f32);
     move_feats.insert("d_confinement".to_string(), d_conf);
 
     let pp_base_us = pp_momentum_snapshot(&pos_base, us);
@@ -896,11 +978,43 @@ pub fn extract_features_delta_rust(base_fen: &str, move_fen: &str, depth: u8) ->
         (val_move_us - val_base_us) - (val_move_them - val_base_them)
     };
 
-    move_feats.insert("d_pp_count".to_string(), d_pp(pp_move_us.count, pp_base_us.count, pp_move_them.count, pp_base_them.count));
-    move_feats.insert("d_pp_min_dist".to_string(), -(pp_move_us.min_dist - pp_base_us.min_dist) + (pp_move_them.min_dist - pp_base_them.min_dist));
-    move_feats.insert("d_pp_runners_clear".to_string(), d_pp(pp_move_us.runners_clear, pp_base_us.runners_clear, pp_move_them.runners_clear, pp_base_them.runners_clear));
-    move_feats.insert("d_pp_blockaded".to_string(), -(pp_move_us.blockaded - pp_base_us.blockaded) + (pp_move_them.blockaded - pp_base_them.blockaded));
-    move_feats.insert("d_pp_rook_behind".to_string(), d_pp(pp_move_us.rook_behind, pp_base_us.rook_behind, pp_move_them.rook_behind, pp_base_them.rook_behind));
+    move_feats.insert(
+        "d_pp_count".to_string(),
+        d_pp(
+            pp_move_us.count,
+            pp_base_us.count,
+            pp_move_them.count,
+            pp_base_them.count,
+        ),
+    );
+    move_feats.insert(
+        "d_pp_min_dist".to_string(),
+        -(pp_move_us.min_dist - pp_base_us.min_dist)
+            + (pp_move_them.min_dist - pp_base_them.min_dist),
+    );
+    move_feats.insert(
+        "d_pp_runners_clear".to_string(),
+        d_pp(
+            pp_move_us.runners_clear,
+            pp_base_us.runners_clear,
+            pp_move_them.runners_clear,
+            pp_base_them.runners_clear,
+        ),
+    );
+    move_feats.insert(
+        "d_pp_blockaded".to_string(),
+        -(pp_move_us.blockaded - pp_base_us.blockaded)
+            + (pp_move_them.blockaded - pp_base_them.blockaded),
+    );
+    move_feats.insert(
+        "d_pp_rook_behind".to_string(),
+        d_pp(
+            pp_move_us.rook_behind,
+            pp_base_us.rook_behind,
+            pp_move_them.rook_behind,
+            pp_base_them.rook_behind,
+        ),
+    );
 
     // 3. Search-based probes (Forcing Swing, Hanging After Reply)
     if depth > 0 {
@@ -972,7 +1086,11 @@ fn checkability_count(pos: &Chess) -> (i32, i32) {
         let mut next = pos.clone();
         next.play_unchecked(m);
         if next.is_check() {
-            if m.is_capture() { capture += 1; } else { quiet += 1; }
+            if m.is_capture() {
+                capture += 1;
+            } else {
+                quiet += 1;
+            }
         }
     }
     (quiet, capture)
@@ -984,7 +1102,8 @@ fn confinement_count_internal(pos: &Chess, constrained_side: Color) -> i32 {
     let opp = constrained_side.other();
     let occupied = board.occupied();
 
-    let pieces = (board.by_role(Role::Knight) | board.by_role(Role::Bishop)) & board.by_color(constrained_side);
+    let pieces = (board.by_role(Role::Knight) | board.by_role(Role::Bishop))
+        & board.by_color(constrained_side);
 
     for sq in pieces {
         let mut safe = 0;
@@ -1015,23 +1134,39 @@ struct PPMomentum {
 }
 
 fn pp_momentum_snapshot(pos: &Chess, side: Color) -> PPMomentum {
-    let mut m = PPMomentum { count: 0.0, min_dist: 8.0, runners_clear: 0.0, blockaded: 0.0, rook_behind: 0.0 };
+    let mut m = PPMomentum {
+        count: 0.0,
+        min_dist: 8.0,
+        runners_clear: 0.0,
+        blockaded: 0.0,
+        rook_behind: 0.0,
+    };
     let board = pos.board();
 
     let my_pawns = board.by_role(Role::Pawn) & board.by_color(side);
     for sq in my_pawns {
-        if !is_passed_internal(board, sq, side) { continue; }
+        if !is_passed_internal(board, sq, side) {
+            continue;
+        }
 
         m.count += 1.0;
         let dist = match side {
             Color::White => 7 - sq.rank() as i32,
             Color::Black => sq.rank() as i32,
         };
-        if (dist as f32) < m.min_dist { m.min_dist = dist as f32; }
+        if (dist as f32) < m.min_dist {
+            m.min_dist = dist as f32;
+        }
 
-        if is_runner_clear(board, sq, side) { m.runners_clear += 1.0; }
-        if is_blockaded(board, sq, side) { m.blockaded += 1.0; }
-        if has_rook_behind(board, sq, side) { m.rook_behind += 1.0; }
+        if is_runner_clear(board, sq, side) {
+            m.runners_clear += 1.0;
+        }
+        if is_blockaded(board, sq, side) {
+            m.blockaded += 1.0;
+        }
+        if has_rook_behind(board, sq, side) {
+            m.rook_behind += 1.0;
+        }
     }
     m
 }
@@ -1044,12 +1179,19 @@ fn is_passed_internal(board: &shakmaty::Board, sq: Square, side: Color) -> bool 
 
     for f_off in -1..=1 {
         let f = file + f_off;
-        if f < 0 || f > 7 { continue; }
-        
+        if f < 0 || f > 7 {
+            continue;
+        }
+
         // Squares ahead on this file
-        let ranks = if side == Color::White { rank + 1..8 } else { 0..rank };
+        let ranks = if side == Color::White {
+            rank + 1..8
+        } else {
+            0..rank
+        };
         for r in ranks {
-            let check_sq = Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
+            let check_sq =
+                Square::from_coords(shakmaty::File::new(f as u32), shakmaty::Rank::new(r as u32));
             if enemy_pawns.contains(check_sq) {
                 return false;
             }
@@ -1073,7 +1215,9 @@ fn is_blockaded(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
 }
 
 fn is_runner_clear(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
-    if is_blockaded(board, sq, side) { return false; }
+    if is_blockaded(board, sq, side) {
+        return false;
+    }
 
     let file = sq.file();
     let rank = sq.rank();
@@ -1081,7 +1225,9 @@ fn is_runner_clear(board: &shakmaty::Board, sq: Square, side: Color) -> bool {
 
     for f_off in -1..=1 {
         let f = file as i8 + f_off;
-        if f < 0 || f > 7 { continue; }
+        if f < 0 || f > 7 {
+            continue;
+        }
         let check_file = shakmaty::File::new(f as u32);
 
         let near_ranks = match side {
@@ -1129,20 +1275,34 @@ mod tests {
 
     #[test]
     fn test_extract_features_includes_see() {
-        let feats = extract_features_rust(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        ).unwrap();
-        assert!(feats.contains_key("see_advantage_us"), "Missing see_advantage_us");
-        assert!(feats.contains_key("see_advantage_them"), "Missing see_advantage_them");
-        assert!(feats.contains_key("see_vulnerability_us"), "Missing see_vulnerability_us");
-        assert!(feats.contains_key("see_vulnerability_them"), "Missing see_vulnerability_them");
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let setup: Fen = fen.parse().unwrap();
+        let pos: Chess = setup.into_position(CastlingMode::Standard).unwrap();
+        let feats = extract_features(&pos);
+        assert!(
+            feats.contains_key("see_advantage_us"),
+            "Missing see_advantage_us"
+        );
+        assert!(
+            feats.contains_key("see_advantage_them"),
+            "Missing see_advantage_them"
+        );
+        assert!(
+            feats.contains_key("see_vulnerability_us"),
+            "Missing see_vulnerability_us"
+        );
+        assert!(
+            feats.contains_key("see_vulnerability_them"),
+            "Missing see_vulnerability_them"
+        );
     }
 
     #[test]
     fn test_extract_features_initial_position_no_see_advantage() {
-        let feats = extract_features_rust(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        ).unwrap();
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let setup: Fen = fen.parse().unwrap();
+        let pos: Chess = setup.into_position(CastlingMode::Standard).unwrap();
+        let feats = extract_features(&pos);
         assert!(
             feats["see_advantage_us"].abs() < f32::EPSILON,
             "Initial pos should have 0 SEE advantage for us"

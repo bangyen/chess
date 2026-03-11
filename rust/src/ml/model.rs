@@ -1,7 +1,7 @@
+use crate::ml::scaler::StandardScaler;
+use ndarray::{Array1, ArrayView1};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use ndarray::{Array1, ArrayView1};
-use crate::ml::scaler::StandardScaler;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PhaseModel {
@@ -28,7 +28,11 @@ pub struct PhaseEnsemble {
 
 impl PhaseEnsemble {
     pub fn new(feature_names: Vec<String>) -> Self {
-        let phase_idx = feature_names.iter().position(|r| r == "phase").map(|i| i as i32).unwrap_or(-1);
+        let phase_idx = feature_names
+            .iter()
+            .position(|r| r == "phase")
+            .map(|i| i as i32)
+            .unwrap_or(-1);
         PhaseEnsemble {
             feature_names,
             phase_idx,
@@ -55,7 +59,7 @@ impl PhaseEnsemble {
     pub fn predict(&self, features: &ArrayView1<f64>) -> f64 {
         let phase = self.get_phase(features);
         let model = self.models.get(&phase).or(self.global_model.as_ref());
-        
+
         match model {
             Some(m) => m.predict(features),
             None => 0.0,
@@ -73,7 +77,7 @@ impl PhaseEnsemble {
                     *val *= features[i];
                 }
                 contribs
-            },
+            }
             None => Array1::zeros(features.len()),
         }
     }

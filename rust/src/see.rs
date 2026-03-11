@@ -13,28 +13,35 @@ pub fn least_valuable_attacker(
 ) -> Option<(Square, Role)> {
     let by_side = board.by_color(side);
     // Pawns
-    let pawn_attackers = attacks::pawn_attacks(side.other(), sq) & board.by_role(Role::Pawn) & by_side & occupied;
+    let pawn_attackers =
+        attacks::pawn_attacks(side.other(), sq) & board.by_role(Role::Pawn) & by_side & occupied;
     if let Some(a) = pawn_attackers.into_iter().next() {
         return Some((a, Role::Pawn));
     }
     // Knights
-    let knight_attackers = attacks::knight_attacks(sq) & board.by_role(Role::Knight) & by_side & occupied;
+    let knight_attackers =
+        attacks::knight_attacks(sq) & board.by_role(Role::Knight) & by_side & occupied;
     if let Some(a) = knight_attackers.into_iter().next() {
         return Some((a, Role::Knight));
     }
     // Bishops
-    let bishop_attackers = attacks::bishop_attacks(sq, occupied) & board.by_role(Role::Bishop) & by_side & occupied;
+    let bishop_attackers =
+        attacks::bishop_attacks(sq, occupied) & board.by_role(Role::Bishop) & by_side & occupied;
     if let Some(a) = bishop_attackers.into_iter().next() {
         return Some((a, Role::Bishop));
     }
     // Rooks
-    let rook_attackers = attacks::rook_attacks(sq, occupied) & board.by_role(Role::Rook) & by_side & occupied;
+    let rook_attackers =
+        attacks::rook_attacks(sq, occupied) & board.by_role(Role::Rook) & by_side & occupied;
     if let Some(a) = rook_attackers.into_iter().next() {
         return Some((a, Role::Rook));
     }
     // Queens
-    let queen_attackers = (attacks::bishop_attacks(sq, occupied) | attacks::rook_attacks(sq, occupied))
-        & board.by_role(Role::Queen) & by_side & occupied;
+    let queen_attackers = (attacks::bishop_attacks(sq, occupied)
+        | attacks::rook_attacks(sq, occupied))
+        & board.by_role(Role::Queen)
+        & by_side
+        & occupied;
     if let Some(a) = queen_attackers.into_iter().next() {
         return Some((a, Role::Queen));
     }
@@ -126,31 +133,31 @@ mod tests {
     #[test]
     fn test_see_winning_capture() {
         // Pawn captures undefended knight: SEE should be positive (~220 cp).
-        let pos = pos_from_fen(
-            "rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1",
-        );
+        let pos = pos_from_fen("rnbqkb1r/pppppppp/8/4n3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 1");
         let board = pos.board();
         let see_val = see(board, Square::E5, Square::D4);
-        assert!(see_val > 0, "Pawn x undefended Knight should win: got {see_val}");
+        assert!(
+            see_val > 0,
+            "Pawn x undefended Knight should win: got {see_val}"
+        );
     }
 
     #[test]
     fn test_see_losing_capture() {
         // Queen captures defended pawn: SEE should be negative.
-        let pos = pos_from_fen(
-            "rnbqkbnr/ppp2ppp/3p4/4p3/8/8/PPPPQPPP/RNB1KBNR w KQkq - 0 1",
-        );
+        let pos = pos_from_fen("rnbqkbnr/ppp2ppp/3p4/4p3/8/8/PPPPQPPP/RNB1KBNR w KQkq - 0 1");
         let board = pos.board();
         let see_val = see(board, Square::E5, Square::E2);
-        assert!(see_val < 0, "Queen x defended Pawn should lose: got {see_val}");
+        assert!(
+            see_val < 0,
+            "Queen x defended Pawn should lose: got {see_val}"
+        );
     }
 
     #[test]
     fn test_see_equal_exchange() {
         // Knight captures knight (equal trade).
-        let pos = pos_from_fen(
-            "r1bqkbnr/pppppppp/8/4n3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1",
-        );
+        let pos = pos_from_fen("r1bqkbnr/ppp1pppp/3p4/4n3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 1");
         let board = pos.board();
         let see_val = see(board, Square::E5, Square::F3);
         assert!(

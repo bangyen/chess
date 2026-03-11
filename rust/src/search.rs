@@ -1,10 +1,10 @@
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-use shakmaty::{Chess, Move, Position, Role, CastlingMode};
-#[cfg(feature = "python")]
-use shakmaty::fen::Fen;
 use crate::eval::{evaluate, piece_value};
 use crate::zobrist::{piece_index, zobrist_hash};
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
+#[cfg(feature = "python")]
+use shakmaty::fen::Fen;
+use shakmaty::{CastlingMode, Chess, Move, Position, Role};
 
 // ── Transposition Table & Search Context ─────────────────────────────
 
@@ -33,7 +33,13 @@ pub struct TTEntry {
 
 impl Default for TTEntry {
     fn default() -> Self {
-        TTEntry { key: 0, depth: 0, score: 0, flag: TTFlag::Exact, best_move: None }
+        TTEntry {
+            key: 0,
+            depth: 0,
+            score: 0,
+            flag: TTFlag::Exact,
+            best_move: None,
+        }
     }
 }
 
@@ -64,16 +70,30 @@ impl SearchContext {
     pub fn tt_probe(&self, key: u64) -> Option<&TTEntry> {
         let idx = (key as usize) % TT_SIZE;
         let entry = &self.tt[idx];
-        if entry.key == key { Some(entry) } else { None }
+        if entry.key == key {
+            Some(entry)
+        } else {
+            None
+        }
     }
 
     /// Store search results in the TT (always-replace policy).
     pub fn tt_store(
-        &mut self, key: u64, depth: u8, score: i32,
-        flag: TTFlag, best_move: Option<Move>,
+        &mut self,
+        key: u64,
+        depth: u8,
+        score: i32,
+        flag: TTFlag,
+        best_move: Option<Move>,
     ) {
         let idx = (key as usize) % TT_SIZE;
-        self.tt[idx] = TTEntry { key, depth, score, flag, best_move };
+        self.tt[idx] = TTEntry {
+            key,
+            depth,
+            score,
+            flag,
+            best_move,
+        };
     }
 
     /// Record a killer move for the current ply (quiet moves that
@@ -169,10 +189,16 @@ fn quiesce(pos: &Chess, mut alpha: i32, beta: i32) -> i32 {
         .map(|m| {
             let mut score = 0i32;
             if m.is_capture() {
-                let victim = pos.board().piece_at(m.to())
-                    .map(|p| p.role).unwrap_or(Role::Pawn);
-                let attacker = pos.board().piece_at(m.from().unwrap())
-                    .map(|p| p.role).unwrap_or(Role::Pawn);
+                let victim = pos
+                    .board()
+                    .piece_at(m.to())
+                    .map(|p| p.role)
+                    .unwrap_or(Role::Pawn);
+                let attacker = pos
+                    .board()
+                    .piece_at(m.from().unwrap())
+                    .map(|p| p.role)
+                    .unwrap_or(Role::Pawn);
                 score = 10000 + piece_value(victim) - piece_value(attacker);
             }
             if m.is_promotion() {
@@ -187,7 +213,9 @@ fn quiesce(pos: &Chess, mut alpha: i32, beta: i32) -> i32 {
         // Delta pruning: skip captures whose best-case gain cannot
         // reach alpha (promotions are always searched).
         if !m.is_promotion() && m.is_capture() {
-            let victim_val = pos.board().piece_at(m.to())
+            let victim_val = pos
+                .board()
+                .piece_at(m.to())
                 .map(|p| piece_value(p.role))
                 .unwrap_or(100);
             if stand_pat + victim_val + 200 < alpha {
@@ -211,9 +239,7 @@ fn quiesce(pos: &Chess, mut alpha: i32, beta: i32) -> i32 {
 /// Alpha-beta search enhanced with transposition table lookups,
 /// null-move pruning, and late move reductions.  Falls back to
 /// quiescence search at the leaves.
-fn alpha_beta(
-    pos: &Chess, mut alpha: i32, beta: i32, depth: u8, ctx: &mut SearchContext,
-) -> i32 {
+fn alpha_beta(pos: &Chess, mut alpha: i32, beta: i32, depth: u8, ctx: &mut SearchContext) -> i32 {
     // ── Terminal checks ──────────────────────────────────────────────
     if pos.is_game_over() {
         if pos.is_checkmate() {
@@ -236,10 +262,14 @@ fn alpha_beta(
             match entry.flag {
                 TTFlag::Exact => return entry.score,
                 TTFlag::LowerBound => {
-                    if entry.score >= beta { return entry.score; }
+                    if entry.score >= beta {
+                        return entry.score;
+                    }
                 }
                 TTFlag::UpperBound => {
-                    if entry.score <= alpha { return entry.score; }
+                    if entry.score <= alpha {
+                        return entry.score;
+                    }
                 }
             }
         }
@@ -262,8 +292,7 @@ fn alpha_beta(
                 let prev_null = ctx.allow_null;
                 ctx.allow_null = false;
                 ctx.ply += 1;
-                let null_score =
-                    -alpha_beta(&null_pos, -beta, -beta + 1, depth - 1 - r, ctx);
+                let null_score = -alpha_beta(&null_pos, -beta, -beta + 1, depth - 1 - r, ctx);
                 ctx.ply -= 1;
                 ctx.allow_null = prev_null;
                 if null_score >= beta {
@@ -294,18 +323,12 @@ fn alpha_beta(
 
         // ── Late Move Reductions (LMR) ──────────────────────────────
         let score;
-        if i >= 4
-            && depth >= 3
-            && !m.is_capture()
-            && !m.is_promotion()
-            && !gives_check
-            && !in_check
+        if i >= 4 && depth >= 3 && !m.is_capture() && !m.is_promotion() && !gives_check && !in_check
         {
             let reduction: u8 = if depth >= 6 && i >= 8 { 2 } else { 1 };
             let reduced_depth = depth - 1 - reduction;
             ctx.ply += 1;
-            let lmr_score =
-                -alpha_beta(&new_pos, -alpha - 1, -alpha, reduced_depth, ctx);
+            let lmr_score = -alpha_beta(&new_pos, -alpha - 1, -alpha, reduced_depth, ctx);
             ctx.ply -= 1;
 
             if lmr_score > alpha {
@@ -434,8 +457,7 @@ pub fn calculate_forcing_swing_impl(pos: &Chess, depth: u8) -> f32 {
         if is_capture || gives_check {
             let mut new_pos = pos.clone();
             new_pos.play_unchecked(m);
-            let ev_after =
-                alpha_beta(&new_pos, -50000, 50000, depth.saturating_sub(1), &mut ctx);
+            let ev_after = alpha_beta(&new_pos, -50000, 50000, depth.saturating_sub(1), &mut ctx);
             let score_for_us = -ev_after;
             let swing = (score_for_us - base_eval) as f32;
             if swing > max_swing {
@@ -475,8 +497,7 @@ mod tests {
     #[test]
     fn test_tt_store_and_retrieve() {
         let mut ctx = SearchContext::new();
-        let pos =
-            pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let pos = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         let hash = zobrist_hash(&pos);
 
         ctx.tt_store(hash, 5, 42, TTFlag::Exact, None);
@@ -489,9 +510,8 @@ mod tests {
 
     #[test]
     fn test_find_best_reply_mate_in_one() {
-        let pos = pos_from_fen(
-            "r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4",
-        );
+        let pos =
+            pos_from_fen("r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4");
         let result = find_best_reply_impl(&pos, 4);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "h5f7");
@@ -499,8 +519,7 @@ mod tests {
 
     #[test]
     fn test_find_best_reply_obvious_capture() {
-        let pos =
-            pos_from_fen("rnb1kbnr/pppppppp/8/4q3/4Q3/8/PPPP1PPP/RNB1KBNR w KQkq - 0 1");
+        let pos = pos_from_fen("rnb1kbnr/pppppppp/8/4q3/4Q3/8/PPPP1PPP/RNB1KBNR w KQkq - 0 1");
         let result = find_best_reply_impl(&pos, 4);
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "e4e5");
@@ -508,9 +527,7 @@ mod tests {
 
     #[test]
     fn test_quiesce_reasonable_score() {
-        let pos = pos_from_fen(
-            "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
-        );
+        let pos = pos_from_fen("rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
         let score = quiesce(&pos, -50000, 50000);
         assert!(
             score > -1000 && score < 1000,
@@ -520,9 +537,7 @@ mod tests {
 
     #[test]
     fn test_aspiration_returns_legal_move() {
-        let pos = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        );
+        let pos = pos_from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
         let result = find_best_reply_impl(&pos, 5);
         assert!(result.is_some());
         let legal: Vec<String> = pos
@@ -535,9 +550,7 @@ mod tests {
 
     #[test]
     fn test_depth_returns_valid_moves() {
-        let pos = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        );
+        let pos = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         for d in 1..=6u8 {
             let result = find_best_reply_impl(&pos, d);
             assert!(result.is_some(), "No move at depth {d}");

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use ndarray::{Array1, Array2, Axis};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct StandardScaler {

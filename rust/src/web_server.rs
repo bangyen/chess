@@ -1,3 +1,4 @@
+use anyhow::Result;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -6,17 +7,16 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use shakmaty::{Chess, Position};
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
+use tera::{Context, Tera};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
-use shakmaty::{Chess, Position};
-use anyhow::Result;
-use tera::{Context, Tera};
 
 use crate::engine::ExplainableEngine;
 use crate::features::extract_features;
-use crate::ml::{PhaseEnsemble, SurrogateExplainer, train_surrogate_model};
+use crate::ml::{train_surrogate_model, PhaseEnsemble, SurrogateExplainer};
 
 #[derive(Clone)]
 pub struct GameState {
@@ -107,7 +107,7 @@ struct EngineStatusResponse {
 async fn get_dashboard(State(_state): State<SharedState>) -> impl IntoResponse {
     let mut tera = Tera::default();
     let current_dir = std::env::current_dir().unwrap_or_default();
-    
+
     let template_paths = [
         current_dir.join("src/chess_ai/web/templates/dashboard.html"),
         current_dir.join("../src/chess_ai/web/templates/dashboard.html"),
@@ -121,38 +121,61 @@ async fn get_dashboard(State(_state): State<SharedState>) -> impl IntoResponse {
                 Ok(_) => {
                     loaded = true;
                     break;
-                },
+                }
                 Err(e) => {
                     loaded_error.push_str(&format!("{}: {}; ", path_str, e));
                 }
             }
         }
     }
-    
+
     if !loaded {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to load dashboard.html template. Errors: {}", loaded_error)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "Failed to load dashboard.html template. Errors: {}",
+                loaded_error
+            ),
+        )
+            .into_response();
     }
 
     let context = Context::new();
     match tera.render("dashboard.html", &context) {
         Ok(html) => Html(html).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to render template: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to render template: {}", e),
+        )
+            .into_response(),
     }
 }
 
 async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState> {
     let s = state.read().unwrap();
-    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
-    let legal_moves = s.board.legal_moves().iter()
+    let fen =
+        shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    let legal_moves = s
+        .board
+        .legal_moves()
+        .iter()
         .map(|m| m.to_string())
         .collect();
-    
+
     Json(BoardState {
         fen,
         legal_moves,
         is_game_over: s.board.is_game_over(),
-        result: if s.board.is_game_over() { Some(format!("{:?}", s.board.outcome())) } else { None },
-        turn: if s.board.turn().is_white() { "white".to_string() } else { "black".to_string() },
+        result: if s.board.is_game_over() {
+            Some(format!("{:?}", s.board.outcome()))
+        } else {
+            None
+        },
+        turn: if s.board.turn().is_white() {
+            "white".to_string()
+        } else {
+            "black".to_string()
+        },
     })
 }
 
@@ -164,7 +187,10 @@ async fn new_game_handler(State(state): State<SharedState>) -> Json<BoardState> 
     get_state_handler(State(state)).await
 }
 
-async fn make_move_handler(State(state): State<SharedState>, Json(req): Json<MoveRequest>) -> impl IntoResponse {
+async fn make_move_handler(
+    State(state): State<SharedState>,
+    Json(req): Json<MoveRequest>,
+) -> impl IntoResponse {
     let mut s = state.write().unwrap();
     let uci_move: shakmaty::uci::UciMove = match req.move_uci.parse() {
         Ok(m) => m,
@@ -185,11 +211,12 @@ async fn make_move_handler(State(state): State<SharedState>, Json(req): Json<Mov
         let explainer = SurrogateExplainer::new(model.clone());
         let mut board_after = s.board.clone();
         board_after.play_unchecked(m);
-        
+
         // Sync engine for consistency
         {
             let mut engine = engine_arc.write().unwrap();
-            let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+            let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always)
+                .to_string();
             let _ = engine.set_position(&fen);
             let _ = engine.make_move(&uci_move.to_string());
         }
@@ -197,14 +224,24 @@ async fn make_move_handler(State(state): State<SharedState>, Json(req): Json<Mov
         let feats_after = extract_features(&board_after);
         let reasons = explainer.explain_move(&feats_after, 3, 0.05);
         if !reasons.is_empty() {
-            explanation = Some(reasons.iter().map(|(_, _, text)| text.clone()).collect::<Vec<_>>().join(" · "));
+            explanation = Some(
+                reasons
+                    .iter()
+                    .map(|(_, _, text)| text.clone())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
+            );
         }
     }
 
     s.board.play_unchecked(m);
 
-    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
-    let legal_moves = s.board.legal_moves().iter()
+    let fen =
+        shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    let legal_moves = s
+        .board
+        .legal_moves()
+        .iter()
         .map(|m| m.to_string())
         .collect();
 
@@ -214,10 +251,14 @@ async fn make_move_handler(State(state): State<SharedState>, Json(req): Json<Mov
         legal_moves,
         is_game_over: s.board.is_game_over(),
         explanation,
-    }).into_response()
+    })
+    .into_response()
 }
 
-async fn engine_move_handler(State(state): State<SharedState>, Json(req): Json<EngineMoveRequest>) -> impl IntoResponse {
+async fn engine_move_handler(
+    State(state): State<SharedState>,
+    Json(req): Json<EngineMoveRequest>,
+) -> impl IntoResponse {
     let s = state.read().unwrap();
     if s.board.is_game_over() {
         return (StatusCode::BAD_REQUEST, "Game over").into_response();
@@ -231,7 +272,8 @@ async fn engine_move_handler(State(state): State<SharedState>, Json(req): Json<E
 
     let mv_uci = {
         let mut engine = engine_arc.write().unwrap();
-        let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+        let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always)
+            .to_string();
         engine.set_position(&fen).unwrap();
         engine.get_best_move(depth).unwrap()
     };
@@ -246,7 +288,11 @@ async fn engine_move_handler(State(state): State<SharedState>, Json(req): Json<E
         let feats_after = extract_features(&board_after);
         let reasons = explainer.explain_move(&feats_after, 3, 0.05);
         if !reasons.is_empty() {
-            explanation = reasons.iter().map(|(_, _, text)| text.clone()).collect::<Vec<_>>().join(" · ");
+            explanation = reasons
+                .iter()
+                .map(|(_, _, text)| text.clone())
+                .collect::<Vec<_>>()
+                .join(" · ");
         }
     }
 
@@ -256,14 +302,16 @@ async fn engine_move_handler(State(state): State<SharedState>, Json(req): Json<E
         mv: mv_uci,
         explanation,
         features: feats,
-    }).into_response()
+    })
+    .into_response()
 }
 
 async fn analyze_features_handler(State(state): State<SharedState>) -> Json<AnalysisResponse> {
     let s = state.read().unwrap();
     let feats = extract_features(&s.board);
-    let fen = shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
-    
+    let fen =
+        shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+
     Json(AnalysisResponse {
         features: feats,
         fen,
@@ -290,7 +338,7 @@ async fn engine_status_handler(State(state): State<SharedState>) -> Json<EngineS
 
 pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Result<()> {
     let state = Arc::new(RwLock::new(GameState::new(stockfish_path.clone())));
-    
+
     // Background Initialization
     let state_clone = state.clone();
     tokio::spawn(async move {
@@ -327,10 +375,12 @@ pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Re
                             s.model_ready = true;
                             println!("Background training complete.");
                             // Save it
-                            if let Ok(json) = serde_json::to_string_pretty(&s.model.as_ref().unwrap()) {
+                            if let Ok(json) =
+                                serde_json::to_string_pretty(&s.model.as_ref().unwrap())
+                            {
                                 let _ = std::fs::write("model.json", json);
                             }
-                        },
+                        }
                         Err(e) => {
                             let mut s = state_clone.write().unwrap();
                             s.training_error = true;
@@ -338,7 +388,7 @@ pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Re
                         }
                     }
                 }
-            },
+            }
             Err(e) => {
                 let mut s = state_clone.write().unwrap();
                 s.training_error = true;

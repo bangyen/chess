@@ -1,9 +1,9 @@
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 #[cfg(feature = "python")]
-use shakmaty_syzygy::{Tablebase, AmbiguousWdl, MaybeRounded};
+use shakmaty::{CastlingMode, Chess, Fen};
 #[cfg(feature = "python")]
-use shakmaty::{Chess, Fen, CastlingMode};
+use shakmaty_syzygy::{AmbiguousWdl, MaybeRounded, Tablebase};
 
 #[cfg(feature = "python")]
 #[pyclass]
@@ -17,13 +17,18 @@ impl SyzygyTablebase {
     #[new]
     fn new(path: &str) -> PyResult<Self> {
         let mut tb = Tablebase::new();
-        tb.add_directory(path).map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+        tb.add_directory(path)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
         Ok(SyzygyTablebase { tb })
     }
 
     fn probe_wdl(&self, fen: &str) -> PyResult<Option<i32>> {
-        let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
-        let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+        let setup: Fen = fen
+            .parse()
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+        let pos: Chess = setup
+            .into_position(CastlingMode::Standard)
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
 
         match self.tb.probe_wdl(&pos) {
             Ok(wdl) => match wdl {
@@ -40,8 +45,12 @@ impl SyzygyTablebase {
     }
 
     fn probe_dtz(&self, fen: &str) -> PyResult<Option<i32>> {
-        let setup: Fen = fen.parse().map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
-        let pos: Chess = setup.into_position(CastlingMode::Standard).map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+        let setup: Fen = fen
+            .parse()
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+        let pos: Chess = setup
+            .into_position(CastlingMode::Standard)
+            .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
 
         match self.tb.probe_dtz(&pos) {
             Ok(maybe_rounded) => {
@@ -50,7 +59,7 @@ impl SyzygyTablebase {
                     MaybeRounded::Rounded(d) => d,
                 };
                 Ok(Some(dtz.0 as i32))
-            },
+            }
             Err(_) => Ok(None),
         }
     }

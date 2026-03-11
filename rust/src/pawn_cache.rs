@@ -73,34 +73,22 @@ mod tests {
 
     #[test]
     fn test_pawn_hash_same_position() {
-        let pos1 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        );
-        let pos2 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        );
+        let pos1 = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let pos2 = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         assert_eq!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
     }
 
     #[test]
     fn test_pawn_hash_different_on_pawn_move() {
-        let pos1 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        );
-        let pos2 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
-        );
+        let pos1 = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let pos2 = pos_from_fen("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
         assert_ne!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
     }
 
     #[test]
     fn test_pawn_hash_same_after_piece_move() {
-        let pos1 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        );
-        let pos2 = pos_from_fen(
-            "rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1",
-        );
+        let pos1 = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        let pos2 = pos_from_fen("rnbqkbnr/pppppppp/8/8/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 1");
         assert_eq!(pawn_zobrist(pos1.board()), pawn_zobrist(pos2.board()));
     }
 }

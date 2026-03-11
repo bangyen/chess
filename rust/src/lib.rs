@@ -2,15 +2,15 @@
 use pyo3::prelude::*;
 
 pub mod engine;
-pub mod ml;
 pub mod eval;
 pub mod features;
+pub mod ml;
 pub mod pawn_cache;
 pub mod search;
 pub mod see;
 pub mod syzygy;
-pub mod zobrist;
 pub mod web_server;
+pub mod zobrist;
 
 /// A Python module implemented in Rust.
 #[cfg(feature = "python")]

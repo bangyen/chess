@@ -1,10 +1,10 @@
-use clap::{Parser, Subcommand};
-use anyhow::Result;
-use std::io::{self, Write};
 use _chess_ai_rust::engine::ExplainableEngine;
 use _chess_ai_rust::features::extract_features;
-use _chess_ai_rust::ml::{train_surrogate_model, SurrogateExplainer, PhaseEnsemble};
+use _chess_ai_rust::ml::{train_surrogate_model, PhaseEnsemble, SurrogateExplainer};
+use anyhow::Result;
+use clap::{Parser, Subcommand};
 use shakmaty::{Chess, Position};
+use std::io::{self, Write};
 use std::path::Path;
 
 #[derive(Parser)]
@@ -58,18 +58,21 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Play { stockfish_path, depth } => {
+        Commands::Play {
+            stockfish_path,
+            depth,
+        } => {
             let mut engine = ExplainableEngine::new(&stockfish_path)?;
             println!("Welcome to the Explainable Chess Engine (Rust Edition)!");
-            
+
             loop {
                 print!("Your move (UCI): ");
                 io::stdout().flush()?;
-                
+
                 let mut input = String::new();
                 io::stdin().read_line(&mut input)?;
                 let input = input.trim();
-                
+
                 if input == "quit" || input == "exit" {
                     break;
                 }
@@ -85,21 +88,28 @@ async fn main() -> Result<()> {
                 engine.make_move(&best_move)?;
             }
         }
-        Commands::Audit { stockfish_path, fen, model_path } => {
-            let fen_str = fen.unwrap_or_else(|| "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
+        Commands::Audit {
+            stockfish_path,
+            fen,
+            model_path,
+        } => {
+            let fen_str = fen.unwrap_or_else(|| {
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string()
+            });
             let mut engine = ExplainableEngine::new(&stockfish_path)?;
-            
-            let pos: Chess = fen_str.parse::<shakmaty::fen::Fen>()?
+
+            let pos: Chess = fen_str
+                .parse::<shakmaty::fen::Fen>()?
                 .into_position(shakmaty::CastlingMode::Standard)?;
-            
+
             println!("Auditing FEN: {}", fen_str);
             let feats = extract_features(&pos);
-            
+
             println!("\nExtracted Features:");
             for (name, val) in feats {
                 println!("  {:30}: {:>8.3}", name, val);
             }
-            
+
             let best_move = engine.get_best_move(12)?;
             println!("\nEngine Recommendation: {}", best_move);
 
@@ -108,18 +118,18 @@ async fn main() -> Result<()> {
                 let model_str = std::fs::read_to_string(&model_path)?;
                 let model: PhaseEnsemble = serde_json::from_str(&model_str)?;
                 let explainer = SurrogateExplainer::new(model);
-                
-                // For audit, we simulate a move to see explanations. 
+
+                // For audit, we simulate a move to see explanations.
                 // Let's show explanations for the recommended best move.
                 let mut pos_after = pos.clone();
                 let uci_move: shakmaty::uci::UciMove = best_move.parse()?;
                 if let Ok(m) = uci_move.to_move(&pos) {
                     pos_after.play_unchecked(m);
                     let feats_after = extract_features(&pos_after); // This is just absolute, usually we'd want delta
-                    // However, our explainer takes 'features_after' (which are usually already deltas in the Python code)
-                    // Let's match the Python logic: explainer calculates delta if needed.
-                    // Actually, our Rust explainer takes 'features_after' and calculates delta from 'model.feature_names'.
-                    
+                                                                    // However, our explainer takes 'features_after' (which are usually already deltas in the Python code)
+                                                                    // Let's match the Python logic: explainer calculates delta if needed.
+                                                                    // Actually, our Rust explainer takes 'features_after' and calculates delta from 'model.feature_names'.
+
                     let reasons = explainer.explain_move(&feats_after, 5, 0.05);
                     println!("\nMove Explanations (for {}):", best_move);
                     for (_, cp, text) in reasons {
@@ -127,17 +137,31 @@ async fn main() -> Result<()> {
                     }
                 }
             } else {
-                println!("\n[Note] Model file not found at {}. Skipping ML explanations.", model_path);
+                println!(
+                    "\n[Note] Model file not found at {}. Skipping ML explanations.",
+                    model_path
+                );
             }
         }
-        Commands::Train { stockfish_path, output_path, n_positions } => {
-            println!("Starting surrogate model training ({} positions)...", n_positions);
+        Commands::Train {
+            stockfish_path,
+            output_path,
+            n_positions,
+        } => {
+            println!(
+                "Starting surrogate model training ({} positions)...",
+                n_positions
+            );
             let ensemble = train_surrogate_model(&stockfish_path, n_positions)?;
             let json = serde_json::to_string_pretty(&ensemble)?;
             std::fs::write(&output_path, json)?;
             println!("✅ Model saved to {}", output_path);
         }
-        Commands::Server { stockfish_path, host, port } => {
+        Commands::Server {
+            stockfish_path,
+            host,
+            port,
+        } => {
             _chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
         }
     }

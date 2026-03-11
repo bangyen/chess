@@ -58,7 +58,12 @@ pub fn zobrist_keys() -> &'static ZobristKeys {
         for v in en_passant.iter_mut() {
             *v = xorshift64(&mut rng);
         }
-        ZobristKeys { pieces, side_to_move, castling_sq, en_passant }
+        ZobristKeys {
+            pieces,
+            side_to_move,
+            castling_sq,
+            en_passant,
+        }
     })
 }
 

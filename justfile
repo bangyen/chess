@@ -2,11 +2,15 @@ RUN := "cargo run --bin chess-ai --"
 
 # format code
 fmt:
-    cargo fmt
+    cargo fmt --all
+
+# check formatting
+fmt-check:
+    cargo fmt --all -- --check
 
 # lint code
 lint:
-    cargo clippy
+    cargo clippy -- -D warnings
 
 # run tests
 test *ARGS:
@@ -42,5 +46,8 @@ syzygy-verify path="~/syzygy":
     {{RUN}} syzygy verify --syzygy-path {{path}}
 
 # run all checks (fmt, lint, test)
-all: fmt lint test
+check: fmt-check lint test
+
+# run and verify everything
+all: check
     @echo "All checks completed!"

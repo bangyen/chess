@@ -45,7 +45,7 @@ impl UciEngine {
             .as_mut()
             .ok_or_else(|| anyhow!("Failed to open stdout"))?;
         let mut reader = BufReader::new(stdout);
-        
+
         loop {
             let mut line = String::new();
             if reader.read_line(&mut line)? == 0 {
@@ -75,15 +75,17 @@ impl UciEngine {
         self.is_ready()?;
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
-        
+
         let mut last_score = 0;
         let stdout = self.process.stdout.as_mut().unwrap();
         let mut reader = BufReader::new(stdout);
-        
+
         loop {
             let mut line = String::new();
-            if reader.read_line(&mut line)? == 0 { break; }
-            
+            if reader.read_line(&mut line)? == 0 {
+                break;
+            }
+
             if line.contains("score cp") || line.contains("score mate") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 for i in 0..parts.len() {
@@ -95,7 +97,7 @@ impl UciEngine {
                     }
                 }
             }
-            
+
             if line.contains("bestmove") {
                 break;
             }
@@ -121,8 +123,10 @@ impl UciEngine {
 
         loop {
             let mut line = String::new();
-            if reader.read_line(&mut line)? == 0 { break; }
-            
+            if reader.read_line(&mut line)? == 0 {
+                break;
+            }
+
             if line.contains("score cp") || line.contains("score mate") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 let mut cp = 0;
@@ -142,7 +146,7 @@ impl UciEngine {
                     moves.push((pv, cp));
                 }
             }
-            
+
             if line.contains("bestmove") {
                 break;
             }
@@ -158,13 +162,15 @@ impl UciEngine {
         let mut seen = std::collections::HashSet::new();
         let mut final_moves = Vec::new();
         for (pv, cp) in moves {
-            if seen.len() >= multipv as usize { break; }
+            if seen.len() >= multipv as usize {
+                break;
+            }
             if !seen.contains(&pv) {
                 seen.insert(pv.clone());
                 final_moves.push((pv, cp));
             }
         }
-        
+
         Ok(final_moves)
     }
 }

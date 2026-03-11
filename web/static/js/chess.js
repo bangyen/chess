@@ -125,11 +125,21 @@ class ChessBoard {
       const from = this.fromSquareId(moveUci.substring(0, 2));
       const to = this.fromSquareId(moveUci.substring(2, 4));
 
-      // Match existing pieces to new pieces to identify animations
-      const movingPiece = this.pieces.find(p => p.rank === from[1] && p.file === from[0]);
+      // Match existing pieces to target the moving piece
+      // It might already be at 'to' if updated by drag/click handler
+      const movingPiece = this.pieces.find(p => 
+        (p.rank === from[1] && p.file === from[0]) || 
+        (p.rank === to[1] && p.file === to[0])
+      );
+
+      // Remove any OTHER piece at the target square immediately (the captured piece)
+      this.pieces = this.pieces.filter(p => p === movingPiece || p.rank !== to[1] || p.file !== to[0]);
 
       if (movingPiece) {
         movingPiece.animating = true;
+        // Ensure starting position is 'from' for the animation
+        movingPiece.file = from[0];
+        movingPiece.rank = from[1];
         movingPiece.targetRank = to[1];
         movingPiece.targetFile = to[0];
         movingPiece.startTime = performance.now();
@@ -285,6 +295,22 @@ class ChessBoard {
     this.isMouseDown = true;
     this.dragStartSquare = squareId;
 
+    // Check if this is a click-to-move completion (capture or move to occupied square)
+    if (this.selectedSquare && this.selectedSquare !== squareId) {
+      const moveUci = this.selectedSquare + squareId;
+      if (this.legalMoves.includes(moveUci)) {
+        // This is a legal move/capture. Do NOT start a new drag.
+        // handleMouseUp will pick this up and execute the move.
+        return;
+      }
+    }
+
+    // Toggle selection if clicking the same square
+    if (this.selectedSquare === squareId) {
+      this.selectedSquare = null;
+      return;
+    }
+
     const pieceAt = this.pieces.find(p => p.rank === rank && p.file === file);
     if (pieceAt) {
       this.draggingPiece = pieceAt;
@@ -293,6 +319,9 @@ class ChessBoard {
 
       // Also select for click-to-move compatibility
       this.selectedSquare = squareId;
+    } else {
+      // Clicked on empty square - clear selection unless it's a legal move (handled above)
+      this.selectedSquare = null;
     }
   }
 

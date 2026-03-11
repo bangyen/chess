@@ -11,9 +11,18 @@ impl SurrogateExplainer {
     pub fn new(model: PhaseEnsemble) -> Self {
         let mut feature_templates = HashMap::new();
         let templates = [
-            ("material_diff", "Gains a **material advantage** ({:+.0} cp)"),
-            ("material_us", "Increases **total material value** ({:+.0} cp)"),
-            ("material_them", "Reduces opponent's **total material** ({:+.0} cp)"),
+            (
+                "material_diff",
+                "Gains a **material advantage** ({:+.0} cp)",
+            ),
+            (
+                "material_us",
+                "Increases **total material value** ({:+.0} cp)",
+            ),
+            (
+                "material_them",
+                "Reduces opponent's **total material** ({:+.0} cp)",
+            ),
             (
                 "mobility_us",
                 "Increases **piece activity** and **mobility** ({:+.0} cp)",
@@ -102,7 +111,10 @@ impl SurrogateExplainer {
                 "bishop_pair_them",
                 "Eliminates the opponent's **bishop pair** ({:+.0} cp)",
             ),
-            ("passed_us", "Creates a dangerous **passed pawn** ({:+.0} cp)"),
+            (
+                "passed_us",
+                "Creates a dangerous **passed pawn** ({:+.0} cp)",
+            ),
             (
                 "passed_them",
                 "Successfully blocks or stops an opponent's **passed pawn** ({:+.0} cp)",
@@ -238,21 +250,25 @@ impl SurrogateExplainer {
         significant.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
 
         for (name, cp_value) in significant.into_iter().take(top_k) {
-            let template = self.feature_templates.get(&name).cloned().unwrap_or_else(|| {
-                let title_case = name
-                    .replace('_', " ")
-                    .split_whitespace()
-                    .map(|w| {
-                        let mut c = w.chars();
-                        match c.next() {
-                            None => String::new(),
-                            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("{} ({:+.0} cp)", title_case, cp_value)
-            });
+            let template = self
+                .feature_templates
+                .get(&name)
+                .cloned()
+                .unwrap_or_else(|| {
+                    let title_case = name
+                        .replace('_', " ")
+                        .split_whitespace()
+                        .map(|w| {
+                            let mut c = w.chars();
+                            match c.next() {
+                                None => String::new(),
+                                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    format!("{} ({:+.0} cp)", title_case, cp_value)
+                });
             let explanation = template.replace("{:+.0}", &format!("{:+.0}", cp_value));
             reasons.push((name, cp_value, explanation));
         }

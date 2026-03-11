@@ -326,7 +326,9 @@ async fn undo_move_handler(State(state): State<SharedState>) -> Response {
         let mut s = state.write().unwrap();
         if let Some(fen_str) = s.history.pop() {
             let setup: shakmaty::fen::Fen = fen_str.parse().unwrap();
-            let board: Chess = setup.into_position(shakmaty::CastlingMode::Standard).unwrap();
+            let board: Chess = setup
+                .into_position(shakmaty::CastlingMode::Standard)
+                .unwrap();
             s.board = board;
 
             // Sync engine

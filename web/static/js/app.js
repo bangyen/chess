@@ -50,6 +50,13 @@ class ChessApp {
             });
         }
 
+        const switchBtn = document.getElementById('btn-switch-sides');
+        if (switchBtn) {
+            switchBtn.addEventListener('click', () => {
+                this.switchSides();
+            });
+        }
+
         document.getElementById('btn-analyze').addEventListener('click', () => {
             this.analyzePosition();
         });
@@ -64,6 +71,7 @@ class ChessApp {
             const data = await response.json();
             this.board.setPosition(data.fen, null);
             this.board.setLegalMoves(data.legal_moves);
+            this.board.setOrientation('white');
             this.moveCount = 0;
 
             this.updateGameState();
@@ -150,10 +158,15 @@ class ChessApp {
     }
 
     async requestEngineMove() {
-        const btn = document.getElementById('btn-engine-move') || document.getElementById('btn-undo-move');
-        if (btn) {
-            btn.classList.add('loading');
-            btn.disabled = true;
+        const undoBtn = document.getElementById('btn-undo-move');
+        const switchBtn = document.getElementById('btn-switch-sides');
+        
+        if (switchBtn) {
+            switchBtn.classList.add('loading');
+            switchBtn.disabled = true;
+        }
+        if (undoBtn) {
+            undoBtn.disabled = true;
         }
 
         this.updateEngineStatus('Thinking...', true);
@@ -175,9 +188,15 @@ class ChessApp {
             console.error('Failed to get engine move:', error);
             this.updateEngineStatus('Error', false);
         } finally {
-            if (btn) {
-                btn.classList.remove('loading');
-                btn.disabled = false;
+            const undoBtn = document.getElementById('btn-undo-move');
+            const switchBtn = document.getElementById('btn-switch-sides');
+            
+            if (switchBtn) {
+                switchBtn.classList.remove('loading');
+                switchBtn.disabled = false;
+            }
+            if (undoBtn) {
+                undoBtn.disabled = false;
             }
         }
     }
@@ -208,6 +227,15 @@ class ChessApp {
         } catch (error) {
             console.error('Failed to undo move:', error);
         }
+    }
+
+    async switchSides() {
+        // Toggle board orientation
+        const newOrientation = this.board.orientation === 'white' ? 'black' : 'white';
+        this.board.setOrientation(newOrientation);
+        
+        // Trigger automated engine response for the new side
+        await this.requestEngineMove();
     }
 
     async analyzePosition() {

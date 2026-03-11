@@ -37,6 +37,7 @@ class ChessBoard {
     this.lastDragMove = null;
 
     this.onMove = null;
+    this.orientation = 'white'; // 'white' or 'black'
 
     this.init();
     this.setupEventListeners();
@@ -148,6 +149,28 @@ class ChessBoard {
     this.legalMoves = moves;
   }
 
+  setOrientation(orientation) {
+    this.orientation = orientation;
+  }
+
+  // Maps logical coordinates (0-7) to visual coordinates based on orientation
+  toVisual(file, rank) {
+    if (this.orientation === 'white') {
+      return [file, rank];
+    } else {
+      return [7 - file, 7 - rank];
+    }
+  }
+
+  // Maps visual coordinates (click/pixel) to logical coordinates based on orientation
+  toLogical(file, rank) {
+    if (this.orientation === 'white') {
+      return [file, rank];
+    } else {
+      return [7 - file, 7 - rank];
+    }
+  }
+
   startAnimationLoop() {
     const render = () => {
       this.draw();
@@ -162,33 +185,38 @@ class ChessBoard {
     // 1. Draw Board
     for (let rank = 0; rank < 8; rank++) {
       for (let file = 0; file < 8; file++) {
+        const [vFile, vRank] = this.toVisual(file, rank);
         this.ctx.fillStyle = (rank + file) % 2 === 0 ? COLORS.light : COLORS.dark;
-        this.ctx.fillRect(file * this.squareSize, rank * this.squareSize, this.squareSize, this.squareSize);
+        this.ctx.fillRect(vFile * this.squareSize, vRank * this.squareSize, this.squareSize, this.squareSize);
       }
     }
 
     // 2. Draw Last Move Highlight
     if (this.lastMove) {
+      const [fFile, fRank] = this.toVisual(this.lastMove.from[0], this.lastMove.from[1]);
+      const [tFile, tRank] = this.toVisual(this.lastMove.to[0], this.lastMove.to[1]);
       this.ctx.fillStyle = COLORS.lastMove;
-      this.ctx.fillRect(this.lastMove.from[0] * this.squareSize, this.lastMove.from[1] * this.squareSize, this.squareSize, this.squareSize);
-      this.ctx.fillRect(this.lastMove.to[0] * this.squareSize, this.lastMove.to[1] * this.squareSize, this.squareSize, this.squareSize);
+      this.ctx.fillRect(fFile * this.squareSize, fRank * this.squareSize, this.squareSize, this.squareSize);
+      this.ctx.fillRect(tFile * this.squareSize, tRank * this.squareSize, this.squareSize, this.squareSize);
     }
 
     // 3. Draw Selected Square
     if (this.selectedSquare) {
       const [file, rank] = this.fromSquareId(this.selectedSquare);
+      const [vFile, vRank] = this.toVisual(file, rank);
       this.ctx.fillStyle = COLORS.selected;
-      this.ctx.fillRect(file * this.squareSize, rank * this.squareSize, this.squareSize, this.squareSize);
+      this.ctx.fillRect(vFile * this.squareSize, vRank * this.squareSize, this.squareSize, this.squareSize);
 
       // 4. Draw Legal Moves
       const relevantMoves = this.legalMoves.filter(m => m.startsWith(this.selectedSquare));
       relevantMoves.forEach(move => {
         const toSquare = move.substring(2, 4);
         const [tFile, tRank] = this.fromSquareId(toSquare);
+        const [vFile, vRank] = this.toVisual(tFile, tRank);
 
         this.ctx.fillStyle = COLORS.highlight;
         this.ctx.beginPath();
-        this.ctx.arc((tFile + 0.5) * this.squareSize, (tRank + 0.5) * this.squareSize, this.squareSize * 0.15, 0, Math.PI * 2);
+        this.ctx.arc((vFile + 0.5) * this.squareSize, (vRank + 0.5) * this.squareSize, this.squareSize * 0.15, 0, Math.PI * 2);
         this.ctx.fill();
       });
     }
@@ -207,10 +235,17 @@ class ChessBoard {
         // Easing (easeInOutQuad)
         const t = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
 
-        x = piece.file + (piece.targetFile - piece.file) * t;
-        y = piece.rank + (piece.targetRank - piece.rank) * t;
+        const [vtFile, vtRank] = this.toVisual(piece.targetFile, piece.targetRank);
+        const [vFile, vRank] = this.toVisual(piece.file, piece.rank);
+
+        x = vFile + (vtFile - vFile) * t;
+        y = vRank + (vtRank - vRank) * t;
 
         if (progress === 1) piece.animating = false;
+      } else {
+        const [vFile, vRank] = this.toVisual(piece.file, piece.rank);
+        x = vFile;
+        y = vRank;
       }
 
       this.drawPiece(piece.type, x, y);
@@ -242,8 +277,9 @@ class ChessBoard {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    const file = Math.floor(x / (rect.width / 8));
-    const rank = Math.floor(y / (rect.height / 8));
+    const vFile = Math.floor(x / (rect.width / 8));
+    const vRank = Math.floor(y / (rect.height / 8));
+    const [file, rank] = this.toLogical(vFile, vRank);
     const squareId = this.toSquareId(rank, file);
 
     this.isMouseDown = true;
@@ -278,8 +314,9 @@ class ChessBoard {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    const file = Math.floor(x / (rect.width / 8));
-    const rank = Math.floor(y / (rect.height / 8));
+    const vFile = Math.floor(x / (rect.width / 8));
+    const vRank = Math.floor(y / (rect.height / 8));
+    const [file, rank] = this.toLogical(vFile, vRank);
     const toSquareId = this.toSquareId(rank, file);
 
     if (this.draggingPiece) {

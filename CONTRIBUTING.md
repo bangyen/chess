@@ -8,7 +8,7 @@ Welcome! Thank you for your interest in contributing to the Chess AI project. Th
     *   Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
     *   Install `just`: `brew install just` (or see [justfile](https://github.com/casey/just))
 
-2.  **Environment**: Build the project:
+2.  **Build**: We use `just` for orchestration, which wraps standard `cargo` commands.
     ```bash
     just build
     ```
@@ -17,9 +17,9 @@ Welcome! Thank you for your interest in contributing to the Chess AI project. Th
     *   macOS: `brew install stockfish`
     *   Set `STOCKFISH_PATH` if it's not in your PATH.
 
-4.  **Running Tests**:
+4.  **Test**: Ensure everything is working as expected.
     ```bash
-    just test
+    just all
     ```
 
 ## Development Workflow

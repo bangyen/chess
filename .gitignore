@@ -1,9 +1,9 @@
 # Rust
-rust/target/
+target/
 *.so
 *.dylib
 *.dll
-rust/*.txt
+*.txt
 
 # Model artifacts
 model.json

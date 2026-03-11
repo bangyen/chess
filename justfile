@@ -1,17 +1,16 @@
-OPTS := "--manifest-path rust/Cargo.toml"
-RUN := "cargo run " + OPTS + " --bin chess-ai --"
+RUN := "cargo run --bin chess-ai --"
 
 # format code
 fmt:
-    cargo fmt {{OPTS}}
+    cargo fmt
 
 # lint code
 lint:
-    cargo clippy {{OPTS}}
+    cargo clippy
 
 # run tests
 test *ARGS:
-    cargo test {{OPTS}} {{ARGS}}
+    cargo test {{ARGS}}
 
 # run web dashboard (Rust-native)
 web:
@@ -20,7 +19,7 @@ web:
 
 # build the project
 build:
-    cargo build {{OPTS}} --release
+    cargo build --release
 
 # train the surrogate model (Rust-native)
 train *ARGS:
@@ -36,4 +35,4 @@ play:
 
 # run all checks (fmt, lint, test)
 all: fmt lint test
-    echo "All checks completed!"
+    @echo "All checks completed!"

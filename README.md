@@ -67,18 +67,17 @@ just run web
 
 ```plaintext
 chess/
-├── rust/
-│   ├── src/
-│   │   ├── engine/       # Stockfish interface and engine wrapper
-│   │   ├── features/     # High-performance feature extraction
-│   │   ├── ml/           # Native ML model (Surrogate Model)
-│   │   ├── web_server.rs # Axum web dashboard server
-│   │   └── main.rs       # Unified CLI entry point
-│   └── Cargo.toml        # Rust dependencies
+├── src/
+│   ├── engine/       # Stockfish interface and engine wrapper
+│   ├── features/     # High-performance feature extraction
+│   ├── ml/           # Native ML model (Surrogate Model)
+│   ├── web_server.rs # Axum web dashboard server
+│   └── main.rs       # Unified CLI entry point
 ├── web/
 │   ├── static/           # Front-end CSS/JS assets
 │   └── templates/        # Tera templates for the dashboard
 ├── docs/                 # Documentation and design system
+├── Cargo.toml            # Rust dependencies
 └── justfile              # Orchestration targets
 ```
 

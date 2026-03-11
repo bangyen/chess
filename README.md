@@ -1,4 +1,6 @@
-# Explainable Chess Engine
+# Explainable Chess Engine (Rust Native)
+
+A high-performance chess engine with integrated ML-driven move explanations, built entirely in Rust.
 
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/bangyen/chess/blob/main/chess_demo.ipynb)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](tests/)

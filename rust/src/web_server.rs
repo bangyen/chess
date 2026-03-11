@@ -109,8 +109,8 @@ async fn get_dashboard(State(_state): State<SharedState>) -> impl IntoResponse {
     let current_dir = std::env::current_dir().unwrap_or_default();
 
     let template_paths = [
-        current_dir.join("src/chess_ai/web/templates/dashboard.html"),
-        current_dir.join("../src/chess_ai/web/templates/dashboard.html"),
+        current_dir.join("web/templates/dashboard.html"),
+        current_dir.join("../web/templates/dashboard.html"),
     ];
 
     let mut loaded_error = String::new();
@@ -398,10 +398,10 @@ pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Re
     });
 
     let current_dir = std::env::current_dir().unwrap_or_default();
-    let static_path = if current_dir.join("src/chess_ai/web/static").exists() {
-        current_dir.join("src/chess_ai/web/static")
+    let static_path = if current_dir.join("web/static").exists() {
+        current_dir.join("web/static")
     } else {
-        current_dir.join("../src/chess_ai/web/static")
+        current_dir.join("../web/static")
     };
 
     let app = Router::new()

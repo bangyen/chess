@@ -1,10 +1,5 @@
-#![allow(dead_code)]
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
 use shakmaty::bitboard::Bitboard;
 use shakmaty::fen::Fen;
-#[cfg(feature = "python")]
-use shakmaty::Board;
 use shakmaty::{attacks, CastlingMode, Chess, Color, Position, Role, Square};
 use std::collections::BTreeMap;
 
@@ -12,18 +7,6 @@ use crate::eval::{phase_factor, piece_value};
 use crate::pawn_cache::{pawn_cache, pawn_zobrist, PawnCacheEntry, PAWN_CACHE_SIZE};
 use crate::see::{least_valuable_attacker, see};
 
-#[cfg(feature = "python")]
-#[pyfunction]
-pub fn extract_features_rust(fen: &str) -> PyResult<BTreeMap<String, f32>> {
-    let setup: Fen = fen
-        .parse()
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
-    let pos: Chess = setup
-        .into_position(CastlingMode::Standard)
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
-
-    Ok(extract_features(&pos))
-}
 
 pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     let mut feats = BTreeMap::new();
@@ -911,135 +894,6 @@ pub fn extract_features(pos: &Chess) -> BTreeMap<String, f32> {
     feats
 }
 
-#[cfg(feature = "python")]
-#[pyfunction]
-pub fn extract_features_delta_rust(
-    base_fen: &str,
-    move_fen: &str,
-    depth: u8,
-) -> PyResult<BTreeMap<String, f32>> {
-    let setup_base: Fen = base_fen
-        .parse()
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base FEN"))?;
-    let pos_base: Chess = setup_base
-        .into_position(CastlingMode::Standard)
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Base Position"))?;
-
-    let setup_move: Fen = move_fen
-        .parse()
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move FEN"))?;
-    let pos_move: Chess = setup_move
-        .into_position(CastlingMode::Standard)
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Move Position"))?;
-
-    let base_feats = extract_features(&pos_base);
-    let mut move_feats = extract_features(&pos_move);
-
-    let us = pos_base.turn();
-
-    // 1. Calculate standard deltas (d_feature = after - base)
-    let keys: Vec<String> = base_feats.keys().cloned().collect();
-    for k in keys {
-        if let Some(v_base) = base_feats.get(&k) {
-            if let Some(v_move) = move_feats.get(&k) {
-                move_feats.insert(format!("d_{}", k), v_move - v_base);
-            }
-        }
-    }
-
-    // 2. Add extra heuristics (Checkability, Confinement, PP Momentum)
-    let check_base = checkability_count(&pos_base);
-    let check_move = checkability_count(&pos_move);
-    move_feats.insert(
-        "d_quiet_checks".to_string(),
-        (check_move.0 - check_base.0) as f32,
-    );
-    move_feats.insert(
-        "d_capture_checks".to_string(),
-        (check_move.1 - check_base.1) as f32,
-    );
-
-    let conf_base_us = confinement_count_internal(&pos_base, us);
-    let conf_base_them = confinement_count_internal(&pos_base, us.other());
-    let conf_move_us = confinement_count_internal(&pos_move, us);
-    let conf_move_them = confinement_count_internal(&pos_move, us.other());
-
-    // d_confinement = (move_them - base_them) - (move_us - base_us)
-    let d_conf =
-        ((conf_move_them - conf_base_them) as f32) - ((conf_move_us - conf_base_us) as f32);
-    move_feats.insert("d_confinement".to_string(), d_conf);
-
-    let pp_base_us = pp_momentum_snapshot(&pos_base, us);
-    let pp_base_them = pp_momentum_snapshot(&pos_base, us.other());
-    let pp_move_us = pp_momentum_snapshot(&pos_move, us);
-    let pp_move_them = pp_momentum_snapshot(&pos_move, us.other());
-
-    let d_pp = |val_move_us: f32, val_base_us: f32, val_move_them: f32, val_base_them: f32| {
-        (val_move_us - val_base_us) - (val_move_them - val_base_them)
-    };
-
-    move_feats.insert(
-        "d_pp_count".to_string(),
-        d_pp(
-            pp_move_us.count,
-            pp_base_us.count,
-            pp_move_them.count,
-            pp_base_them.count,
-        ),
-    );
-    move_feats.insert(
-        "d_pp_min_dist".to_string(),
-        -(pp_move_us.min_dist - pp_base_us.min_dist)
-            + (pp_move_them.min_dist - pp_base_them.min_dist),
-    );
-    move_feats.insert(
-        "d_pp_runners_clear".to_string(),
-        d_pp(
-            pp_move_us.runners_clear,
-            pp_base_us.runners_clear,
-            pp_move_them.runners_clear,
-            pp_base_them.runners_clear,
-        ),
-    );
-    move_feats.insert(
-        "d_pp_blockaded".to_string(),
-        -(pp_move_us.blockaded - pp_base_us.blockaded)
-            + (pp_move_them.blockaded - pp_base_them.blockaded),
-    );
-    move_feats.insert(
-        "d_pp_rook_behind".to_string(),
-        d_pp(
-            pp_move_us.rook_behind,
-            pp_base_us.rook_behind,
-            pp_move_them.rook_behind,
-            pp_base_them.rook_behind,
-        ),
-    );
-
-    // 3. Search-based probes (Forcing Swing, Hanging After Reply)
-    if depth > 0 {
-        // Forcing swing for the MOVE position
-        let forcing_swing = crate::search::calculate_forcing_swing_impl(&pos_move, depth);
-        move_feats.insert("best_forcing_swing".to_string(), forcing_swing);
-
-        // Hanging after reply for the MOVE position
-        let best_reply_uci = crate::search::find_best_reply_impl(&pos_move, depth);
-        if let Some(uci) = best_reply_uci {
-            if let Ok(m) = uci.parse::<shakmaty::uci::UciMove>() {
-                if let Some(mv) = m.to_move(&pos_move).ok() {
-                    let mut pos_after = pos_move.clone();
-                    pos_after.play_unchecked(mv);
-                    let (cnt, v_max, near_k) = calculate_hanging_pieces(&pos_after);
-                    move_feats.insert("hanging_cnt_after_reply".to_string(), cnt as f32);
-                    move_feats.insert("hanging_max_v_after_reply".to_string(), v_max as f32);
-                    move_feats.insert("hanging_near_king_after_reply".to_string(), near_k as f32);
-                }
-            }
-        }
-    }
-
-    Ok(move_feats)
-}
 
 fn calculate_hanging_pieces(pos: &Chess) -> (i32, i32, i32) {
     let side = pos.turn();

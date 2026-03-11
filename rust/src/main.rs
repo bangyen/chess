@@ -1,7 +1,7 @@
-use _chess_ai_rust::engine::ExplainableEngine;
-use _chess_ai_rust::features::extract_features;
-use _chess_ai_rust::ml::{train_surrogate_model, PhaseEnsemble, SurrogateExplainer};
 use anyhow::Result;
+use chess_ai_rust::engine::ExplainableEngine;
+use chess_ai_rust::features::extract_features;
+use chess_ai_rust::ml::{train_surrogate_model, PhaseEnsemble, SurrogateExplainer};
 use clap::{Parser, Subcommand};
 use shakmaty::{Chess, Position};
 use std::io::{self, Write};
@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
             host,
             port,
         } => {
-            _chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
+            chess_ai_rust::web_server::start_server(stockfish_path, host, port).await?;
         }
     }
 

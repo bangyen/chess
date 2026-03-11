@@ -1,8 +1,5 @@
 use crate::eval::{evaluate, piece_value};
 use crate::zobrist::{piece_index, zobrist_hash};
-#[cfg(feature = "python")]
-use pyo3::prelude::*;
-#[cfg(feature = "python")]
 use shakmaty::fen::Fen;
 use shakmaty::{CastlingMode, Chess, Move, Position, Role};
 
@@ -423,17 +420,12 @@ pub fn find_best_reply_impl(pos: &Chess, depth: u8) -> Option<String> {
     best_move
 }
 
-/// Python-facing wrapper around `find_best_reply_impl` that parses
-/// the FEN string and converts the result to a `PyResult`.
-#[cfg(feature = "python")]
-#[pyfunction]
-pub fn find_best_reply(fen: &str, depth: u8) -> PyResult<Option<String>> {
-    let setup: Fen = fen
-        .parse()
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+/// Find the best reply for the given FEN string at the given depth.
+pub fn find_best_reply(fen: &str, depth: u8) -> anyhow::Result<Option<String>> {
+    let setup: Fen = fen.parse().map_err(|_| anyhow::anyhow!("Invalid FEN"))?;
     let pos: Chess = setup
         .into_position(CastlingMode::Standard)
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+        .map_err(|_| anyhow::anyhow!("Invalid Position"))?;
     Ok(find_best_reply_impl(&pos, depth))
 }
 
@@ -469,17 +461,12 @@ pub fn calculate_forcing_swing_impl(pos: &Chess, depth: u8) -> f32 {
     max_swing
 }
 
-/// Python-facing wrapper around `calculate_forcing_swing_impl` that
-/// parses the FEN string and converts the result to a `PyResult`.
-#[cfg(feature = "python")]
-#[pyfunction]
-pub fn calculate_forcing_swing(fen: &str, depth: u8) -> PyResult<f32> {
-    let setup: Fen = fen
-        .parse()
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid FEN"))?;
+/// Calculate the forcing swing for the given FEN string at the given depth.
+pub fn calculate_forcing_swing(fen: &str, depth: u8) -> anyhow::Result<f32> {
+    let setup: Fen = fen.parse().map_err(|_| anyhow::anyhow!("Invalid FEN"))?;
     let pos: Chess = setup
         .into_position(CastlingMode::Standard)
-        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid Position"))?;
+        .map_err(|_| anyhow::anyhow!("Invalid Position"))?;
     Ok(calculate_forcing_swing_impl(&pos, depth))
 }
 

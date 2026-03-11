@@ -16,8 +16,8 @@ Comprehensive documentation for the Chess AI Explainability project.
 ## Quick Links
 
 - [Main README](../README.md) — Project overview and quickstart
-- [Web App Source](../src/chess_ai/web/) — Flask application code
-- [Launch Script](../scripts/run_web.sh) — Web server startup script
+- [Web App Templates](../web/templates/) — Tera dashboard templates
+- [Web App Assets](../web/static/) — CSS and JS assets
 
 ## Documentation Standards
 

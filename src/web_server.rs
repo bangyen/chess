@@ -2,7 +2,7 @@ use anyhow::Result;
 use axum::{
     extract::State,
     http::StatusCode,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -26,6 +26,7 @@ pub struct GameState {
     pub stockfish_path: String,
     pub model_ready: bool,
     pub training_error: bool,
+    pub history: Vec<String>,
 }
 
 impl GameState {
@@ -37,11 +38,13 @@ impl GameState {
             stockfish_path,
             model_ready: false,
             training_error: false,
+            history: Vec::new(),
         }
     }
 
     pub fn reset(&mut self) {
         self.board = Chess::default();
+        self.history.clear();
     }
 }
 
@@ -151,8 +154,7 @@ async fn get_dashboard(State(_state): State<SharedState>) -> impl IntoResponse {
     }
 }
 
-async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState> {
-    let s = state.read().unwrap();
+fn get_board_state(s: &GameState) -> BoardState {
     let fen =
         shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
     let legal_moves = s
@@ -164,7 +166,7 @@ async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState>
         })
         .collect();
 
-    Json(BoardState {
+    BoardState {
         fen,
         legal_moves,
         is_game_over: s.board.is_game_over(),
@@ -178,7 +180,12 @@ async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState>
         } else {
             "black".to_string()
         },
-    })
+    }
+}
+
+async fn get_state_handler(State(state): State<SharedState>) -> Json<BoardState> {
+    let s = state.read().unwrap();
+    Json(get_board_state(&s))
 }
 
 async fn new_game_handler(State(state): State<SharedState>) -> Json<BoardState> {
@@ -235,6 +242,10 @@ async fn make_move_handler(
             );
         }
     }
+
+    let fen_before =
+        shakmaty::fen::Fen::from_position(&s.board, shakmaty::EnPassantMode::Always).to_string();
+    s.history.push(fen_before);
 
     s.board.play_unchecked(m);
 
@@ -308,6 +319,33 @@ async fn engine_move_handler(
         features: feats,
     })
     .into_response()
+}
+
+async fn undo_move_handler(State(state): State<SharedState>) -> Response {
+    let fen_to_restore = {
+        let mut s = state.write().unwrap();
+        if let Some(fen_str) = s.history.pop() {
+            let setup: shakmaty::fen::Fen = fen_str.parse().unwrap();
+            let board: Chess = setup.into_position(shakmaty::CastlingMode::Standard).unwrap();
+            s.board = board;
+
+            // Sync engine
+            if let Some(engine_arc) = &s.engine {
+                let mut engine = engine_arc.write().unwrap();
+                let _ = engine.set_position(&fen_str);
+            }
+            Some(fen_str)
+        } else {
+            None
+        }
+    };
+
+    if fen_to_restore.is_some() {
+        let s = state.read().unwrap();
+        Json(get_board_state(&s)).into_response()
+    } else {
+        (StatusCode::BAD_REQUEST, "No moves to undo").into_response()
+    }
 }
 
 async fn analyze_features_handler(State(state): State<SharedState>) -> Json<AnalysisResponse> {
@@ -417,6 +455,7 @@ pub async fn start_server(stockfish_path: String, host: String, port: u16) -> Re
         .route("/api/analysis/features", post(analyze_features_handler))
         .route("/api/health", get(health_handler))
         .route("/api/engine/status", get(engine_status_handler))
+        .route("/api/game/undo", post(undo_move_handler))
         .nest_service("/static", ServeDir::new(static_path))
         .layer(CorsLayer::permissive())
         .with_state(state);

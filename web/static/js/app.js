@@ -43,9 +43,12 @@ class ChessApp {
             this.initializeGame();
         });
 
-        document.getElementById('btn-engine-move').addEventListener('click', () => {
-            this.requestEngineMove();
-        });
+        const undoBtn = document.getElementById('btn-undo-move');
+        if (undoBtn) {
+            undoBtn.addEventListener('click', () => {
+                this.undoMove();
+            });
+        }
 
         document.getElementById('btn-analyze').addEventListener('click', () => {
             this.analyzePosition();
@@ -147,7 +150,7 @@ class ChessApp {
     }
 
     async requestEngineMove() {
-        const btn = document.getElementById('btn-engine-move');
+        const btn = document.getElementById('btn-engine-move') || document.getElementById('btn-undo-move');
         if (btn) {
             btn.classList.add('loading');
             btn.disabled = true;
@@ -176,6 +179,34 @@ class ChessApp {
                 btn.classList.remove('loading');
                 btn.disabled = false;
             }
+        }
+    }
+
+    async undoMove() {
+        try {
+            // Undo engine move
+            await fetch('/api/game/undo', { method: 'POST' });
+            // Undo player move
+            const response = await fetch('/api/game/undo', { method: 'POST' });
+            
+            if (response.ok) {
+                const data = await response.json();
+                this.board.setPosition(data.fen, null);
+                this.board.setLegalMoves(data.legal_moves);
+                this.moveCount = Math.max(0, this.moveCount - 2);
+                this.updateGameState();
+                this.clearExplanation();
+                
+                // Re-analyze position
+                const features = await this.getPositionFeatures();
+                if (features) {
+                    this.displayManualMoveInfo(features);
+                }
+            } else {
+                console.warn('Could not undo further.');
+            }
+        } catch (error) {
+            console.error('Failed to undo move:', error);
         }
     }
 

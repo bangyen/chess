@@ -365,8 +365,10 @@ class ChessApp {
     }
 
     processExplanationText(text) {
+        // Add newline before (XX cp) to avoid wrapping
+        let processed = text.replace(/ \((.*? cp)\)/g, '<br><span class="evaluation">($1)</span>');
         // Basic bold formatting: **text** -> <strong>text</strong>
-        return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        return processed.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     }
 
     clearExplanation() {

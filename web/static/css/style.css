@@ -664,6 +664,15 @@ canvas {
 /* Text Utilities */
 .text-muted {
     color: var(--color-text-secondary);
+    opacity: 0.7;
+}
+
+.evaluation {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    display: inline-block;
+    margin-top: 4px;
 }
 
 .mono {

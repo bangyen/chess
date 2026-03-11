@@ -136,6 +136,9 @@ class ChessApp {
 
                 if (data.is_game_over) {
                     this.handleGameOver();
+                } else if (!isEngineMove) {
+                    // Automatically trigger engine move after player move
+                    setTimeout(() => this.requestEngineMove(), 500);
                 }
             }
         } catch (error) {

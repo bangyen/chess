@@ -243,21 +243,28 @@ class ChessApp {
         }
 
         // Parse explanation into paragraphs and lists
-        const lines = explanation.split('\n');
+        // Normalize ' · ' into newlines for backward compatibility
+        const normalizedExplanation = explanation.replace(/ · /g, '\n- ');
+        const lines = normalizedExplanation.split('\n');
+        
         let html = '';
         let listItems = [];
 
         lines.forEach(line => {
             const trimmedLine = line.trim();
-            if (trimmedLine.startsWith('-')) {
-                listItems.push(trimmedLine.substring(1).trim());
-            } else if (trimmedLine.length > 0) {
+            if (!trimmedLine) return;
+
+            if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•')) {
+                // Remove the bullet and trim
+                const content = trimmedLine.replace(/^[-•]\s*/, '').trim();
+                listItems.push(this.processExplanationText(content));
+            } else {
                 // If we were building a list, close it out
                 if (listItems.length > 0) {
                     html += `<ul>${listItems.map(item => `<li>${item}</li>`).join('')}</ul>`;
                     listItems = [];
                 }
-                html += `<p>${trimmedLine}</p>`;
+                html += `<p>${this.processExplanationText(trimmedLine)}</p>`;
             }
         });
 
@@ -283,7 +290,7 @@ class ChessApp {
             let featuresHtml = '';
             topFeatures.forEach(([name, value]) => {
                 const formattedName = this.formatFeatureName(name);
-                const formattedValue = value.toFixed(2);
+                const formattedValue = value.toFixed(2) + ' cp';
                 featuresHtml += `
                     <div class="feature-item">
                         <span class="feature-name">${formattedName}</span>
@@ -293,6 +300,11 @@ class ChessApp {
             });
             container.innerHTML = featuresHtml;
         }
+    }
+
+    processExplanationText(text) {
+        // Basic bold formatting: **text** -> <strong>text</strong>
+        return text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
     }
 
     clearExplanation() {
@@ -322,22 +334,76 @@ class ChessApp {
 
     displayFeatures(features) {
         const container = document.getElementById('features-table');
-        const sortedFeatures = Object.entries(features)
+        if (!container) return;
+
+        const activeFeatures = Object.entries(features)
+            .filter(([_, value]) => Math.abs(value) >= 0.001)
             .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
 
+        const topFeatures = activeFeatures.filter(([_, value]) => Math.abs(value) >= 10.0);
+        const otherFeatures = activeFeatures.filter(([_, value]) => Math.abs(value) < 10.0);
+
         let html = '';
-        sortedFeatures.forEach(([name, value]) => {
+        
+        // Render top features
+        topFeatures.forEach(([name, value]) => {
             const formattedName = this.formatFeatureName(name);
-            const formattedValue = value.toFixed(3);
+            const formattedValue = value.toFixed(2) + ' cp';
             html += `
                 <div class="feature-row">
                     <span class="feature-name">${formattedName}</span>
-                    <span class="feature-value">${formattedValue}</span>
+                    <span class="feature-value ${value >= 0 ? 'positive' : 'negative'}">${formattedValue}</span>
                 </div>
             `;
         });
 
+        // Render other features behind an accordion if any exist
+        if (otherFeatures.length > 0) {
+            html += `
+                <div class="accordion-section">
+                    <button class="accordion-header" id="toggle-others">
+                        <span>Less Significant Features (${otherFeatures.length})</span>
+                        <span class="chevron">▼</span>
+                    </button>
+                    <div class="accordion-content hidden" id="others-container">
+            `;
+            
+            otherFeatures.forEach(([name, value]) => {
+                const formattedName = this.formatFeatureName(name);
+                const formattedValue = value.toFixed(2) + ' cp';
+                html += `
+                    <div class="feature-row sub-feature">
+                        <span class="feature-name">${formattedName}</span>
+                        <span class="feature-value ${value >= 0 ? 'positive' : 'negative'}">${formattedValue}</span>
+                    </div>
+                `;
+            });
+            
+            html += `
+                    </div>
+                </div>
+            `;
+        }
+
         container.innerHTML = html;
+
+        // Add event listener for the accordion
+        const toggleBtn = document.getElementById('toggle-others');
+        if (toggleBtn) {
+            toggleBtn.onclick = () => {
+                const othersContainer = document.getElementById('others-container');
+                const chevron = toggleBtn.querySelector('.chevron');
+                const isHidden = othersContainer.classList.contains('hidden');
+                
+                if (isHidden) {
+                    othersContainer.classList.remove('hidden');
+                    chevron.textContent = '▲';
+                } else {
+                    othersContainer.classList.add('hidden');
+                    chevron.textContent = '▼';
+                }
+            };
+        }
     }
 
     updateEngineStatus(status, isActive, isWaiting = false) {

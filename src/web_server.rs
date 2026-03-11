@@ -229,9 +229,9 @@ async fn make_move_handler(
             explanation = Some(
                 reasons
                     .iter()
-                    .map(|(_, _, text)| text.clone())
+                    .map(|(_, _, text)| format!("- {}", text))
                     .collect::<Vec<_>>()
-                    .join(" · "),
+                    .join("\n"),
             );
         }
     }
@@ -294,9 +294,9 @@ async fn engine_move_handler(
         if !reasons.is_empty() {
             explanation = reasons
                 .iter()
-                .map(|(_, _, text)| text.clone())
+                .map(|(_, _, text)| format!("- {}", text))
                 .collect::<Vec<_>>()
-                .join(" · ");
+                .join("\n");
         }
     }
 

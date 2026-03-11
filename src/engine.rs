@@ -32,6 +32,12 @@ impl UciEngine {
         Ok(())
     }
 
+    pub fn is_ready(&mut self) -> Result<()> {
+        self.send_command("isready")?;
+        self.wait_for_line("readyok", Duration::from_secs(5))?;
+        Ok(())
+    }
+
     pub fn wait_for_line(&mut self, expected: &str, _timeout: Duration) -> Result<String> {
         let stdout = self
             .process
@@ -39,18 +45,20 @@ impl UciEngine {
             .as_mut()
             .ok_or_else(|| anyhow!("Failed to open stdout"))?;
         let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
-
-        while reader.read_line(&mut line)? > 0 {
+        
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line)? == 0 {
+                return Err(anyhow!("EOF waiting for {}", expected));
+            }
             if line.contains(expected) {
                 return Ok(line);
             }
-            line.clear();
         }
-        Err(anyhow!("Timeout/EOF waiting for {}", expected))
     }
 
     pub fn get_best_move(&mut self, fen: &str, depth: u32) -> Result<String> {
+        self.is_ready()?;
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
         let line = self.wait_for_line("bestmove", Duration::from_secs(30))?;
@@ -64,22 +72,35 @@ impl UciEngine {
     }
 
     pub fn get_evaluation(&mut self, fen: &str, depth: u32) -> Result<i32> {
+        self.is_ready()?;
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
-        let line = self.wait_for_line("score cp", Duration::from_secs(30))?;
-
-        // Parse "info depth 12 ... score cp 15 ..."
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        for i in 0..parts.len() {
-            if parts[i] == "cp" && i + 1 < parts.len() {
-                return Ok(parts[i + 1].parse()?);
+        
+        let mut last_score = 0;
+        let stdout = self.process.stdout.as_mut().unwrap();
+        let mut reader = BufReader::new(stdout);
+        
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line)? == 0 { break; }
+            
+            if line.contains("score cp") || line.contains("score mate") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                for i in 0..parts.len() {
+                    if parts[i] == "cp" && i + 1 < parts.len() {
+                        last_score = parts[i + 1].parse().unwrap_or(last_score);
+                    } else if parts[i] == "mate" && i + 1 < parts.len() {
+                        let m: i32 = parts[i + 1].parse().unwrap_or(0);
+                        last_score = if m > 0 { 10000 - m } else { -10000 - m };
+                    }
+                }
             }
-            if parts[i] == "mate" && i + 1 < parts.len() {
-                let m: i32 = parts[i + 1].parse()?;
-                return Ok(if m > 0 { 10000 } else { -10000 });
+            
+            if line.contains("bestmove") {
+                break;
             }
         }
-        Err(anyhow!("Could not find score in output: {}", line))
+        Ok(last_score)
     }
 
     pub fn get_top_moves(
@@ -88,30 +109,30 @@ impl UciEngine {
         depth: u32,
         multipv: u32,
     ) -> Result<Vec<(String, i32)>> {
+        self.is_ready()?;
         self.send_command(&format!("setoption name MultiPV value {}", multipv))?;
+        self.is_ready()?;
         self.send_command(&format!("position fen {}", fen))?;
         self.send_command(&format!("go depth {}", depth))?;
 
         let mut moves = Vec::new();
-        let stdout = self
-            .process
-            .stdout
-            .as_mut()
-            .ok_or_else(|| anyhow!("Failed to open stdout"))?;
+        let stdout = self.process.stdout.as_mut().unwrap();
         let mut reader = BufReader::new(stdout);
-        let mut line = String::new();
 
-        while reader.read_line(&mut line)? > 0 {
-            if line.contains("bestmove") {
-                break;
-            }
-            if line.contains("score cp") {
+        loop {
+            let mut line = String::new();
+            if reader.read_line(&mut line)? == 0 { break; }
+            
+            if line.contains("score cp") || line.contains("score mate") {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 let mut cp = 0;
                 let mut pv = String::new();
                 for i in 0..parts.len() {
                     if parts[i] == "cp" && i + 1 < parts.len() {
-                        cp = parts[i + 1].parse()?;
+                        cp = parts[i + 1].parse().unwrap_or(0);
+                    } else if parts[i] == "mate" && i + 1 < parts.len() {
+                        let m: i32 = parts[i + 1].parse().unwrap_or(0);
+                        cp = if m > 0 { 10000 - m } else { -10000 - m };
                     }
                     if parts[i] == "pv" && i + 1 < parts.len() {
                         pv = parts[i + 1].to_string();
@@ -121,13 +142,30 @@ impl UciEngine {
                     moves.push((pv, cp));
                 }
             }
-            line.clear();
+            
+            if line.contains("bestmove") {
+                break;
+            }
         }
 
         // Reset MultiPV
         self.send_command("setoption name MultiPV value 1")?;
+        self.is_ready()?;
 
-        Ok(moves)
+        // MultiPV output usually gives 1..N. We only want the last batch of depth N.
+        // The most reliable way is to take the last N unique PVs.
+        moves.reverse();
+        let mut seen = std::collections::HashSet::new();
+        let mut final_moves = Vec::new();
+        for (pv, cp) in moves {
+            if seen.len() >= multipv as usize { break; }
+            if !seen.contains(&pv) {
+                seen.insert(pv.clone());
+                final_moves.push((pv, cp));
+            }
+        }
+        
+        Ok(final_moves)
     }
 }
 

@@ -121,7 +121,7 @@ pub fn verify_syzygy(
         None
     };
 
-    let mut failures = 0;
+    let failures = 0;
 
     for (name, fen_str) in endgames {
         println!("--- {} ---", name);
